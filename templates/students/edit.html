@@ -1,0 +1,118 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Edit Student{% endblock %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <h2>
+            <i class="bi bi-pencil-square"></i>
+            Edit Student
+        </h2>
+
+        <a href="{{ url_for('student.view', student_id=student.student_id) }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+
+    </div>
+
+    <div class="card shadow">
+
+        <div class="card-header">
+            <strong>LIB{{ "%04d"|format(student.student_id) }} — {{ student.full_name }}</strong>
+        </div>
+
+        <div class="card-body">
+
+            <form method="POST">
+
+                <div class="row">
+
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Full Name</label>
+                        <input
+                            type="text"
+                            class="form-control"
+                            name="full_name"
+                            value="{{ student.full_name }}"
+                            required>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Mobile</label>
+                        <input
+                            type="text"
+                            class="form-control"
+                            name="mobile"
+                            value="{{ student.mobile }}"
+                            required>
+                    </div>
+
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Address</label>
+                    <textarea
+                        class="form-control"
+                        name="address"
+                        rows="2">{{ student.address }}</textarea>
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Purpose</label>
+                        <select class="form-select" name="purpose">
+                            <option value="Study" {% if student.purpose == "Study" %}selected{% endif %}>Study</option>
+                            <option value="Competitive Exam" {% if student.purpose == "Competitive Exam" %}selected{% endif %}>Competitive Exam</option>
+                            <option value="Work" {% if student.purpose == "Work" %}selected{% endif %}>Work</option>
+                            <option value="Other" {% if student.purpose == "Other" %}selected{% endif %}>Other</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Shift</label>
+                        <select class="form-select" name="shift">
+                            <option value="Morning" {% if student.shift == "Morning" %}selected{% endif %}>Morning</option>
+                            <option value="Afternoon" {% if student.shift == "Afternoon" %}selected{% endif %}>Afternoon</option>
+                            <option value="Evening" {% if student.shift == "Evening" %}selected{% endif %}>Evening</option>
+                            <option value="Full Day" {% if student.shift == "Full Day" %}selected{% endif %}>Full Day</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Status</label>
+                        <select class="form-select" name="status">
+                            <option value="Active" {% if student.status == "Active" %}selected{% endif %}>Active</option>
+                            <option value="Inactive" {% if student.status == "Inactive" %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+
+                </div>
+
+                <hr>
+
+                <div class="d-flex justify-content-between">
+
+                    <a href="{{ url_for('student.view', student_id=student.student_id) }}" class="btn btn-secondary">
+                        <i class="bi bi-x-circle"></i> Cancel
+                    </a>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> Save Changes
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

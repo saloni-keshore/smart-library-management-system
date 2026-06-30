@@ -54,6 +54,18 @@ Dashboard
         {% include "components/stat_card.html" %}
         {% endwith %}
 
+        <!-- Expired Memberships -->
+        {% with
+        title="Expired Memberships",
+        value=expired_memberships,
+        trend="Need Renewal",
+        trend_color="text-danger",
+        trend_icon="bi-x-circle-fill",
+        icon="bi bi-person-slash text-danger"
+        %}
+        {% include "components/stat_card.html" %}
+        {% endwith %}
+
         <!-- Today's Collection -->
         {% with
         title="Today's Collection",

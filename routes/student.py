@@ -36,6 +36,7 @@ def index():
             s.shift,
             s.status,
 
+            m.membership_id,
             m.plan_name,
             m.pending_amount,
             m.membership_status
@@ -43,7 +44,13 @@ def index():
         FROM students s
 
         LEFT JOIN memberships m
-            ON s.student_id = m.student_id
+            ON m.membership_id = (
+                SELECT membership_id
+                FROM memberships
+                WHERE student_id = s.student_id
+                ORDER BY membership_id DESC
+                LIMIT 1
+            )
 
         ORDER BY s.student_id DESC
     """)

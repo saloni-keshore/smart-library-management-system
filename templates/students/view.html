@@ -244,12 +244,13 @@ Student Profile
 
         <a href="{{ url_for('membership.renew', student_id=student.student_id) }}" class="btn btn-warning">
          
-        <i class=""bi-bi-arrow-repeat></ii>
+        <i class="bi bi-arrow-repeat"></i>
 
             Renew Membership
 
         </a>
 
+        {% if membership %}
         <a href="{{ url_for('payment.collect', membership_id=membership.membership_id) }}" class="btn btn-success">
             
             <i class="bi bi-cash-coin"></i>
@@ -257,6 +258,8 @@ Student Profile
             Collect Payment
 
         </a>
+
+        {% endif %}
 
         <a href="#" class="btn btn-primary">
 

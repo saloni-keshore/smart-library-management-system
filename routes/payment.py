@@ -26,7 +26,20 @@ payment_bp = Blueprint(
 @payment_bp.route("/")
 def index():
 
-    return "Payment Module Coming Soon"
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT p.*, s.full_name
+        FROM payments p
+        INNER JOIN students s ON p.student_id = s.student_id
+        ORDER BY p.payment_id DESC
+    """)
+
+    payments = cursor.fetchall()
+    conn.close()
+
+    return render_template("payments/index.html", payments=payments)
 
 
 # ---------------------------------------
@@ -39,17 +52,6 @@ def create(membership_id):
     conn = get_connection()
     cursor = conn.cursor()
 
-
-# ---------------------------------------
-# Collect Pending Payment
-# ---------------------------------------
-
-@payment_bp.route("/collect/<int:membership_id>", methods=["GET", "POST"])
-def collect(membership_id):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
     cursor.execute(
         """
         SELECT *
@@ -62,142 +64,10 @@ def collect(membership_id):
     membership = cursor.fetchone()
 
     if membership is None:
-
         conn.close()
-
-        flash(
-            "Membership not found.",
-            "danger"
-        )
-
-        return redirect(
-            url_for("student.index")
-        )
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM students
-        WHERE student_id = ?
-        """,
-        (membership["student_id"],)
-    )
-
-    student = cursor.fetchone()
-
-    if request.method == "POST":
-
-        amount = float(
-            request.form.get("amount_paid")
-        )
-
-        payment_mode = request.form.get("payment_mode")
-
-        remarks = request.form.get("remarks")
-
-        new_paid = membership["paid_amount"] + amount
-
-        new_pending = membership["pending_amount"] - amount
-
-        if new_pending < 0:
-
-            new_pending = 0
-
-        cursor.execute(
-            """
-            INSERT INTO payments
-            (
-                membership_id,
-                student_id,
-                receipt_number,
-                payment_mode,
-                amount_paid,
-                payment_date,
-                remarks
-            )
-            VALUES
-            (
-                ?, ?, ?, ?, ?, DATE('now'), ?
-            )
-            """,
-            (
-                membership_id,
-                student["student_id"],
-                f"REC-{membership_id}-{new_paid}",
-                payment_mode,
-                amount,
-                remarks
-            )
-        )
-
-        cursor.execute(
-            """
-            UPDATE memberships
-            SET
-                paid_amount=?,
-                pending_amount=?
-            WHERE membership_id=?
-            """,
-            (
-                new_paid,
-                new_pending,
-                membership_id
-            )
-        )
-
-        conn.commit()
-
-        conn.close()
-
-        flash(
-            "Payment collected successfully.",
-            "success"
-        )
-
-        return redirect(
-            url_for(
-                "student.view",
-                student_id=student["student_id"]
-            )
-        )
-
-    conn.close()
-
-    return render_template(
-        "payments/collect.html",
-        membership=membership,
-        student=student
-    )
-
-
-
-    # ---------------------------------------
-    # Get Membership
-    # ---------------------------------------
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM memberships
-        WHERE membership_id = ?
-        """,
-        (membership_id,)
-    )
-
-    membership = cursor.fetchone()
-
-    if membership is None:
-
-        conn.close()
-
         flash("Membership not found.", "danger")
-
         return redirect(url_for("student.index"))
 
-    # ---------------------------------------
-    # Get Student
-    # ---------------------------------------
-
     cursor.execute(
         """
         SELECT *
@@ -209,46 +79,49 @@ def collect(membership_id):
 
     student = cursor.fetchone()
 
-    # ---------------------------------------
-    # Save Payment
-    # ---------------------------------------
-
     if request.method == "POST":
 
-        paid_amount = float(request.form.get("paid_amount"))
+        paid_amount_str = request.form.get("paid_amount", "0")
 
-        payment_mode = request.form.get("payment_mode")
-
-        remarks = request.form.get("remarks")
-
-        total_fee = float(membership["total_fee"])
-
-        pending_amount = total_fee - paid_amount
-
-        # Prevent overpayment
-
-        if paid_amount > total_fee:
-
-            flash(
-                "Paid amount cannot be greater than total fee.",
-                "danger"
-            )
-
+        try:
+            paid_amount = float(paid_amount_str)
+        except ValueError:
+            flash("Invalid amount entered.", "danger")
             conn.close()
-
             return render_template(
                 "payments/create.html",
                 membership=membership,
                 student=student
             )
 
-        # Generate Receipt Number
+        if paid_amount <= 0:
+            flash("Paid amount must be greater than zero.", "danger")
+            conn.close()
+            return render_template(
+                "payments/create.html",
+                membership=membership,
+                student=student
+            )
+
+        payment_mode = request.form.get("payment_mode")
+        remarks = request.form.get("remarks")
+
+        total_fee = float(membership["total_fee"])
+
+        if paid_amount > total_fee:
+            flash("Paid amount cannot be greater than total fee.", "danger")
+            conn.close()
+            return render_template(
+                "payments/create.html",
+                membership=membership,
+                student=student
+            )
+
+        pending_amount = total_fee - paid_amount
 
         receipt_number = (
             f"REC-{date.today().strftime('%Y%m%d')}-{membership_id:04d}"
         )
-
-        # Insert Payment
 
         cursor.execute(
             """
@@ -278,8 +151,6 @@ def collect(membership_id):
             )
         )
 
-        # Update Membership
-
         cursor.execute(
             """
             UPDATE memberships
@@ -296,8 +167,9 @@ def collect(membership_id):
         )
 
         conn.commit()
-
         conn.close()
+
+        flash("Payment recorded successfully.", "success")
 
         return render_template(
             "payments/success.html",
@@ -312,6 +184,136 @@ def collect(membership_id):
 
     return render_template(
         "payments/create.html",
+        membership=membership,
+        student=student
+    )
+
+
+# ---------------------------------------
+# Collect Pending Payment
+# ---------------------------------------
+
+@payment_bp.route("/collect/<int:membership_id>", methods=["GET", "POST"])
+def collect(membership_id):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM memberships
+        WHERE membership_id = ?
+        """,
+        (membership_id,)
+    )
+
+    membership = cursor.fetchone()
+
+    if membership is None:
+        conn.close()
+        flash("Membership not found.", "danger")
+        return redirect(url_for("student.index"))
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM students
+        WHERE student_id = ?
+        """,
+        (membership["student_id"],)
+    )
+
+    student = cursor.fetchone()
+
+    if request.method == "POST":
+
+        amount_str = request.form.get("amount_paid", "0")
+
+        try:
+            amount = float(amount_str)
+        except ValueError:
+            flash("Invalid amount entered.", "danger")
+            conn.close()
+            return render_template(
+                "payments/collect.html",
+                membership=membership,
+                student=student
+            )
+
+        if amount <= 0:
+            flash("Amount must be greater than zero.", "danger")
+            conn.close()
+            return render_template(
+                "payments/collect.html",
+                membership=membership,
+                student=student
+            )
+
+        payment_mode = request.form.get("payment_mode")
+        remarks = request.form.get("remarks")
+
+        new_paid = membership["paid_amount"] + amount
+        new_pending = membership["pending_amount"] - amount
+
+        if new_pending < 0:
+            new_pending = 0
+
+        cursor.execute(
+            """
+            INSERT INTO payments
+            (
+                membership_id,
+                student_id,
+                receipt_number,
+                payment_mode,
+                amount_paid,
+                payment_date,
+                remarks
+            )
+            VALUES
+            (
+                ?, ?, ?, ?, ?, DATE('now'), ?
+            )
+            """,
+            (
+                membership_id,
+                student["student_id"],
+                f"REC-{membership_id}-{int(new_paid)}",
+                payment_mode,
+                amount,
+                remarks
+            )
+        )
+
+        cursor.execute(
+            """
+            UPDATE memberships
+            SET
+                paid_amount=?,
+                pending_amount=?
+            WHERE membership_id=?
+            """,
+            (
+                new_paid,
+                new_pending,
+                membership_id
+            )
+        )
+
+        conn.commit()
+        conn.close()
+
+        flash("Payment collected successfully.", "success")
+
+        return redirect(
+            url_for("student.view", student_id=student["student_id"])
+        )
+
+    conn.close()
+
+    return render_template(
+        "payments/collect.html",
         membership=membership,
         student=student
     )

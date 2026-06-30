@@ -22,13 +22,7 @@ Renew Membership
 
             <span class="badge bg-warning text-dark fs-6 px-3 py-2">
 
-                🔄 Renew Membership
-
-            </span>
-
-            <span class="badge bg-secondary fs-6 px-3 py-2">
-
-                💳 Payment
+                🔄 Renew Membership &amp; Payment
 
             </span>
 
@@ -110,7 +104,7 @@ Renew Membership
 
         <br>
 
-        A new membership record will be created. Previous membership history will remain محفوظ (preserved).
+        A new membership record will be created. Previous membership history will be preserved.
 
     </div>
 
@@ -189,7 +183,7 @@ Renew Membership
 
                 <div class="row">
 
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-3 mb-3">
 
                         <label class="form-label fw-bold">
 
@@ -206,7 +200,7 @@ Renew Membership
 
                     </div>
 
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-3 mb-3">
 
                         <label class="form-label fw-bold">
 
@@ -224,20 +218,66 @@ Renew Membership
 
                     </div>
 
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-3 mb-3">
 
                         <label class="form-label fw-bold">
 
-                            Membership Fee (₹)
+                            Paid (₹)
 
                         </label>
 
                         <input
                             type="number"
                             class="form-control"
-                            name="total_fee"
-                            placeholder="Enter Fee"
+                            name="paid_amount"
+                            placeholder="Amount Paid"
+                            min="0"
+                            value="0"
                             required>
+
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            Due Amount (₹)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            name="due_amount"
+                            placeholder="0"
+                            min="0"
+                            value="0">
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            Payment Mode
+
+                        </label>
+
+                        <select class="form-select" name="payment_mode">
+
+                            <option value="Cash">Cash</option>
+
+                            <option value="UPI">UPI</option>
+
+                            <option value="Card">Card</option>
+
+                            <option value="Bank Transfer">Bank Transfer</option>
+
+                        </select>
 
                     </div>
 

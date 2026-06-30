@@ -7,6 +7,8 @@ from flask import (
     flash
 )
 
+from datetime import date
+
 from database.db import get_connection
 
 membership_bp = Blueprint(
@@ -23,7 +25,20 @@ membership_bp = Blueprint(
 @membership_bp.route("/")
 def index():
 
-    return "Membership Module Coming Soon"
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT m.*, s.full_name, s.mobile
+        FROM memberships m
+        INNER JOIN students s ON m.student_id = s.student_id
+        ORDER BY m.membership_id DESC
+    """)
+
+    memberships = cursor.fetchall()
+    conn.close()
+
+    return render_template("memberships/index.html", memberships=memberships)
 
 
 # ---------------------------------------
@@ -61,16 +76,23 @@ def create(student_id):
         joining_date = request.form.get("joining_date")
         duration_days = request.form.get("duration")
         end_date = request.form.get("end_date")
-        total_fee = request.form.get("total_fee")
         remarks = request.form.get("remarks")
- 
-        if float(total_fee) <=0:
+        payment_mode = request.form.get("payment_mode", "Cash")
+
+        try:
+            paid_amount = float(request.form.get("paid_amount", 0) or 0)
+            due_amount = float(request.form.get("due_amount", 0) or 0)
+        except ValueError:
+            flash("Invalid amount entered.", "danger")
+            conn.close()
+            return render_template("memberships/create.html", student=student)
+
+        total_fee = paid_amount + due_amount
+
+        if total_fee <= 0:
             flash("Total fee must be greater than zero.", "danger")
             conn.close()
-
-            return render_template(
-                "memberships/create.html", student=student
-            )
+            return render_template("memberships/create.html", student=student)
 
         cursor.execute(
             """
@@ -99,14 +121,43 @@ def create(student_id):
                 duration_days,
                 end_date,
                 total_fee,
-                0,
-                total_fee,
+                paid_amount,
+                due_amount,
                 remarks,
                 "Active"
             )
         )
 
         membership_id = cursor.lastrowid
+
+        if paid_amount > 0:
+            receipt_number = (
+                f"REC-{date.today().strftime('%Y%m%d')}-{membership_id:04d}"
+            )
+            cursor.execute(
+                """
+                INSERT INTO payments
+                (
+                    membership_id,
+                    student_id,
+                    receipt_number,
+                    payment_mode,
+                    amount_paid,
+                    payment_date,
+                    remarks
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    membership_id,
+                    student_id,
+                    receipt_number,
+                    payment_mode,
+                    paid_amount,
+                    date.today(),
+                    remarks
+                )
+            )
 
         conn.commit()
         conn.close()
@@ -117,10 +168,7 @@ def create(student_id):
         )
 
         return redirect(
-            url_for(
-                "payment.create",
-                membership_id=membership_id
-            )
+            url_for("student.view", student_id=student_id)
         )
 
     conn.close()
@@ -166,8 +214,32 @@ def renew(student_id):
         joining_date = request.form.get("joining_date")
         duration_days = request.form.get("duration_days")
         end_date = request.form.get("end_date")
-        total_fee = request.form.get("total_fee")
         remarks = request.form.get("remarks")
+        payment_mode = request.form.get("payment_mode", "Cash")
+
+        try:
+            paid_amount = float(request.form.get("paid_amount", 0) or 0)
+            due_amount = float(request.form.get("due_amount", 0) or 0)
+        except ValueError:
+            flash("Invalid amount entered.", "danger")
+            conn.close()
+            return render_template("memberships/renew.html", student=student)
+
+        total_fee = paid_amount + due_amount
+
+        if total_fee <= 0:
+            flash("Total fee must be greater than zero.", "danger")
+            conn.close()
+            return render_template("memberships/renew.html", student=student)
+
+        cursor.execute(
+            """
+            UPDATE memberships
+            SET membership_status = 'Expired'
+            WHERE student_id = ? AND membership_status = 'Active'
+            """,
+            (student_id,)
+        )
 
         cursor.execute(
             """
@@ -196,14 +268,43 @@ def renew(student_id):
                 duration_days,
                 end_date,
                 total_fee,
-                0,
-                total_fee,
+                paid_amount,
+                due_amount,
                 remarks,
                 "Active"
             )
         )
 
         membership_id = cursor.lastrowid
+
+        if paid_amount > 0:
+            receipt_number = (
+                f"REC-{date.today().strftime('%Y%m%d')}-{membership_id:04d}"
+            )
+            cursor.execute(
+                """
+                INSERT INTO payments
+                (
+                    membership_id,
+                    student_id,
+                    receipt_number,
+                    payment_mode,
+                    amount_paid,
+                    payment_date,
+                    remarks
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    membership_id,
+                    student_id,
+                    receipt_number,
+                    payment_mode,
+                    paid_amount,
+                    date.today(),
+                    remarks
+                )
+            )
 
         conn.commit()
         conn.close()
@@ -214,10 +315,7 @@ def renew(student_id):
         )
 
         return redirect(
-            url_for(
-                "payment.create",
-                membership_id=membership_id
-            )
+            url_for("student.view", student_id=student_id)
         )
 
     conn.close()

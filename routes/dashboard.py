@@ -51,7 +51,7 @@ def dashboard():
     # ----------------------------
 
     cursor.execute("""
-        SELECT COUNT(*) AS total
+        SELECT COUNT(DISTINCT student_id) AS total
         FROM memberships
         WHERE membership_status='Active'
     """)
@@ -59,12 +59,27 @@ def dashboard():
     active_memberships = cursor.fetchone()["total"]
 
     # ----------------------------
+    # Expired Memberships
+    # ----------------------------
+
+    cursor.execute("""
+        SELECT COUNT(DISTINCT student_id) AS total
+        FROM memberships
+        WHERE membership_status = 'Expired'
+        AND student_id NOT IN (
+            SELECT student_id FROM memberships WHERE membership_status = 'Active'
+        )
+    """)
+
+    expired_memberships = cursor.fetchone()["total"]
+
+    # ----------------------------
     # Total Revenue
     # ----------------------------
 
     cursor.execute("""
         SELECT
-            IFNULL(SUM(amount),0) AS revenue
+            IFNULL(SUM(amount_paid),0) AS revenue
         FROM payments
     """)
 
@@ -88,7 +103,7 @@ def dashboard():
 
     cursor.execute("""
         SELECT
-            IFNULL(SUM(amount),0) AS today
+            IFNULL(SUM(amount_paid),0) AS today
         FROM payments
         WHERE payment_date = DATE('now')
     """)
@@ -103,6 +118,7 @@ def dashboard():
         total_students=total_students,
         total_enquiries=total_enquiries,
         active_memberships=active_memberships,
+        expired_memberships=expired_memberships,
         total_revenue=total_revenue,
         pending_amount=pending_amount,
         today_collection=today_collection

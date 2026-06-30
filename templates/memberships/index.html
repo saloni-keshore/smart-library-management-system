@@ -1,0 +1,78 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Memberships{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-person-vcard"></i> Memberships</h2>
+    </div>
+
+    <div class="card shadow">
+
+        <div class="card-body">
+
+            <table class="table table-hover align-middle">
+
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>Library ID</th>
+                        <th>Student</th>
+                        <th>Plan</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Fee</th>
+                        <th>Pending</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                {% for m in memberships %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>LIB{{ "%04d"|format(m.student_id) }}</td>
+                    <td>{{ m.full_name }}</td>
+                    <td>{{ m.plan_name }}</td>
+                    <td>{{ m.joining_date }}</td>
+                    <td>{{ m.end_date }}</td>
+                    <td>₹{{ m.total_fee }}</td>
+                    <td>₹{{ m.pending_amount }}</td>
+                    <td>
+                        {% if m.membership_status == "Active" %}
+                        <span class="badge bg-success">Active</span>
+                        {% else %}
+                        <span class="badge bg-danger">Expired</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('student.view', student_id=m.student_id) }}" class="btn btn-sm btn-primary">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        {% if m.pending_amount > 0 %}
+                        <a href="{{ url_for('payment.collect', membership_id=m.membership_id) }}" class="btn btn-sm btn-success">
+                            <i class="bi bi-credit-card"></i>
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" class="text-center text-muted">No memberships found.</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

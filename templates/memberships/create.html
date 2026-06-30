@@ -18,11 +18,7 @@ Create Membership
             </span>
 
             <span class="badge bg-primary p-2">
-                2. Membership
-            </span>
-
-            <span class="badge bg-secondary p-2">
-                3. Payment
+                2. Membership &amp; Payment
             </span>
 
         </div>
@@ -136,7 +132,7 @@ Create Membership
 
                 <div class="row">
 
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-3 mb-3">
 
                         <label class="form-label">
 
@@ -153,7 +149,7 @@ Create Membership
 
                     </div>
 
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-3 mb-3">
 
                         <label class="form-label">
 
@@ -170,20 +166,66 @@ Create Membership
 
                     </div>
 
-                    <div class="col-md-4 mb-3">
+                    <div class="col-md-3 mb-3">
 
                         <label class="form-label">
 
-                            Total Fee (₹)
+                            Paid (₹)
 
                         </label>
 
                         <input
                             type="number"
                             class="form-control"
-                            name="total_fee"
-                            placeholder="Enter Fee"
+                            name="paid_amount"
+                            placeholder="Amount Paid"
+                            min="0"
+                            value="0"
                             required>
+
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+
+                        <label class="form-label">
+
+                            Due Amount (₹)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            name="due_amount"
+                            placeholder="0"
+                            min="0"
+                            value="0">
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label">
+
+                            Payment Mode
+
+                        </label>
+
+                        <select class="form-select" name="payment_mode">
+
+                            <option value="Cash">Cash</option>
+
+                            <option value="UPI">UPI</option>
+
+                            <option value="Card">Card</option>
+
+                            <option value="Bank Transfer">Bank Transfer</option>
+
+                        </select>
 
                     </div>
 
