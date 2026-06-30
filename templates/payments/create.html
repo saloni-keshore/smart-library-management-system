@@ -1,0 +1,204 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Payment
+{% endblock %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <!-- Progress -->
+
+    <div class="d-flex justify-content-center gap-3 mb-4">
+
+        <span class="badge bg-success fs-6">
+            ✓ Student
+        </span>
+
+        <span class="badge bg-success fs-6">
+            ✓ Membership
+        </span>
+
+        <span class="badge bg-primary fs-6">
+            3. Payment
+        </span>
+
+    </div>
+
+    <div class="card shadow">
+
+        <div class="card-header">
+
+            <h3>
+
+                <i class="bi bi-credit-card"></i>
+
+                Payment Details
+
+            </h3>
+
+        </div>
+
+        <div class="card-body">
+
+            <form method="POST">
+
+                <div class="row mb-4">
+
+                    <div class="col-md-6">
+
+                        <label class="fw-bold">
+
+                            Library ID
+
+                        </label>
+
+                        <p>
+
+                            LIB{{ "%04d"|format(student.student_id) }}
+
+                        </p>
+
+                    </div>
+
+                    <div class="col-md-6">
+
+                        <label class="fw-bold">
+
+                            Student
+
+                        </label>
+
+                        <p>
+
+                            {{ student.full_name }}
+
+                        </p>
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+
+                        <label>Total Fee</label>
+
+                        <input
+                            id="total_fee"
+                            class="form-control"
+                            value="{{ membership.total_fee }}"
+                            readonly>
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label>Paid Today</label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="paid_amount"
+                            name="paid_amount"
+                            required>
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label>Pending</label>
+
+                        <input
+                            class="form-control"
+                            id="pending_amount"
+                            readonly>
+
+                    </div>
+
+                </div>
+
+                <div class="mb-3">
+
+                    <label>
+
+                        Payment Mode
+
+                    </label>
+
+                    <select
+                        class="form-select"
+                        name="payment_mode">
+
+                        <option>Cash</option>
+                        <option>UPI</option>
+                        <option>Card</option>
+                        <option>Bank Transfer</option>
+
+                    </select>
+
+                </div>
+
+                <div class="mb-3">
+
+                    <label>
+
+                        Remarks
+
+                    </label>
+
+                    <textarea
+                        class="form-control"
+                        rows="3"
+                        name="remarks"></textarea>
+
+                </div>
+
+                <div class="d-flex justify-content-between">
+
+                    <a
+                        href="{{ url_for('membership.index') }}"
+                        class="btn btn-secondary">
+
+                        Back
+
+                    </a>
+
+                    <button
+                        class="btn btn-success">
+
+                        Complete Admission
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+const fee=document.getElementById("total_fee");
+const paid=document.getElementById("paid_amount");
+const pending=document.getElementById("pending_amount");
+
+paid.addEventListener("input",function(){
+
+    let total=parseFloat(fee.value)||0;
+
+    let paidValue=parseFloat(paid.value)||0;
+
+    pending.value=total-paidValue;
+
+});
+
+</script>
+
+{% endblock %}

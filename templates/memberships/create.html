@@ -1,0 +1,294 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Create Membership
+{% endblock %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <!-- Progress -->
+    <div class="mb-4">
+
+        <div class="d-flex justify-content-center align-items-center gap-4">
+
+            <span class="badge bg-success p-2">
+                ✓ Student
+            </span>
+
+            <span class="badge bg-primary p-2">
+                2. Membership
+            </span>
+
+            <span class="badge bg-secondary p-2">
+                3. Payment
+            </span>
+
+        </div>
+
+    </div>
+
+    <div class="card shadow">
+
+        <div class="card-header">
+
+            <h3 class="mb-0">
+
+                <i class="bi bi-person-vcard-fill"></i>
+
+                Membership Details
+
+            </h3>
+
+        </div>
+
+        <div class="card-body">
+
+            <div class="row mb-4">
+
+                <div class="col-md-6">
+
+                    <label class="fw-bold">
+
+                        Library ID
+
+                    </label>
+
+                    <p>
+
+                        LIB{{ "%04d"|format(student.student_id) }}
+
+                    </p>
+
+                </div>
+
+                <div class="col-md-6">
+
+                    <label class="fw-bold">
+
+                        Student Name
+
+                    </label>
+
+                    <p>
+
+                        {{ student.full_name }}
+
+                    </p>
+
+                </div>
+
+            </div>
+
+            <form method="POST">
+
+                <div class="row">
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label">
+
+                            Membership Plan
+
+                        </label>
+
+                        <select
+                            class="form-select"
+                            id="plan_name"
+                            name="plan_name"
+                            required>
+
+                            <option value="">Select Plan</option>
+
+                            <option value="Monthly">Monthly</option>
+
+                            <option value="Quarterly">Quarterly</option>
+
+                            <option value="Half-Yearly">Half-Yearly</option>
+
+                            <option value="Yearly">Yearly</option>
+
+                            <option value="Custom">Custom</option>
+
+                        </select>
+
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label">
+
+                            Joining Date
+
+                        </label>
+
+                        <input
+                            type="date"
+                            class="form-control"
+                            id="joining_date"
+                            name="joining_date"
+                            required>
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label">
+
+                            Duration (Days)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="duration"
+                            name="duration"
+                            required>
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label">
+
+                            End Date
+
+                        </label>
+
+                        <input
+                            type="date"
+                            class="form-control"
+                            id="end_date"
+                            name="end_date"
+                            required>
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label">
+
+                            Total Fee (₹)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            name="total_fee"
+                            placeholder="Enter Fee"
+                            required>
+
+                    </div>
+
+                </div>
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+
+                        Remarks
+
+                    </label>
+
+                    <textarea
+                        class="form-control"
+                        rows="3"
+                        name="remarks"></textarea>
+
+                </div>
+
+                <div class="d-flex justify-content-between">
+
+                    <a
+                        href="{{ url_for('student.index') }}"
+                        class="btn btn-secondary">
+
+                        <i class="bi bi-arrow-left"></i>
+
+                        Back
+
+                    </a>
+
+                    <button
+                        type="submit"
+                        class="btn btn-success">
+
+                        Save & Continue
+
+                        <i class="bi bi-arrow-right"></i>
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+const plan = document.getElementById("plan_name");
+const joiningDate = document.getElementById("joining_date");
+const duration = document.getElementById("duration");
+const endDate = document.getElementById("end_date");
+
+const planDuration = {
+
+    "Monthly":30,
+    "Quarterly":90,
+    "Half-Yearly":180,
+    "Yearly":365
+
+};
+
+function calculateEndDate(){
+
+    if(joiningDate.value && duration.value){
+
+        let start = new Date(joiningDate.value);
+
+        start.setDate(
+            start.getDate() + parseInt(duration.value)
+        );
+
+        endDate.value =
+            start.toISOString().split("T")[0];
+
+    }
+
+}
+
+plan.addEventListener("change", function(){
+
+    if(plan.value !== "Custom"){
+
+        duration.value = planDuration[plan.value];
+
+    }else{
+
+        duration.value = "";
+
+    }
+
+    calculateEndDate();
+
+});
+
+joiningDate.addEventListener("change", calculateEndDate);
+
+duration.addEventListener("input", calculateEndDate);
+
+</script>
+
+{% endblock %}

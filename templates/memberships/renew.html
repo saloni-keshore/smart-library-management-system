@@ -1,0 +1,355 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Renew Membership
+{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid mt-4">
+
+    <!-- Progress -->
+
+    <div class="mb-4">
+
+        <div class="d-flex justify-content-center gap-3">
+
+            <span class="badge bg-success fs-6 px-3 py-2">
+
+                ✓ Student
+
+            </span>
+
+            <span class="badge bg-warning text-dark fs-6 px-3 py-2">
+
+                🔄 Renew Membership
+
+            </span>
+
+            <span class="badge bg-secondary fs-6 px-3 py-2">
+
+                💳 Payment
+
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <!-- Student Card -->
+
+    <div class="card shadow-sm border-0 mb-4">
+
+        <div class="card-header bg-primary text-white">
+
+            <h4 class="mb-0">
+
+                <i class="bi bi-person-circle"></i>
+
+                Student Information
+
+            </h4>
+
+        </div>
+
+        <div class="card-body">
+
+            <div class="row">
+
+                <div class="col-md-4">
+
+                    <strong>Library ID</strong>
+
+                    <p class="mb-0">
+
+                        LIB{{ "%04d"|format(student.student_id) }}
+
+                    </p>
+
+                </div>
+
+                <div class="col-md-4">
+
+                    <strong>Student Name</strong>
+
+                    <p class="mb-0">
+
+                        {{ student.full_name }}
+
+                    </p>
+
+                </div>
+
+                <div class="col-md-4">
+
+                    <strong>Mobile</strong>
+
+                    <p class="mb-0">
+
+                        {{ student.mobile }}
+
+                    </p>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- Renewal Notice -->
+
+    <div class="alert alert-info">
+
+        <i class="bi bi-info-circle-fill"></i>
+
+        <strong>Membership Renewal</strong>
+
+        <br>
+
+        A new membership record will be created. Previous membership history will remain محفوظ (preserved).
+
+    </div>
+
+
+    <!-- Membership Form -->
+
+    <div class="card shadow">
+
+        <div class="card-header">
+
+            <h4 class="mb-0">
+
+                <i class="bi bi-arrow-repeat"></i>
+
+                Renew Membership
+
+            </h4>
+
+        </div>
+
+        <div class="card-body">
+
+            <form method="POST">
+
+                <div class="row">
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            Membership Plan
+
+                        </label>
+
+                        <select
+                            class="form-select"
+                            id="plan_name"
+                            name="plan_name"
+                            required>
+
+                            <option value="">Select Plan</option>
+
+                            <option value="Monthly">Monthly</option>
+
+                            <option value="Quarterly">Quarterly</option>
+
+                            <option value="Half-Yearly">Half-Yearly</option>
+
+                            <option value="Yearly">Yearly</option>
+
+                            <option value="Custom">Custom</option>
+
+                        </select>
+
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            Joining Date
+
+                        </label>
+
+                        <input
+                            type="date"
+                            class="form-control"
+                            id="joining_date"
+                            name="joining_date"
+                            required>
+
+                    </div>
+
+                </div>
+
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            Duration (Days)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="duration"
+                            name="duration_days"
+                            required>
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            End Date
+
+                        </label>
+
+                        <input
+                            type="date"
+                            class="form-control"
+                            id="end_date"
+                            name="end_date"
+                            readonly
+                            required>
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            Membership Fee (₹)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            name="total_fee"
+                            placeholder="Enter Fee"
+                            required>
+
+                    </div>
+
+                </div>
+
+
+                <div class="mb-3">
+
+                    <label class="form-label fw-bold">
+
+                        Remarks
+
+                    </label>
+
+                    <textarea
+                        class="form-control"
+                        rows="4"
+                        name="remarks"
+                        placeholder="Optional remarks..."></textarea>
+
+                </div>
+
+
+                <hr>
+
+
+                <div class="d-flex justify-content-between">
+
+                    <a
+                        href="{{ url_for('student.view', student_id=student.student_id) }}"
+                        class="btn btn-secondary">
+
+                        <i class="bi bi-arrow-left"></i>
+
+                        Back
+
+                    </a>
+
+                    <button
+                        type="submit"
+                        class="btn btn-warning">
+
+                        <i class="bi bi-arrow-repeat"></i>
+
+                        Renew & Continue to Payment
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const plan = document.getElementById("plan_name");
+const joiningDate = document.getElementById("joining_date");
+const duration = document.getElementById("duration");
+const endDate = document.getElementById("end_date");
+
+const planDuration = {
+
+    Monthly:30,
+    Quarterly:90,
+    "Half-Yearly":180,
+    Yearly:365
+
+};
+
+function calculateEndDate(){
+
+    if(joiningDate.value && duration.value){
+
+        let start = new Date(joiningDate.value);
+
+        start.setDate(
+            start.getDate() + parseInt(duration.value)
+        );
+
+        endDate.value =
+            start.toISOString().split("T")[0];
+
+    }
+
+}
+
+plan.addEventListener("change", function(){
+
+    if(plan.value !== "Custom"){
+
+        duration.value = planDuration[plan.value];
+
+    }else{
+
+        duration.value = "";
+
+    }
+
+    calculateEndDate();
+
+});
+
+joiningDate.addEventListener("change", calculateEndDate);
+
+duration.addEventListener("input", calculateEndDate);
+
+</script>
+
+{% endblock %}

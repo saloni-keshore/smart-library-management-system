@@ -1,0 +1,277 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Student Profile
+{% endblock %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <!-- Header -->
+
+    <div class="card shadow mb-4">
+
+        <div class="card-body">
+
+            <div class="d-flex justify-content-between">
+
+                <div>
+
+                    <h3>
+
+                        LIB{{ "%04d"|format(student.student_id) }}
+
+                    </h3>
+
+                    <h4>
+
+                        {{ student.full_name }}
+
+                    </h4>
+
+                    <p class="mb-1">
+
+                        <strong>Mobile:</strong>
+
+                        {{ student.mobile }}
+
+                    </p>
+
+                    <p class="mb-1">
+
+                        <strong>Purpose:</strong>
+
+                        {{ student.purpose }}
+
+                    </p>
+
+                    <p>
+
+                        <strong>Shift:</strong>
+
+                        {{ student.shift }}
+
+                    </p>
+
+                </div>
+
+                <div>
+
+                    <span class="badge bg-success fs-6">
+
+                        {{ student.status }}
+
+                    </span>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Membership + Payment -->
+
+    <div class="row">
+
+        <div class="col-md-6">
+
+            <div class="card shadow mb-4">
+
+                <div class="card-header">
+
+                    Membership
+
+                </div>
+
+                <div class="card-body">
+
+                    {% if membership %}
+
+                    <p>
+
+                        <strong>Plan:</strong>
+
+                        {{ membership.plan_name }}
+
+                    </p>
+
+                    <p>
+
+                        <strong>Joining:</strong>
+
+                        {{ membership.joining_date }}
+
+                    </p>
+
+                    <p>
+
+                        <strong>Expiry:</strong>
+
+                        {{ membership.end_date }}
+
+                    </p>
+
+                    <p>
+
+                        <strong>Status:</strong>
+
+                        {{ membership.membership_status }}
+
+                    </p>
+
+                    {% else %}
+
+                    <p>No Membership Found</p>
+
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-md-6">
+
+            <div class="card shadow mb-4">
+
+                <div class="card-header">
+
+                    Payment Summary
+
+                </div>
+
+                <div class="card-body">
+
+                    {% if membership %}
+
+                    <p>
+
+                        <strong>Total Fee:</strong>
+
+                        ₹{{ membership.total_fee }}
+
+                    </p>
+
+                    <p>
+
+                        <strong>Paid:</strong>
+
+                        ₹{{ membership.paid_amount }}
+
+                    </p>
+
+                    <p>
+
+                        <strong>Pending:</strong>
+
+                        ₹{{ membership.pending_amount }}
+
+                    </p>
+
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Payment History -->
+
+    <div class="card shadow">
+
+        <div class="card-header">
+
+            Payment History
+
+        </div>
+
+        <div class="card-body">
+
+            <table class="table table-hover">
+
+                <thead>
+
+                    <tr>
+
+                        <th>Receipt</th>
+
+                        <th>Date</th>
+
+                        <th>Amount</th>
+
+                        <th>Mode</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% for payment in payments %}
+
+                    <tr>
+
+                        <td>{{ payment.receipt_number }}</td>
+
+                        <td>{{ payment.payment_date }}</td>
+
+                        <td>₹{{ payment.amount_paid }}</td>
+
+                        <td>{{ payment.payment_mode }}</td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+    <!-- Action Buttons -->
+
+    <div class="mt-4 d-flex gap-2">
+
+        <a href="{{ url_for('membership.renew', student_id=student.student_id) }}" class="btn btn-warning">
+         
+        <i class=""bi-bi-arrow-repeat></ii>
+
+            Renew Membership
+
+        </a>
+
+        <a href="{{ url_for('payment.collect', membership_id=membership.membership_id) }}" class="btn btn-success">
+            
+            <i class="bi bi-cash-coin"></i>
+
+            Collect Payment
+
+        </a>
+
+        <a href="#" class="btn btn-primary">
+
+            Print Receipt
+
+        </a>
+
+        <a href="{{ url_for('student.index') }}" class="btn btn-secondary">
+
+            Back
+
+        </a>
+
+    </div>
+
+</div>
+
+{% endblock %}

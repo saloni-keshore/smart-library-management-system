@@ -1,0 +1,76 @@
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    font-family:'Poppins',sans-serif;
+    background:#EEF2FF;
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+.login-card{
+    width:420px;
+    background:white;
+    border-radius:20px;
+    padding:40px;
+    box-shadow:0 20px 40px rgba(0,0,0,.08);
+}
+
+.logo{
+    width:70px;
+    height:70px;
+    background:#2563EB;
+    color:white;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    border-radius:50%;
+    font-size:30px;
+    margin:auto;
+}
+
+.login-title{
+    font-weight:700;
+}
+
+/* Input Fields */
+
+.form-control{
+    height:48px;
+    border-radius:10px;
+}
+
+.input-group{
+    margin-bottom:18px;   /* Space below password field */
+}
+
+.input-group-text{
+    cursor:pointer;
+    border-radius:0 10px 10px 0;
+}
+
+/* Remember Me & Forgot Password */
+
+.login-options{
+    margin-top:12px;
+    margin-bottom:25px;
+}
+
+/* Login Button */
+
+.btn-login{
+    border-radius:12px;
+    padding:12px;
+    font-weight:600;
+    transition:all .3s ease;
+}
+
+.btn-login:hover{
+    transform:translateY(-2px);
+    box-shadow:0 10px 20px rgba(37,99,235,.25);
+}

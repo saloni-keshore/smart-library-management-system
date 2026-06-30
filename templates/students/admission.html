@@ -1,0 +1,207 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Student Admission
+{% endblock %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+    <div class="card shadow">
+
+        <div class="card-header d-flex justify-content-between align-items-center">
+
+            <h3 class="mb-0">
+
+                <i class="bi bi-mortarboard-fill"></i>
+
+                Student Admission
+
+            </h3>
+
+            <a
+                href="{{ url_for('enquiry.index') }}"
+                class="btn btn-secondary">
+
+                <i class="bi bi-arrow-left"></i>
+
+                Back
+
+            </a>
+
+        </div>
+
+        <div class="card-body">
+
+            <h5 class="mb-3 text-primary">
+
+                Enquiry Information
+
+            </h5>
+
+            <div class="row">
+
+                <div class="col-md-6 mb-3">
+
+                    <label class="form-label">
+
+                        Full Name
+
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-control"
+                        value="{{ enquiry.full_name }}"
+                        readonly>
+
+                </div>
+
+                <div class="col-md-6 mb-3">
+
+                    <label class="form-label">
+
+                        Mobile Number
+
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-control"
+                        value="{{ enquiry.mobile }}"
+                        readonly>
+
+                </div>
+
+                <div class="col-md-6 mb-3">
+
+                    <label class="form-label">
+
+                        Purpose
+
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-control"
+                        value="{{ enquiry.purpose }}"
+                        readonly>
+
+                </div>
+
+                <div class="col-md-6 mb-3">
+
+                    <label class="form-label">
+
+                        Preferred Shift
+
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-control"
+                        value="{{ enquiry.preferred_shift }}"
+                        readonly>
+
+                </div>
+
+            </div>
+
+            <hr>
+
+            <h5 class="mb-3 text-success">
+
+                Admission Details
+
+            </h5>
+
+            <form method="POST">
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+
+                        Address
+
+                    </label>
+
+                    <textarea
+                        class="form-control"
+                        name="address"
+                        rows="3"
+                        required></textarea>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label">
+
+                            ID Proof
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            name="id_proof"
+                            placeholder="Aadhaar / PAN / College ID">
+
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label">
+
+                            Join Date
+
+                        </label>
+
+                        <input
+                            type="date"
+                            class="form-control"
+                            name="join_date"
+                            required>
+
+                    </div>
+
+                </div>
+
+                
+
+                <div class="d-flex justify-content-between">
+
+                    <a
+                        href="{{ url_for('enquiry.index') }}"
+                        class="btn btn-secondary">
+
+                        <i class="bi bi-arrow-left"></i>
+
+                        Back
+
+                    </a>
+
+                    <button
+                        type="submit"
+                        class="btn btn-success">
+
+                        <i class="bi bi-person-check-fill"></i>
+
+                        Admit Student
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

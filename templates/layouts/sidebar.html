@@ -1,0 +1,95 @@
+<div class="sidebar">
+
+    <div class="p-4">
+
+        <h3>
+
+            <i class="bi bi-book-half"></i>
+
+            Smart Library
+
+        </h3>
+
+        <small class="text-secondary">
+
+            Management System
+
+        </small>
+
+    </div>
+
+    <ul class="nav flex-column">
+
+        <li class="nav-item">
+            <a class="nav-link active" href="/dashboard">
+                <i class="bi bi-house-door"></i>
+                Dashboard
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('enquiry.index') }}">
+                <i class="bi bi-person-lines-fill"></i>
+                Enquiries
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('student.index') }}">
+                <i class="bi bi-people"></i>
+                Students
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="#">
+                <i class="bi bi-person-vcard"></i>
+                Memberships
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="#">
+                <i class="bi bi-credit-card"></i>
+                Payments
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="#">
+                <i class="bi bi-journal-bookmark"></i>
+                Cashbook
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="#">
+                <i class="bi bi-bar-chart"></i>
+                Reports
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="#">
+                <i class="bi bi-cpu"></i>
+                AI
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a class="nav-link" href="#">
+                <i class="bi bi-gear"></i>
+                Settings
+            </a>
+        </li>
+
+        <li class="nav-item mt-3">
+            <a class="nav-link text-danger" href="{{ url_for('auth.logout') }}">
+                <i class="bi bi-box-arrow-right"></i>
+                Logout
+            </a> 
+        </li>
+
+    </ul>
+
+</div>

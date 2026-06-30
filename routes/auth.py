@@ -1,10 +1,232 @@
-from flask import Blueprint, render_template
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    redirect,
+    flash,
+    session,
+    url_for
+)
+from werkzeug.security import (
+    check_password_hash,
+    generate_password_hash
+)
+from database.db import get_connection
 
 auth_bp = Blueprint(
     "auth",
     __name__
 )
 
-@auth_bp.route("/")
+
+@auth_bp.route("/", methods=["GET", "POST"])
 def login():
-    return render_template("auth/login.html")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) AS total FROM admins")
+
+    admin_count = cursor.fetchone()["total"]
+
+    conn.close()
+
+    show_signup = (admin_count == 0)
+
+   
+
+    if request.method == "POST":
+
+        login_id = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT * FROM admins
+            WHERE username = ?
+                OR mobile = ?
+            """,
+            (login_id, login_id)
+        )
+
+        admin = cursor.fetchone()
+
+        conn.close()
+
+        if admin and check_password_hash(admin["password"], password):
+
+            session["admin_id"] = admin["admin_id"]
+            session["username"] = admin["username"]
+
+            flash("Login Successful!", "success")
+
+            return redirect("/dashboard")
+
+        else:
+
+            flash("Invalid username/mobile number or password.", "danger")
+
+    return render_template("auth/login.html", show_signup=show_signup)
+
+@auth_bp.route("/logout")
+def logout():
+
+    session.clear()
+
+    flash("Logged out successfully.", "success")
+
+    return redirect("/")
+
+
+@auth_bp.route("/register", methods=["GET", "POST"])
+def register():
+
+    if request.method == "POST":
+        
+        full_name = request.form.get("full_name", "").strip()
+        username = request.form.get("username", "").strip()
+        mobile = request.form.get("mobile", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        
+         #Password validation
+
+        if not mobile.isdigit() or len(mobile) != 10:
+
+           flash("Please enter a valid 10-digit mobile number.", "danger")
+
+           return redirect("/register")
+
+
+        if password != confirm_password:
+
+           flash("Passwords do not match.", "danger")
+
+           return redirect("/register")
+        
+         #username exists
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+             """
+             SELECT *
+             FROM admins
+             WHERE username = ?
+              """,
+             (username,)
+        )
+
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+
+           conn.close()
+
+           flash("Username already exists.", "danger")
+
+           return redirect("/register")
+        
+        #mobile exists
+        cursor.execute(
+            """
+           SELECT *
+           FROM admins
+           WHERE mobile = ?
+            """,
+          (mobile,)
+        )
+
+        existing_mobile = cursor.fetchone()
+
+        if existing_mobile:
+
+           conn.close()
+
+           flash("Mobile number is already registered.", "danger")
+
+           return redirect("/register")
+
+        hashed_password = generate_password_hash(password)
+
+        cursor.execute(
+            """
+            INSERT INTO admins (full_name, username, mobile, email, password, role)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (full_name, username, mobile, email, hashed_password, "Admin")
+        )
+
+        conn.commit()
+        conn.close()
+
+        flash(
+              "Account created successfully. Please login.",
+             "success"
+        )
+
+        return redirect("/")
+    return render_template("auth/register.html")
+
+
+
+@auth_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+
+    if request.method == "POST":
+
+        mobile = request.form.get("mobile", "").strip()
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if new_password != confirm_password:
+
+            flash("Passwords do not match.", "danger")
+
+            return redirect("/forgot-password")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+             """
+            SELECT * FROM admins
+            WHERE mobile = ?
+            """,
+            (mobile,)
+        )
+
+        admin = cursor.fetchone()
+
+        if not admin:
+
+           conn.close()
+
+           flash("Mobile number not found.", "danger")
+
+           return redirect("/forgot-password")
+
+        hashed_password = generate_password_hash(new_password)
+
+        cursor.execute(
+        """
+          UPDATE admins
+          SET password = ?
+          WHERE admin_id = ?
+        """,
+        (hashed_password, admin["admin_id"])
+         )
+
+        conn.commit()
+        conn.close()
+
+        flash("Password changed successfully. Please login.", "success")
+
+        return redirect(url_for("auth.login"))
+
+    return render_template("auth/forgot_password.html")

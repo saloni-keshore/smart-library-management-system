@@ -1,0 +1,189 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Students
+{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid mt-4">
+
+    <!-- Header -->
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <h2>
+
+            <i class="bi bi-people-fill"></i>
+
+            Students
+
+        </h2>
+
+        <input
+            type="text"
+            id="searchStudent"
+            class="form-control w-25"
+            placeholder="Search Student...">
+
+    </div>
+
+    <div class="card shadow">
+
+        <div class="card-body">
+
+            <table class="table table-hover align-middle" id="studentTable">
+
+                <thead class="table-dark">
+
+                    <tr>
+
+                        <th>#</th>
+
+                        <th>Library ID</th>
+
+                        <th>Name</th>
+
+                        <th>Mobile</th>
+
+                        <th>Membership</th>
+
+                        <th>Status</th>
+
+                        <th>Pending</th>
+
+                        <th width="260">
+
+                            Actions
+
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                {% for student in students %}
+
+                <tr>
+
+                    <td> LIB{{ "%04d"|format(student.student_id) }}</td>
+
+                    <td>
+
+                        LIB{{ "%04d"|format(student.student_id) }}
+
+                    </td>
+
+                    <td>{{ student.full_name }}</td>
+
+                    <td>{{ student.mobile }}</td>
+
+                    <td>
+
+                        {{ student.plan_name or "-" }}
+
+                    </td>
+
+                    <td>
+
+                        {% if student.membership_status == "Active" %}
+
+                        <span class="badge bg-success">
+
+                            Active
+
+                        </span>
+
+                        {% else %}
+
+                        <span class="badge bg-danger">
+
+                            Expired
+
+                        </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        ₹{{ student.pending_amount or 0 }}
+
+                    </td>
+
+                    <td>
+
+                        <a
+                            href="{{ url_for('student.view', student_id=student.student_id) }}"
+                            class="btn btn-sm btn-primary">
+
+                            <i class="bi bi-eye"></i>
+
+                        </a>
+
+                        <a
+                            href="#"
+                            class="btn btn-sm btn-warning">
+
+                            <i class="bi bi-pencil"></i>
+
+                        </a>
+
+                        <a
+                            href="#"
+                            class="btn btn-sm btn-success">
+
+                            <i class="bi bi-credit-card"></i>
+
+                        </a>
+
+                        <a
+                            href="#"
+                            class="btn btn-sm btn-info">
+
+                            <i class="bi bi-arrow-repeat"></i>
+
+                        </a>
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+const search=document.getElementById("searchStudent");
+
+search.addEventListener("keyup",function(){
+
+    let value=this.value.toLowerCase();
+
+    let rows=document.querySelectorAll("#studentTable tbody tr");
+
+    rows.forEach(function(row){
+
+        row.style.display=row.innerText.toLowerCase().includes(value)
+        ? ""
+        : "none";
+
+    });
+
+});
+
+</script>
+
+{% endblock %}

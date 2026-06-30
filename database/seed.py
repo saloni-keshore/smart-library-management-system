@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from werkzeug.security import generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -16,28 +17,8 @@ def initialize_database():
 
     cursor = connection.cursor()
 
-    # Default Settings
 
-    cursor.execute("""
-        INSERT INTO settings
-        (
-            library_name,
-            owner_name,
-            receipt_mode,
-            receipt_prefix,
-            next_receipt_number
-        )
-        SELECT
-            'Smart Library',
-            '',
-            'auto',
-            'RCP-',
-            1001
-        WHERE NOT EXISTS
-        (
-            SELECT 1 FROM settings
-        );
-    """)
+
 
     connection.commit()
     connection.close()

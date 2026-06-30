@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS admins (
     full_name TEXT NOT NULL,
     username TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
+    mobile TEXT NOT NULL UNIQUE,
+    email TEXT,
+    role TEXT DEFAULT 'admin',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -53,11 +56,15 @@ CREATE TABLE IF NOT EXISTS students (
     student_id INTEGER PRIMARY KEY AUTOINCREMENT,
     enquiry_id INTEGER,
     full_name TEXT NOT NULL,
-    mobile TEXT,
+    mobile TEXT NOT NULL UNIQUE,
+    address TEXT,
+    id_proof TEXT,
     purpose TEXT,
     shift TEXT,
     join_date DATE,
     status TEXT DEFAULT 'Active',
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (enquiry_id)
     REFERENCES enquiries(enquiry_id)
@@ -69,13 +76,17 @@ CREATE TABLE IF NOT EXISTS students (
 CREATE TABLE IF NOT EXISTS memberships (
     membership_id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL,
-    start_date DATE,
-    end_date DATE,
-    total_fee REAL,
-    paid_amount REAL,
+    plan_name TEXT NOT NULL,
+    joining_date DATE NOT NULL,
+    duration_days INTEGER ,
+    end_date DATE NOT NULL,
+    total_fee REAL NOT NULL,
+    paid_amount REAL DEFAULT 0,
     pending_amount REAL DEFAULT 0,
     remarks TEXT,
     membership_status TEXT DEFAULT 'Active',
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY(student_id)
     REFERENCES students(student_id)
@@ -85,16 +96,31 @@ CREATE TABLE IF NOT EXISTS memberships (
 -- Payments
 
 CREATE TABLE IF NOT EXISTS payments (
+
     payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    membership_id INTEGER,
-    receipt_number TEXT,
-    payment_mode TEXT,
-    amount REAL,
-    payment_date DATE,
+
+    membership_id INTEGER NOT NULL,
+
+    student_id INTEGER NOT NULL,
+
+    receipt_number TEXT UNIQUE,
+
+    payment_mode TEXT NOT NULL,
+
+    amount_paid REAL NOT NULL,
+
+    payment_date DATE DEFAULT CURRENT_DATE,
+
     remarks TEXT,
 
-    FOREIGN KEY(membership_id)
-    REFERENCES memberships(membership_id)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (membership_id)
+    REFERENCES memberships(membership_id),
+
+    FOREIGN KEY (student_id)
+    REFERENCES students(student_id)
+
 );
 
 

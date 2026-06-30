@@ -1,5 +1,53 @@
-body{
+/* ==========================
+   Dashboard Cards
+========================== */
 
-    background:#f5f7fa;
+.stat-card{
+
+    border-radius:18px;
+
+    transition:0.3s;
+
+    cursor:pointer;
+
+}
+
+.stat-card:hover{
+
+    transform:translateY(-5px);
+
+    box-shadow:0 15px 30px rgba(0,0,0,.08);
+
+}
+
+.icon-circle{
+
+    width:65px;
+
+    height:65px;
+
+    border-radius:18px;
+
+    background:#EEF4FF;
+
+    display:flex;
+
+    justify-content:center;
+
+    align-items:center;
+
+    font-size:30px;
+
+}
+
+.text-success{
+
+    font-weight:600;
+
+}
+
+.text-danger{
+
+    font-weight:600;
 
 }

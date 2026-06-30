@@ -1,18 +1,96 @@
 {% extends "layouts/base.html" %}
 
 {% block title %}
-
 Dashboard
-
 {% endblock %}
 
 {% block content %}
 
-<div class="container mt-5">
+<div class="main-content">
 
-<h1>Dashboard</h1>
+    <h1 class="fw-bold">
+        Dashboard
+    </h1>
 
-<p>Welcome to Smart Library Pro 🚀</p>
+    <p class="text-muted">
+        Welcome back, Admin! Here's what's happening in your library today.
+    </p>
+
+    <div class="row g-4 mt-3">
+
+        <!-- Total Students -->
+        {% with
+        title="Total Students",
+        value=total_students,
+        trend="Live",
+        trend_color="text-success",
+        trend_icon="bi-check-circle-fill",
+        icon="bi bi-people-fill text-primary"
+        %}
+        {% include "components/stat_card.html" %}
+        {% endwith %}
+
+        <!-- Total Enquiries -->
+        {% with
+        title="Total Enquiries",
+        value=total_enquiries,
+        trend="Live",
+        trend_color="text-primary",
+        trend_icon="bi-journal-check",
+        icon="bi bi-person-lines-fill text-info"
+        %}
+        {% include "components/stat_card.html" %}
+        {% endwith %}
+
+        <!-- Active Memberships -->
+        {% with
+        title="Active Memberships",
+        value=active_memberships,
+        trend="Live",
+        trend_color="text-success",
+        trend_icon="bi-check-circle-fill",
+        icon="bi bi-card-checklist text-success"
+        %}
+        {% include "components/stat_card.html" %}
+        {% endwith %}
+
+        <!-- Today's Collection -->
+        {% with
+        title="Today's Collection",
+        value="₹" ~ today_collection,
+        trend="Today",
+        trend_color="text-success",
+        trend_icon="bi-cash-coin",
+        icon="bi bi-currency-rupee text-warning"
+        %}
+        {% include "components/stat_card.html" %}
+        {% endwith %}
+
+        <!-- Total Revenue -->
+        {% with
+        title="Total Revenue",
+        value="₹" ~ total_revenue,
+        trend="Overall",
+        trend_color="text-primary",
+        trend_icon="bi-graph-up-arrow",
+        icon="bi bi-wallet2 text-primary"
+        %}
+        {% include "components/stat_card.html" %}
+        {% endwith %}
+
+        <!-- Pending Amount -->
+        {% with
+        title="Pending Fees",
+        value="₹" ~ pending_amount,
+        trend="To Collect",
+        trend_color="text-danger",
+        trend_icon="bi-exclamation-circle-fill",
+        icon="bi bi-hourglass-split text-danger"
+        %}
+        {% include "components/stat_card.html" %}
+        {% endwith %}
+
+    </div>
 
 </div>
 
