@@ -1,0 +1,54 @@
+<div class="d-flex justify-content-between align-items-center mb-4">
+
+    <div>
+
+        <h2 class="fw-bold mb-1">
+
+            Dashboard
+
+        </h2>
+
+        <!-- <p class="text-muted mb-1">
+
+            Welcome back, Admin 👋
+
+        </p> -->
+
+        <small class="text-secondary">
+
+            Manage your library efficiently from one place.
+
+        </small>
+
+    </div>
+
+    <!-- <div class="text-end">
+
+        <small class="text-muted">
+
+            Today's Date
+
+        </small>
+
+        <h5 class="fw-bold mb-0" id="dashboardDate">
+
+            Loading...
+
+        </h5>
+
+    </div> -->
+
+</div>
+
+<script>
+
+const today = new Date();
+
+const day = String(today.getDate()).padStart(2, "0");
+const month = String(today.getMonth() + 1).padStart(2, "0");
+const year = today.getFullYear();
+
+document.getElementById("dashboardDate").innerHTML =
+`${day}/${month}/${year}`;
+
+</script>

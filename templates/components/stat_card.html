@@ -2,34 +2,32 @@
 
     <div class="card stat-card shadow-sm border-0">
 
-        <div class="card-body">
+        <div class="card-body stat-card-body">
 
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="stat-card-top">
 
-                <div>
-
-                    <small class="text-muted fw-semibold">
-                        {{ title }}
-                    </small>
-
-                    <h2 class="fw-bold mt-2 mb-2">
-                        {{ value }}
-                    </h2>
-
-                    <small class="{{ trend_color }}">
-                        <i class="bi {{ trend_icon }}"></i>
-
-                        {{ trend }}
-
-                    </small>
-
-                </div>
+                <span class="stat-card-title">
+                    {{ title }}
+                </span>
 
                 <div class="icon-circle">
 
                     <i class="{{ icon }}"></i>
 
                 </div>
+
+            </div>
+
+            <div class="stat-card-value">
+                {{ value }}
+            </div>
+
+            <div class="stat-card-footer">
+
+                <small class="{{ trend_color }}">
+                    <i class="bi {{ trend_icon }}"></i>
+                    {{ trend }}
+                </small>
 
             </div>
 

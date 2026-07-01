@@ -1,3 +1,9 @@
+{% macro nav_badge(count) %}
+{% if count is defined and count and count > 0 %}
+<span class="nav-badge">{{ count if count <= 99 else "99+" }}</span>
+{% endif %}
+{% endmacro %}
+
 <div class="sidebar">
 
     <!-- Logo -->
@@ -37,6 +43,7 @@
             <a class="nav-link {% if request.endpoint and request.endpoint.startswith('enquiry.') %}active{% endif %}" href="{{ url_for('enquiry.index') }}">
                 <i class="bi bi-person-lines-fill"></i>
                 Enquiries
+                {{ nav_badge(enquiries_new_count) }}
             </a>
         </li>
 
@@ -44,6 +51,7 @@
             <a class="nav-link {% if request.endpoint and request.endpoint.startswith('student.') %}active{% endif %}" href="{{ url_for('student.index') }}">
                 <i class="bi bi-people-fill"></i>
                 Students
+                {{ nav_badge(students_new_today_count) }}
             </a>
         </li>
 
@@ -51,6 +59,7 @@
             <a class="nav-link {% if request.endpoint and request.endpoint.startswith('membership.') %}active{% endif %}" href="{{ url_for('membership.index') }}">
                 <i class="bi bi-person-vcard-fill"></i>
                 Memberships
+                {{ nav_badge(memberships_expiring_soon_count) }}
             </a>
         </li>
 
@@ -58,6 +67,7 @@
             <a class="nav-link {% if request.endpoint and request.endpoint.startswith('payment.') %}active{% endif %}" href="{{ url_for('payment.index') }}">
                 <i class="bi bi-credit-card-2-front-fill"></i>
                 Payments
+                {{ nav_badge(payments_pending_count) }}
             </a>
         </li>
 
@@ -95,18 +105,24 @@
 
     </ul>
 
-    <hr>
+    <div class="sidebar-footer mt-auto px-3">
 
-    <!-- Logout -->
-    <div class="px-3 mt-auto mb-4">
+        <!-- User profile -->
+        <div class="sidebar-profile">
+            <div class="avatar-circle">
+                <i class="bi bi-person-fill"></i>
+            </div>
+            <div>
+                <div class="profile-name">{{ session.get('username', 'Admin') }}</div>
+                <div class="profile-role">Administrator</div>
+            </div>
+        </div>
 
+        <!-- Logout -->
         <a href="{{ url_for('auth.logout') }}"
-           class="btn btn-danger w-100 rounded-3">
-
+           class="btn btn-logout w-100 rounded-3 mb-3">
             <i class="bi bi-box-arrow-right"></i>
-
             Logout
-
         </a>
 
     </div>

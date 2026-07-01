@@ -1,0 +1,95 @@
+<div class="col-lg-6 mb-4 fade-up">
+
+    <div class="card dashboard-card border-0 shadow-sm rounded-4">
+
+        <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+
+            <h5 class="fw-bold mb-0">
+
+                Recent Admissions
+
+            </h5>
+
+            <button class="btn btn-sm btn-outline-secondary">
+
+                View All
+
+            </button>
+
+        </div>
+
+        <div class="card-body p-0">
+
+            <table class="table table-sm table-hover align-middle mb-0">
+
+                <thead class="table-light">
+
+                    <tr>
+
+                        <th>Library ID</th>
+
+                        <th>Name</th>
+
+                        <th>Plan</th>
+
+                        <th>Admission Date</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% if admissions %}
+
+                    {% for admission in admissions %}
+
+                    <tr>
+
+                        <td>{{ admission.library_id }}</td>
+
+                        <td>{{ admission.student_name }}</td>
+
+                        <td>{{ admission.plan }}</td>
+
+                        <td>{{ admission.admission_date }}</td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                    {% else %}
+
+                    <tr>
+
+                        <td colspan="4" class="p-0 border-0">
+
+                            <div class="empty-state">
+
+                                <i class="bi bi-mortarboard empty-state-icon"></i>
+
+                                <h6 class="empty-state-title">
+                                    No recent admissions
+                                </h6>
+
+                                <small class="empty-state-subtitle">
+                                    New students will appear here.
+                                </small>
+
+                            </div>
+
+                        </td>
+
+                    </tr>
+
+                    {% endif %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>

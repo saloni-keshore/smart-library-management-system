@@ -1,0 +1,131 @@
+<div class="col-12 mb-4 fade-up">
+
+    <div class="card dashboard-card border-0 shadow-sm rounded-4">
+
+        <div class="card-header bg-white border-0">
+
+            <h4 class="fw-bold mb-0">
+
+                <i class="bi bi-lightbulb-fill text-warning me-2"></i>
+
+                Library Highlights
+
+            </h4>
+
+        </div>
+
+        <div class="card-body">
+
+            <div class="row g-4">
+
+                <div class="col-12 col-sm-6 col-lg-3">
+
+                    <div class="insight-item">
+
+                        <div class="insight-icon bg-danger-subtle text-danger">
+
+                            <i class="bi bi-calendar-event-fill"></i>
+
+                        </div>
+
+                        <div>
+
+                            <h6 class="insight-label">
+                                Upcoming Renewals
+                            </h6>
+
+                            <span class="insight-value">
+                                {{ upcoming_renewals if upcoming_renewals is defined else "--" }}
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="col-12 col-sm-6 col-lg-3">
+
+                    <div class="insight-item">
+
+                        <div class="insight-icon bg-success-subtle text-success">
+
+                            <i class="bi bi-cash-stack"></i>
+
+                        </div>
+
+                        <div>
+
+                            <h6 class="insight-label">
+                                Pending Fees
+                            </h6>
+
+                            <span class="insight-value">
+                                {{ "₹" ~ pending_amount if pending_amount is defined else "--" }}
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="col-12 col-sm-6 col-lg-3">
+
+                    <div class="insight-item">
+
+                        <div class="insight-icon bg-primary-subtle text-primary">
+
+                            <i class="bi bi-people-fill"></i>
+
+                        </div>
+
+                        <div>
+
+                            <h6 class="insight-label">
+                                Active Memberships
+                            </h6>
+
+                            <span class="insight-value">
+                                {{ active_memberships if active_memberships is defined else "--" }}
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="col-12 col-sm-6 col-lg-3">
+
+                    <div class="insight-item">
+
+                        <div class="insight-icon bg-warning-subtle text-warning">
+
+                            <i class="bi bi-graph-up-arrow"></i>
+
+                        </div>
+
+                        <div>
+
+                            <h6 class="insight-label">
+                                Revenue Summary
+                            </h6>
+
+                            <span class="insight-value">
+                                {{ "₹" ~ total_revenue if total_revenue is defined else "--" }}
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>

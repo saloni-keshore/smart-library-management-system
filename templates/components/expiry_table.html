@@ -1,0 +1,95 @@
+<div class="col-lg-6 mb-4 fade-up">
+
+    <div class="card dashboard-card border-0 shadow-sm rounded-4">
+
+        <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+
+            <h5 class="fw-bold mb-0">
+
+                Upcoming Expiries
+
+            </h5>
+
+            <button class="btn btn-sm btn-outline-primary">
+
+                View All
+
+            </button>
+
+        </div>
+
+        <div class="card-body p-0">
+
+            <table class="table table-sm table table-hover align-middle mb-0">
+
+                <thead class="table-light">
+
+                    <tr>
+
+                        <th>Library ID</th>
+
+                        <th>Student</th>
+
+                        <th>Expiry</th>
+
+                        <th>Days Left</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% if expiries %}
+
+                    {% for expiry in expiries %}
+
+                    <tr>
+
+                        <td>{{ expiry.library_id }}</td>
+
+                        <td>{{ expiry.student_name }}</td>
+
+                        <td>{{ expiry.end_date }}</td>
+
+                        <td>{{ expiry.days_left }}</td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                    {% else %}
+
+                    <tr>
+
+                        <td colspan="4" class="p-0 border-0">
+
+                            <div class="empty-state">
+
+                                <i class="bi bi-calendar-check empty-state-icon"></i>
+
+                                <h6 class="empty-state-title">
+                                    No upcoming expiries
+                                </h6>
+
+                                <small class="empty-state-subtitle">
+                                    Everything looks good.
+                                </small>
+
+                            </div>
+
+                        </td>
+
+                    </tr>
+
+                    {% endif %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>
