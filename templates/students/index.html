@@ -52,7 +52,7 @@ Students
 
                         <th>Pending</th>
 
-                        <th width="260">
+                        <th width="130">
 
                             Actions
 
@@ -116,39 +116,59 @@ Students
 
                     <td>
 
-                        <a
-                            href="{{ url_for('student.view', student_id=student.student_id) }}"
-                            class="btn btn-sm btn-primary">
+                        <div class="dropdown">
 
-                            <i class="bi bi-eye"></i>
+                            <button
+                                class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                                type="button"
+                                data-bs-toggle="dropdown"
+                                aria-expanded="false">
 
-                        </a>
+                                Actions
 
-                        <a
-                            href="{{ url_for('student.edit', student_id=student.student_id) }}"
-                            class="btn btn-sm btn-warning">
+                            </button>
 
-                            <i class="bi bi-pencil"></i>
+                            <ul class="dropdown-menu">
 
-                        </a>
+                                <li>
+                                    <a class="dropdown-item"
+                                       href="{{ url_for('student.view', student_id=student.student_id) }}">
+                                        <i class="bi bi-eye me-2"></i>
+                                        View Details
+                                    </a>
+                                </li>
 
-                        {% if student.membership_status %}
-                        <a
-                            href="{{ url_for('payment.collect', membership_id=student.membership_id) }}"
-                            class="btn btn-sm btn-success">
+                                <li>
+                                    <a class="dropdown-item"
+                                       href="{{ url_for('student.edit', student_id=student.student_id) }}">
+                                        <i class="bi bi-pencil-square me-2"></i>
+                                        Edit
+                                    </a>
+                                </li>
 
-                            <i class="bi bi-credit-card"></i>
+                                {% if student.membership_status == 'Active' %}
+                                <li>
+                                    <a class="dropdown-item"
+                                       href="{{ url_for('payment.collect', membership_id=student.membership_id) }}">
+                                        <i class="bi bi-credit-card me-2"></i>
+                                        Collect Payment
+                                    </a>
+                                </li>
+                                {% endif %}
 
-                        </a>
-                        {% endif %}
+                                {% if student.membership_id %}
+                                <li>
+                                    <a class="dropdown-item"
+                                       href="{{ url_for('membership.renew', student_id=student.student_id) }}">
+                                        <i class="bi bi-arrow-repeat me-2"></i>
+                                        Renew Membership
+                                    </a>
+                                </li>
+                                {% endif %}
 
-                        <a
-                            href="{{ url_for('membership.renew', student_id=student.student_id) }}"
-                            class="btn btn-sm btn-info">
+                            </ul>
 
-                            <i class="bi bi-arrow-repeat"></i>
-
-                        </a>
+                        </div>
 
                     </td>
 

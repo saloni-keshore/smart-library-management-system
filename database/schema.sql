@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS enquiries (
     enquiry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER NOT NULL,
     full_name TEXT NOT NULL,
     mobile TEXT NOT NULL,
     purpose TEXT,
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS enquiries (
     followup_date DATE,
     remarks TEXT,
     status TEXT DEFAULT 'Interested',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
 );
 
 
@@ -54,9 +56,10 @@ CREATE TABLE IF NOT EXISTS enquiries (
 
 CREATE TABLE IF NOT EXISTS students (
     student_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER NOT NULL,
     enquiry_id INTEGER,
     full_name TEXT NOT NULL,
-    mobile TEXT NOT NULL UNIQUE,
+    mobile TEXT NOT NULL,
     address TEXT,
     id_proof TEXT,
     purpose TEXT,
@@ -66,8 +69,10 @@ CREATE TABLE IF NOT EXISTS students (
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (enquiry_id)
-    REFERENCES enquiries(enquiry_id)
+    UNIQUE(mobile, admin_id),
+
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id),
+    FOREIGN KEY (enquiry_id) REFERENCES enquiries(enquiry_id)
 );
 
 

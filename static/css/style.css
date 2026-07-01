@@ -51,3 +51,240 @@
     font-weight:600;
 
 }
+
+
+/* ==============================
+   Dashboard Layout
+================================= */
+
+.sidebar-wrapper{
+
+    width:260px;
+
+    min-width:260px;
+
+    height:100vh;
+
+    position:fixed;
+
+    left:0;
+
+    top:70px;
+
+    overflow-y:auto;
+
+    background:#fff;
+
+    border-right:1px solid #e9ecef;
+
+}
+
+.content-wrapper{
+
+    margin-left:260px;
+
+    width:calc(100% - 260px);
+
+    padding:30px;
+
+    background:#f8fafc;
+
+    min-height:100vh;
+
+}
+
+/* ===========================
+   Sidebar
+=========================== */
+
+.sidebar{
+
+    height:100%;
+
+    background:#ffffff;
+
+    display:flex;
+
+    flex-direction:column;
+
+    padding:20px;
+
+}
+
+.sidebar-header{
+
+    padding-top:10px;
+
+}
+
+.logo-circle{
+
+    width:70px;
+
+    height:70px;
+
+    margin:auto;
+
+    border-radius:20px;
+
+    background:#2563eb;
+
+    color:#fff;
+
+    display:flex;
+
+    justify-content:center;
+
+    align-items:center;
+
+    font-size:32px;
+
+}
+
+.menu-title{
+
+    color:#9ca3af;
+
+    font-size:12px;
+
+    font-weight:600;
+
+    letter-spacing:1px;
+
+    margin:10px 15px;
+
+    display:block;
+
+}
+
+.sidebar .nav-link{
+
+    color:#374151;
+
+    padding:12px 16px;
+
+    border-radius:12px;
+
+    margin-bottom:6px;
+
+    display:flex;
+
+    align-items:center;
+
+    gap:12px;
+
+    transition:.25s;
+
+    font-weight:500;
+
+}
+
+.sidebar .nav-link i{
+
+    font-size:18px;
+
+}
+
+.sidebar .nav-link:hover{
+
+    background:#eef4ff;
+
+    color:#2563eb;
+
+}
+
+.sidebar .nav-link.active{
+
+    background:#2563eb;
+
+    color:#fff;
+
+}
+
+.sidebar hr{
+
+    margin:20px 0;
+
+    opacity:.15;
+
+}
+
+/* ==========================
+   Navbar
+========================== */
+
+.navbar{
+
+    height:70px;
+
+    background:#ffffff;
+
+    z-index:1030;
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+}
+
+.navbar-left{
+
+    display:flex;
+
+    align-items:center;
+
+    flex-shrink:0;
+
+}
+
+.navbar-center{
+
+    flex:1;
+
+    max-width:420px;
+
+    margin:0 20px;
+
+}
+
+.navbar-right{
+
+    display:flex;
+
+    align-items:center;
+
+    flex-shrink:0;
+
+}
+
+.navbar .form-control{
+
+    width:300px;
+
+    border-radius:12px;
+
+}
+
+.navbar .input-group-text{
+
+    border-radius:12px 0 0 12px;
+
+}
+
+.navbar .btn{
+
+    border-radius:12px;
+
+}
+
+.dropdown-menu{
+
+    border-radius:15px;
+
+    border:none;
+
+    box-shadow:0 10px 30px rgba(0,0,0,.08);
+
+}

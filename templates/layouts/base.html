@@ -10,57 +10,54 @@
     <title>{% block title %}Smart Library Pro{% endblock %}</title>
 
     <!-- Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+          rel="stylesheet">
 
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet">
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+          rel="stylesheet">
 
-<!-- Bootstrap -->
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
-      rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
 
-<!-- Bootstrap Icons -->
-
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-
-<!-- Custom CSS -->
-
-<link rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
 <body>
 
-{% include 'layouts/navbar.html' %}
+    <!-- Top Navbar -->
+    {% include 'layouts/navbar.html' %}
 
-<div class="container-fluid">
+    <!-- Main Layout -->
+    <div class="d-flex">
 
-    <div class="row">
-
-        <div class="col-md-2 p-0">
+        <!-- Sidebar -->
+        <div class="sidebar-wrapper">
 
             {% include 'layouts/sidebar.html' %}
 
         </div>
 
-        <div class="col-md-10 p-4">
+        <!-- Main Content -->
+        <main class="content-wrapper">
 
             {% block content %}
 
             {% endblock %}
 
-        </div>
+        </main>
 
     </div>
 
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
 

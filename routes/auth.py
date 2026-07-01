@@ -19,6 +19,20 @@ auth_bp = Blueprint(
 )
 
 
+def validate_password(password):
+    """
+    Returns an error message string if password is invalid, else None.
+    Rules: min 8 chars, at least 1 letter, at least 1 digit.
+    """
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if not any(c.isalpha() for c in password):
+        return "Password must contain at least one letter."
+    if not any(c.isdigit() for c in password):
+        return "Password must contain at least one number."
+    return None
+
+
 @auth_bp.route("/", methods=["GET", "POST"])
 def login():
 
@@ -32,8 +46,6 @@ def login():
     conn.close()
 
     show_signup = (admin_count == 0)
-
-   
 
     if request.method == "POST":
 
@@ -71,6 +83,7 @@ def login():
 
     return render_template("auth/login.html", show_signup=show_signup)
 
+
 @auth_bp.route("/logout")
 def logout():
 
@@ -85,72 +98,54 @@ def logout():
 def register():
 
     if request.method == "POST":
-        
+
         full_name = request.form.get("full_name", "").strip()
         username = request.form.get("username", "").strip()
         mobile = request.form.get("mobile", "").strip()
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
-        
-         #Password validation
 
+        # Mobile validation
         if not mobile.isdigit() or len(mobile) != 10:
+            flash("Please enter a valid 10-digit mobile number.", "danger")
+            return redirect("/register")
 
-           flash("Please enter a valid 10-digit mobile number.", "danger")
-
-           return redirect("/register")
-
-
+        # Password match
         if password != confirm_password:
+            flash("Passwords do not match.", "danger")
+            return redirect("/register")
 
-           flash("Passwords do not match.", "danger")
-
-           return redirect("/register")
-        
-         #username exists
+        # Password strength
+        error = validate_password(password)
+        if error:
+            flash(error, "danger")
+            return redirect("/register")
 
         conn = get_connection()
         cursor = conn.cursor()
 
+        # Username exists check
         cursor.execute(
-             """
-             SELECT *
-             FROM admins
-             WHERE username = ?
-              """,
-             (username,)
+            "SELECT admin_id FROM admins WHERE username = ?",
+            (username,)
         )
 
-        existing_user = cursor.fetchone()
+        if cursor.fetchone():
+            conn.close()
+            flash("Username already exists.", "danger")
+            return redirect("/register")
 
-        if existing_user:
-
-           conn.close()
-
-           flash("Username already exists.", "danger")
-
-           return redirect("/register")
-        
-        #mobile exists
+        # Mobile exists check
         cursor.execute(
-            """
-           SELECT *
-           FROM admins
-           WHERE mobile = ?
-            """,
-          (mobile,)
+            "SELECT admin_id FROM admins WHERE mobile = ?",
+            (mobile,)
         )
 
-        existing_mobile = cursor.fetchone()
-
-        if existing_mobile:
-
-           conn.close()
-
-           flash("Mobile number is already registered.", "danger")
-
-           return redirect("/register")
+        if cursor.fetchone():
+            conn.close()
+            flash("Mobile number is already registered.", "danger")
+            return redirect("/register")
 
         hashed_password = generate_password_hash(password)
 
@@ -165,14 +160,11 @@ def register():
         conn.commit()
         conn.close()
 
-        flash(
-              "Account created successfully. Please login.",
-             "success"
-        )
+        flash("Account created successfully. Please login.", "success")
 
         return redirect("/")
-    return render_template("auth/register.html")
 
+    return render_template("auth/register.html")
 
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
@@ -180,47 +172,61 @@ def forgot_password():
 
     if request.method == "POST":
 
+        full_name = request.form.get("full_name", "").strip()
         mobile = request.form.get("mobile", "").strip()
         new_password = request.form.get("new_password", "")
         confirm_password = request.form.get("confirm_password", "")
 
+        # Mobile format check
+        if not mobile.isdigit() or len(mobile) != 10:
+            flash("Please enter a valid 10-digit mobile number.", "danger")
+            return redirect("/forgot-password")
+
+        # Password match
         if new_password != confirm_password:
-
             flash("Passwords do not match.", "danger")
+            return redirect("/forgot-password")
 
+        # Password strength
+        error = validate_password(new_password)
+        if error:
+            flash(error, "danger")
             return redirect("/forgot-password")
 
         conn = get_connection()
         cursor = conn.cursor()
 
+        # Require BOTH full name AND mobile to match — prevents reset with
+        # just a known phone number.
         cursor.execute(
-             """
+            """
             SELECT * FROM admins
             WHERE mobile = ?
+            AND LOWER(full_name) = LOWER(?)
             """,
-            (mobile,)
+            (mobile, full_name)
         )
 
         admin = cursor.fetchone()
 
         if not admin:
-
-           conn.close()
-
-           flash("Mobile number not found.", "danger")
-
-           return redirect("/forgot-password")
+            conn.close()
+            flash(
+                "No account found with that name and mobile number.",
+                "danger"
+            )
+            return redirect("/forgot-password")
 
         hashed_password = generate_password_hash(new_password)
 
         cursor.execute(
-        """
-          UPDATE admins
-          SET password = ?
-          WHERE admin_id = ?
-        """,
-        (hashed_password, admin["admin_id"])
-         )
+            """
+            UPDATE admins
+            SET password = ?
+            WHERE admin_id = ?
+            """,
+            (hashed_password, admin["admin_id"])
+        )
 
         conn.commit()
         conn.close()

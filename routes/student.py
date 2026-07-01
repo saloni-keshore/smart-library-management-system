@@ -4,7 +4,8 @@ from flask import (
     redirect,
     url_for,
     flash,
-    request
+    request,
+    session
 )
 
 from database.db import get_connection
@@ -17,12 +18,13 @@ student_bp = Blueprint(
 )
 
 
-# ---------------------------------------
-# Student List
-# ---------------------------------------
-
 @student_bp.route("/")
 def index():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -39,7 +41,10 @@ def index():
             m.membership_id,
             m.plan_name,
             m.pending_amount,
-            m.membership_status
+            CASE
+                WHEN m.end_date IS NOT NULL AND m.end_date < DATE('now') THEN 'Expired'
+                ELSE m.membership_status
+            END AS membership_status
 
         FROM students s
 
@@ -52,35 +57,31 @@ def index():
                 LIMIT 1
             )
 
+        WHERE s.admin_id = ?
         ORDER BY s.student_id DESC
-    """)
+    """, (admin_id,))
 
     students = cursor.fetchall()
-
     conn.close()
 
-    return render_template(
-        "students/index.html",
-        students=students
-    )
+    return render_template("students/index.html", students=students)
 
-
-# ---------------------------------------
-# Student Admission
-# ---------------------------------------
 
 @student_bp.route("/admission/<int:enquiry_id>", methods=["GET", "POST"])
 def admission(enquiry_id):
 
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT *
-        FROM enquiries
-        WHERE enquiry_id = ?
-    """, (enquiry_id,))
-
+    cursor.execute(
+        "SELECT * FROM enquiries WHERE enquiry_id=? AND admin_id=?",
+        (enquiry_id, admin_id)
+    )
     enquiry = cursor.fetchone()
 
     if enquiry is None:
@@ -94,55 +95,25 @@ def admission(enquiry_id):
         id_proof = request.form.get("id_proof", "").strip()
         join_date = request.form.get("join_date")
 
-        # -------------------------------
-        # Check Existing Student
-        # -------------------------------
+        # Check if this mobile already admitted under THIS admin
+        cursor.execute(
+            "SELECT student_id FROM students WHERE mobile=? AND admin_id=?",
+            (enquiry["mobile"], admin_id)
+        )
+        existing = cursor.fetchone()
 
-        cursor.execute("""
-            SELECT student_id
-            FROM students
-            WHERE mobile = ?
-        """, (enquiry["mobile"],))
-
-        existing_student = cursor.fetchone()
-
-        if existing_student is not None:
-
+        if existing is not None:
             conn.close()
-
-            flash(
-                "This student has already been admitted.",
-                "warning"
-            )
-
-            return redirect(
-                url_for(
-                    "student.view",
-                    student_id=existing_student["student_id"]
-                )
-            )
-
-        # -------------------------------
-        # Insert Student
-        # -------------------------------
+            flash("This student has already been admitted.", "warning")
+            return redirect(url_for("student.view", student_id=existing["student_id"]))
 
         cursor.execute("""
             INSERT INTO students
-            (
-                enquiry_id,
-                full_name,
-                mobile,
-                address,
-                id_proof,
-                purpose,
-                shift,
-                join_date,
-                status
-            )
-            VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
+            (admin_id, enquiry_id, full_name, mobile, address, id_proof,
+             purpose, shift, join_date, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            admin_id,
             enquiry["enquiry_id"],
             enquiry["full_name"],
             enquiry["mobile"],
@@ -156,86 +127,58 @@ def admission(enquiry_id):
 
         student_id = cursor.lastrowid
 
-        cursor.execute("""
-            UPDATE enquiries
-            SET status = ?
-            WHERE enquiry_id = ?
-        """,
-        (
-            "Admitted",
-            enquiry["enquiry_id"]
-        ))
+        cursor.execute(
+            "UPDATE enquiries SET status='Admitted' WHERE enquiry_id=? AND admin_id=?",
+            (enquiry["enquiry_id"], admin_id)
+        )
 
         conn.commit()
         conn.close()
 
-        flash(
-            "Student admitted successfully. Please create membership.",
-            "success"
-        )
-
-        return redirect(
-            url_for(
-                "membership.create",
-                student_id=student_id
-            )
-        )
+        flash("Student admitted successfully. Please create membership.", "success")
+        return redirect(url_for("membership.create", student_id=student_id))
 
     conn.close()
+    return render_template("students/admission.html", enquiry=enquiry)
 
-    return render_template(
-        "students/admission.html",
-        enquiry=enquiry
-    )
-
-
-# ---------------------------------------
-# Student Profile
-# ---------------------------------------
 
 @student_bp.route("/view/<int:student_id>")
 def view(student_id):
 
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT *
-        FROM students
-        WHERE student_id = ?
-    """, (student_id,))
-
+    cursor.execute(
+        "SELECT * FROM students WHERE student_id=? AND admin_id=?",
+        (student_id, admin_id)
+    )
     student = cursor.fetchone()
 
     if student is None:
-
         conn.close()
-
         flash("Student not found.", "danger")
-
         return redirect(url_for("student.index"))
 
     cursor.execute("""
-        SELECT *
-        FROM memberships
-        WHERE student_id = ?
+        SELECT * FROM memberships
+        WHERE student_id=?
         ORDER BY membership_id DESC
         LIMIT 1
     """, (student_id,))
-
     membership = cursor.fetchone()
 
     cursor.execute("""
         SELECT p.*
         FROM payments p
-
-        INNER JOIN memberships m
-            ON p.membership_id = m.membership_id
-
-        WHERE m.student_id = ?
-        ORDER BY payment_id DESC
+        INNER JOIN memberships m ON p.membership_id = m.membership_id
+        WHERE m.student_id=?
+        ORDER BY p.payment_id DESC
     """, (student_id,))
-
     payments = cursor.fetchall()
 
     conn.close()
@@ -248,30 +191,26 @@ def view(student_id):
     )
 
 
-# ---------------------------------------
-# Edit Student
-# ---------------------------------------
-
 @student_bp.route("/edit/<int:student_id>", methods=["GET", "POST"])
 def edit(student_id):
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT *
-        FROM students
-        WHERE student_id = ?
-    """, (student_id,))
-
+    cursor.execute(
+        "SELECT * FROM students WHERE student_id=? AND admin_id=?",
+        (student_id, admin_id)
+    )
     student = cursor.fetchone()
 
     if student is None:
-
         conn.close()
-
         flash("Student not found.", "danger")
-
         return redirect(url_for("student.index"))
 
     if request.method == "POST":
@@ -285,43 +224,15 @@ def edit(student_id):
 
         cursor.execute("""
             UPDATE students
-            SET
-                full_name = ?,
-                mobile = ?,
-                address = ?,
-                purpose = ?,
-                shift = ?,
-                status = ?
-            WHERE student_id = ?
-        """,
-        (
-            full_name,
-            mobile,
-            address,
-            purpose,
-            shift,
-            status,
-            student_id
-        ))
+            SET full_name=?, mobile=?, address=?, purpose=?, shift=?, status=?
+            WHERE student_id=? AND admin_id=?
+        """, (full_name, mobile, address, purpose, shift, status, student_id, admin_id))
 
         conn.commit()
         conn.close()
 
-        flash(
-            "Student updated successfully.",
-            "success"
-        )
-
-        return redirect(
-            url_for(
-                "student.view",
-                student_id=student_id
-            )
-        )
+        flash("Student updated successfully.", "success")
+        return redirect(url_for("student.view", student_id=student_id))
 
     conn.close()
-
-    return render_template(
-        "students/edit.html",
-        student=student
-    )
+    return render_template("students/edit.html", student=student)

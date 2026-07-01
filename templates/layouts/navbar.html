@@ -1,31 +1,157 @@
-<nav class="navbar navbar-expand-lg px-4 shadow-sm">
+<nav class="navbar navbar-expand-lg bg-white shadow-sm px-4 py-3 sticky-top">
 
-    <button class="btn btn-outline-primary">
+    <!-- Left Section -->
+    <div class="navbar-left">
 
-        <i class="bi bi-list"></i>
+        <button class="btn btn-light border me-3">
 
-    </button>
+            <i class="bi bi-list fs-5"></i>
 
-    <div class="flex-grow-1 mx-3">
+        </button>
 
-        <input
-            class="form-control"
-            placeholder="Search students, fees, purpose...">
+        <div>
+
+            <h5 class="mb-0 fw-bold">
+                Smart Library Dashboard
+            </h5>
+
+            <small class="text-muted">
+                Welcome back, {{ session.get('username', 'Admin') }} 👋
+            </small>
+
+        </div>
 
     </div>
 
-    <div class="me-4">
+    <!-- Center Section -->
+    <div class="navbar-center">
 
-        <i class="bi bi-bell"></i>
+        <div class="input-group">
+
+            <span class="input-group-text bg-white border-end-0">
+
+                <i class="bi bi-search"></i>
+
+            </span>
+
+            <input
+                type="text"
+                class="form-control border-start-0"
+                placeholder="Search students, fees, payments...">
+
+        </div>
 
     </div>
 
-    <div>
+    <!-- Right Section -->
+    <div class="navbar-right">
 
-        <i class="bi bi-person-circle"></i>
+        <!-- Notification -->
 
-        Admin
+        <button class="btn btn-light position-relative me-3">
+
+            <i class="bi bi-bell fs-5"></i>
+
+            <span
+                class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+
+                3
+
+            </span>
+
+        </button>
+
+        <!-- Date -->
+
+        <div class="text-end me-4">
+
+            <small class="text-muted d-block">
+                Today
+            </small>
+
+            <strong id="currentDate">
+                Loading...
+            </strong>
+
+        </div>
+
+        <!-- Admin -->
+
+        <div class="dropdown">
+
+            <button
+                class="btn btn-light border dropdown-toggle"
+                data-bs-toggle="dropdown">
+
+                <i class="bi bi-person-circle"></i>
+
+                {{ session.get('username', 'Admin') }}
+
+            </button>
+
+            <ul class="dropdown-menu dropdown-menu-end">
+
+                <li>
+
+                    <a class="dropdown-item" href="#">
+
+                        <i class="bi bi-person"></i>
+
+                        Profile
+
+                    </a>
+
+                </li>
+
+                <li>
+
+                    <a class="dropdown-item"
+                       href="{{ url_for('setting.index') }}">
+
+                        <i class="bi bi-gear"></i>
+
+                        Settings
+
+                    </a>
+
+                </li>
+
+                <li>
+
+                    <hr class="dropdown-divider">
+
+                </li>
+
+                <li>
+
+                    <a class="dropdown-item text-danger"
+                       href="{{ url_for('auth.logout') }}">
+
+                        <i class="bi bi-box-arrow-right"></i>
+
+                        Logout
+
+                    </a>
+
+                </li>
+
+            </ul>
+
+        </div>
 
     </div>
 
 </nav>
+
+<script>
+
+const today = new Date();
+
+const day = String(today.getDate()).padStart(2, "0");
+const month = String(today.getMonth() + 1).padStart(2, "0");
+const year = today.getFullYear();
+
+document.getElementById("currentDate").innerHTML =
+`${day}/${month}/${year}`;
+
+</script>

@@ -78,7 +78,10 @@ Enquiries
 
                         <td>
 
-                            <span class="badge bg-success">
+                            <span class="badge
+                                {% if enquiry.status == 'Admitted' %}bg-primary
+                                {% elif enquiry.status == 'Interested' %}bg-warning text-dark
+                                {% else %}bg-secondary{% endif %}">
 
                                 {{ enquiry.status }}
 
@@ -132,6 +135,21 @@ Enquiries
 
                                     </li>
 
+                                    {% if enquiry.status == 'Admitted' and enquiry.student_id %}
+                                    <li>
+
+                                        <a
+                                            class="dropdown-item"
+                                            href="{{ url_for('student.view', student_id=enquiry.student_id) }}">
+
+                                            <i class="bi bi-person-badge-fill"></i>
+
+                                            View Student
+
+                                        </a>
+
+                                    </li>
+                                    {% else %}
                                     <li>
 
                                         <a
@@ -145,6 +163,7 @@ Enquiries
                                         </a>
 
                                     </li>
+                                    {% endif %}
 
                                     <li><hr class="dropdown-divider"></li>
 

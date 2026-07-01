@@ -58,7 +58,7 @@ Student Profile
 
                 <div>
 
-                    <span class="badge bg-success fs-6">
+                    <span class="badge fs-6 {% if student.status == 'Active' %}bg-success{% else %}bg-danger{% endif %}">
 
                         {{ student.status }}
 

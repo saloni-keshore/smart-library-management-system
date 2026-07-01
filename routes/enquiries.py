@@ -4,6 +4,7 @@ from flask import (
     request,
     redirect,
     flash,
+    session,
     url_for
 )
 
@@ -16,38 +17,38 @@ enquiry_bp = Blueprint(
 )
 
 
-# -----------------------------------
-# View All Enquiries
-# -----------------------------------
-
 @enquiry_bp.route("/")
 def index():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
 
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT *
-        FROM enquiries
-        ORDER BY enquiry_id DESC
-    """)
+        SELECT e.*, s.student_id AS student_id
+        FROM enquiries e
+        LEFT JOIN students s ON s.enquiry_id = e.enquiry_id
+        WHERE e.admin_id = ?
+        ORDER BY e.enquiry_id DESC
+    """, (admin_id,))
 
     enquiries = cursor.fetchall()
-
     conn.close()
 
-    return render_template(
-        "enquiries/index.html",
-        enquiries=enquiries
-    )
+    return render_template("enquiries/index.html", enquiries=enquiries)
 
-
-# -----------------------------------
-# Add Enquiry
-# -----------------------------------
 
 @enquiry_bp.route("/add", methods=["GET", "POST"])
 def add():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
 
     if request.method == "POST":
 
@@ -63,44 +64,26 @@ def add():
 
         cursor.execute("""
             INSERT INTO enquiries
-            (
-                full_name,
-                mobile,
-                purpose,
-                preferred_shift,
-                followup_date,
-                remarks
-            )
-            VALUES
-            (
-                ?, ?, ?, ?, ?, ?
-            )
-        """,
-        (
-            full_name,
-            mobile,
-            purpose,
-            preferred_shift,
-            followup_date,
-            remarks
-        ))
+            (admin_id, full_name, mobile, purpose, preferred_shift, followup_date, remarks)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (admin_id, full_name, mobile, purpose, preferred_shift, followup_date, remarks))
 
         conn.commit()
         conn.close()
 
-        flash(
-            "Enquiry added successfully.",
-            "success"
-        )
-
+        flash("Enquiry added successfully.", "success")
         return redirect(url_for("enquiry.index"))
 
     return render_template("enquiries/add.html")
 
-### Edit Enquiry
 
 @enquiry_bp.route("/edit/<int:enquiry_id>", methods=["GET", "POST"])
 def edit(enquiry_id):
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -114,109 +97,84 @@ def edit(enquiry_id):
         followup_date = request.form.get("followup_date")
         remarks = request.form.get("remarks", "").strip()
 
-        cursor.execute(
-            """
+        cursor.execute("""
             UPDATE enquiries
-            SET
-                full_name = ?,
-                mobile = ?,
-                purpose = ?,
-                preferred_shift = ?,
-                followup_date = ?,
-                remarks = ?
-            WHERE enquiry_id = ?
-            """,
-            (
-                full_name,
-                mobile,
-                purpose,
-                preferred_shift,
-                followup_date,
-                remarks,
-                enquiry_id
-            )
-        )
+            SET full_name=?, mobile=?, purpose=?, preferred_shift=?,
+                followup_date=?, remarks=?
+            WHERE enquiry_id=? AND admin_id=?
+        """, (full_name, mobile, purpose, preferred_shift,
+              followup_date, remarks, enquiry_id, admin_id))
 
         conn.commit()
         conn.close()
 
         flash("Enquiry updated successfully.", "success")
-
         return redirect(url_for("enquiry.index"))
 
     cursor.execute(
-        """
-        SELECT *
-        FROM enquiries
-        WHERE enquiry_id = ?
-        """,
-        (enquiry_id,)
+        "SELECT * FROM enquiries WHERE enquiry_id=? AND admin_id=?",
+        (enquiry_id, admin_id)
     )
-
     enquiry = cursor.fetchone()
-
     conn.close()
 
-    return render_template(
-        "enquiries/edit.html",
-        enquiry=enquiry
-    )
+    if enquiry is None:
+        flash("Enquiry not found.", "danger")
+        return redirect(url_for("enquiry.index"))
 
- #### Delete Enquiry
+    return render_template("enquiries/edit.html", enquiry=enquiry)
 
 
 @enquiry_bp.route("/delete/<int:enquiry_id>")
 def delete(enquiry_id):
 
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
-        """
-        DELETE FROM enquiries
-        WHERE enquiry_id = ?
-        """,
-        (enquiry_id,)
+        "DELETE FROM enquiries WHERE enquiry_id=? AND admin_id=?",
+        (enquiry_id, admin_id)
     )
 
     conn.commit()
     conn.close()
 
     flash("Enquiry deleted successfully.", "success")
-
     return redirect(url_for("enquiry.index"))
 
 
-# -----------------------------------
-# View Enquiry Details
-# -----------------------------------
-
 @enquiry_bp.route("/view/<int:enquiry_id>")
 def view(enquiry_id):
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
 
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
-        """
-        SELECT *
-        FROM enquiries
-        WHERE enquiry_id = ?
-        """,
-        (enquiry_id,)
+        "SELECT * FROM enquiries WHERE enquiry_id=? AND admin_id=?",
+        (enquiry_id, admin_id)
     )
-
     enquiry = cursor.fetchone()
 
-    conn.close()
-
     if enquiry is None:
-
+        conn.close()
         flash("Enquiry not found.", "danger")
-
         return redirect(url_for("enquiry.index"))
 
-    return render_template(
-        "enquiries/view.html",
-        enquiry=enquiry
-    ) 
+    cursor.execute(
+        "SELECT student_id FROM students WHERE enquiry_id=? AND admin_id=?",
+        (enquiry_id, admin_id)
+    )
+    student = cursor.fetchone()
+    conn.close()
+
+    return render_template("enquiries/view.html", enquiry=enquiry, student=student)
