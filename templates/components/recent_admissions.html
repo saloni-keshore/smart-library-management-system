@@ -1,6 +1,6 @@
-<div class="col-lg-6 mb-4 fade-up">
+<div class="col-lg-6 fade-up">
 
-    <div class="card dashboard-card border-0 shadow-sm rounded-4">
+    <div class="card dashboard-card border-0 shadow-sm rounded-4 h-100">
 
         <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
 
@@ -10,15 +10,17 @@
 
             </h5>
 
-            <button class="btn btn-sm btn-outline-secondary">
+            <a href="{{ url_for('student.index') }}" class="btn btn-sm btn-outline-secondary">
 
                 View All
 
-            </button>
+            </a>
 
         </div>
 
         <div class="card-body p-0">
+
+            <div class="table-responsive">
 
             <table class="table table-sm table-hover align-middle mb-0">
 
@@ -87,6 +89,8 @@
                 </tbody>
 
             </table>
+
+            </div>
 
         </div>
 

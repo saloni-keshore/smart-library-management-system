@@ -16,7 +16,7 @@ Dashboard
         KPI CARDS
 ========================== -->
 
-<div class="row g-4">
+<div class="row g-3 mb-4">
 
     {% with
     title="Total Students",
@@ -90,7 +90,7 @@ Dashboard
         CHART SECTION
 ========================== -->
 
-<div class="row mt-4">
+<div class="row g-3 mb-3 charts-row">
 
     {% include "components/revenue_chart.html" %}
 
@@ -100,7 +100,7 @@ Dashboard
 
 <!-- Bottom Tables -->
 
-<div class="row">
+<div class="row g-3 mb-4">
 
     {% include "components/expiry_table.html" %}
     {% include "components/recent_admissions.html" %}
@@ -109,7 +109,7 @@ Dashboard
 
 <!-- Library Insights -->
 
-<div class="row">
+<div class="row g-3">
 
     {% include "components/library_insights.html" %}
 

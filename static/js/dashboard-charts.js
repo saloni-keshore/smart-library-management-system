@@ -32,3 +32,26 @@
 
     document.addEventListener("DOMContentLoaded", initChartSkeletons);
 })();
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    setTimeout(() => {
+
+        document.querySelectorAll(".chart-stage").forEach(stage => {
+
+            const skeleton = stage.querySelector(".chart-skeleton");
+            const content = stage.querySelector(".chart-content");
+
+            if (skeleton) {
+                skeleton.style.display = "none";
+            }
+
+            if (content) {
+                content.classList.remove("d-none");
+            }
+
+        });
+
+    }, 1200);
+
+});

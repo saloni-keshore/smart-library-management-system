@@ -6,6 +6,8 @@ from flask import (
 )
 
 from database.db import get_connection
+from utils.charts import ( generate_revenue_chart,
+                           generate_membership_chart )
 
 
 dashboard_bp = Blueprint(
@@ -21,6 +23,8 @@ def dashboard():
         return redirect("/")
 
     admin_id = session["admin_id"]
+    generate_revenue_chart(admin_id)
+    generate_membership_chart(admin_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -91,6 +95,65 @@ def dashboard():
     """, (admin_id,))
     today_collection = cursor.fetchone()["today"]
 
+    # Upcoming Expiries (next 7 days, nearest first)
+    cursor.execute("""
+        SELECT
+            s.student_id,
+            s.full_name,
+            m.end_date,
+            CAST(julianday(m.end_date) - julianday(DATE('now')) AS INTEGER) AS days_left
+        FROM memberships m
+        JOIN students s ON m.student_id = s.student_id
+        WHERE s.admin_id = ?
+        AND m.membership_status = 'Active'
+        AND m.end_date >= DATE('now')
+        AND m.end_date <= DATE('now', '+7 days')
+        ORDER BY m.end_date ASC
+    """, (admin_id,))
+    expiry_rows = cursor.fetchall()
+
+    expiries = [
+        {
+            "library_id": "LIB{:04d}".format(row["student_id"]),
+            "student_name": row["full_name"],
+            "end_date": row["end_date"],
+            "days_left": row["days_left"]
+        }
+        for row in expiry_rows[:5]
+    ]
+    expiries_total = len(expiry_rows)
+
+    # Recent Admissions (latest 5, newest first)
+    cursor.execute("""
+        SELECT
+            s.student_id,
+            s.full_name,
+            s.join_date,
+            m.plan_name
+        FROM students s
+        LEFT JOIN memberships m ON m.membership_id = (
+            SELECT membership_id
+            FROM memberships
+            WHERE student_id = s.student_id
+            ORDER BY membership_id DESC
+            LIMIT 1
+        )
+        WHERE s.admin_id = ?
+        ORDER BY s.join_date DESC, s.student_id DESC
+        LIMIT 5
+    """, (admin_id,))
+    admission_rows = cursor.fetchall()
+
+    admissions = [
+        {
+            "library_id": "LIB{:04d}".format(row["student_id"]),
+            "student_name": row["full_name"],
+            "plan": row["plan_name"] or "--",
+            "admission_date": row["join_date"]
+        }
+        for row in admission_rows
+    ]
+
     conn.close()
 
     return render_template(
@@ -101,5 +164,10 @@ def dashboard():
         expired_memberships=expired_memberships,
         total_revenue=total_revenue,
         pending_amount=pending_amount,
-        today_collection=today_collection
+        today_collection=today_collection,
+        expiries=expiries,
+        expiries_total=expiries_total,
+        admissions=admissions
     )
+
+   
