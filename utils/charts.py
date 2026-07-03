@@ -330,3 +330,177 @@ def generate_membership_chart(admin_id):
     )
 
     plt.close(fig)
+
+
+# ==========================================================
+# Membership Distribution Donut Chart
+# (larger version for the Membership Distribution Details page)
+# ==========================================================
+
+PLAN_CHART_COLORS = {
+    "Monthly": "#2563eb",
+    "Quarterly": "#06b6d4",
+    "Half-Yearly": "#f59e0b",
+    "Yearly": "#7c3aed",
+}
+PLAN_CHART_FALLBACK_COLOR = "#94a3b8"
+
+
+def generate_membership_distribution_donut(admin_id):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            m.plan_name,
+            COUNT(*) AS total
+
+        FROM memberships m
+
+        JOIN students s
+            ON s.student_id = m.student_id
+
+        WHERE
+            s.admin_id = ?
+
+        GROUP BY
+            m.plan_name
+
+        ORDER BY
+            total DESC
+    """, (admin_id,))
+
+    data = cursor.fetchall()
+
+    conn.close()
+
+    labels = [row["plan_name"] for row in data]
+    sizes = [row["total"] for row in data]
+    total = sum(sizes)
+
+    fig, ax = plt.subplots(figsize=(5.4, 5.4), dpi=170)
+
+    if not sizes:
+        ax.text(
+            0, 0, "No membership\ndata yet",
+            ha="center", va="center",
+            fontsize=13, color="#94a3b8"
+        )
+        ax.axis("off")
+
+    else:
+        colors = [
+            PLAN_CHART_COLORS.get(label, PLAN_CHART_FALLBACK_COLOR)
+            for label in labels
+        ]
+
+        # Slightly smaller than a full unit circle so the wedge, its leader
+        # lines and labels all sit comfortably inside the saved figure.
+        radius = 0.95
+
+        wedges, _texts, autotexts = ax.pie(
+            sizes,
+            colors=colors,
+            autopct="%1.0f%%",
+            startangle=90,
+            pctdistance=0.82,
+            radius=radius,
+            explode=[0.02] * len(sizes),
+            wedgeprops={"linewidth": 2, "edgecolor": "#ffffff", "width": 0.46},
+            textprops={"fontsize": 10, "fontweight": "bold", "color": "#ffffff"}
+        )
+
+        for autotext in autotexts:
+            autotext.set_fontsize(10)
+            autotext.set_fontweight("bold")
+            autotext.set_color("#ffffff")
+
+        # Center total label sitting in the donut hole, offset symmetrically
+        # around y=0 so the two-line block reads as vertically centered.
+        ax.text(
+            0, 0.08, f"{total}",
+            ha="center", va="center",
+            fontsize=32, fontweight="bold", color="#1a2234"
+        )
+        ax.text(
+            0, -0.14, "Total Memberships",
+            ha="center", va="center",
+            fontsize=10, color="#94a3b8"
+        )
+
+        # External labels connected by leader lines, de-overlapped per side
+        # the same way the compact dashboard pie chart does.
+        label_points = []
+
+        for wedge in wedges:
+            angle = np.deg2rad((wedge.theta2 + wedge.theta1) / 2)
+            label_points.append({
+                "x": radius * np.cos(angle),
+                "y": radius * np.sin(angle),
+                "target_y": radius * np.sin(angle),
+            })
+
+        min_gap = 0.22
+
+        for side in ("right", "left"):
+            side_points = [
+                p for p in label_points
+                if (p["x"] >= 0) == (side == "right")
+            ]
+            side_points.sort(key=lambda p: p["target_y"], reverse=True)
+
+            for i in range(1, len(side_points)):
+                if side_points[i - 1]["target_y"] - side_points[i]["target_y"] < min_gap:
+                    side_points[i]["target_y"] = side_points[i - 1]["target_y"] - min_gap
+
+        bbox_props = dict(boxstyle="round,pad=0.3", fc="#ffffff", ec="#e2e8f0", lw=1)
+
+        for i, wedge in enumerate(wedges):
+            point = label_points[i]
+            is_right = point["x"] >= 0
+            leader_x = 1.06 * point["x"]
+            leader_y = 1.06 * point["y"]
+            label_x = 1.34 if is_right else -1.34
+
+            ax.annotate(
+                f"{labels[i]}  ({sizes[i]})",
+                xy=(leader_x, leader_y),
+                xytext=(label_x, point["target_y"]),
+                ha="left" if is_right else "right",
+                va="center",
+                fontsize=9.5,
+                color="#4b5563",
+                bbox=bbox_props,
+                arrowprops=dict(
+                    arrowstyle="-",
+                    color="#cbd5e1",
+                    lw=1,
+                    connectionstyle=f"angle,angleA=0,angleB={np.degrees(np.arctan2(point['y'], point['x']))}"
+                ),
+                zorder=5
+            )
+
+        label_ys = [p["target_y"] for p in label_points] + [-radius, radius]
+        y_pad = 0.26
+        ax.set_xlim(-1.85, 1.85)
+        ax.set_ylim(min(label_ys) - y_pad, max(label_ys) + y_pad)
+        ax.set_aspect("equal", adjustable="box")
+
+    chart_path = os.path.join(
+        "static",
+        "charts",
+        "membership_distribution_donut.png"
+    )
+
+    fig.tight_layout(pad=0.2)
+
+    fig.savefig(
+        chart_path,
+        dpi=170,
+        bbox_inches="tight",
+        pad_inches=0.18,
+        facecolor="#ffffff"
+    )
+
+    plt.close(fig)

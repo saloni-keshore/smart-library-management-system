@@ -1,0 +1,63 @@
+<div class="row g-3 quick-insights-row">
+
+    <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+        <div class="card insight-card border-0 shadow-sm rounded-4">
+            <div class="card-body insight-card-body">
+                <div class="insight-icon-wrap insight-icon-primary">
+                    <i class="bi bi-trophy-fill"></i>
+                </div>
+                <div class="insight-text">
+                    <span class="insight-title">Most Popular Plan</span>
+                    <span class="insight-value">{{ most_popular_plan }}</span>
+                    <span class="insight-subtitle">{{ most_popular_plan_pct }}% of memberships</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+        <div class="card insight-card border-0 shadow-sm rounded-4">
+            <div class="card-body insight-card-body">
+                <div class="insight-icon-wrap insight-icon-info">
+                    <i class="bi bi-calendar-event-fill"></i>
+                </div>
+                <div class="insight-text">
+                    <span class="insight-title">Upcoming Renewals</span>
+                    <span class="insight-value">{{ upcoming_renewals }} Member{{ "s" if upcoming_renewals != 1 else "" }}</span>
+                    <span class="insight-subtitle">Due in next 7 days</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+        <div class="card insight-card border-0 shadow-sm rounded-4">
+            <div class="card-body insight-card-body">
+                <div class="insight-icon-wrap insight-icon-success">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+                <div class="insight-text">
+                    <span class="insight-title">Revenue Collected</span>
+                    <span class="insight-value">₹{{ "{:,.0f}".format(total_revenue) }}</span>
+                    <span class="insight-subtitle">Across all plans</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-lg-6 col-md-6 col-6">
+        <div class="card insight-card border-0 shadow-sm rounded-4">
+            <div class="card-body insight-card-body">
+                <div class="insight-icon-wrap insight-icon-warning">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+                <div class="insight-text">
+                    <span class="insight-title">Pending Payments</span>
+                    <span class="insight-value">₹{{ "{:,.0f}".format(total_pending) }}</span>
+                    <span class="insight-subtitle">{{ "Fully collected" if total_pending == 0 else "Awaiting collection" }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>

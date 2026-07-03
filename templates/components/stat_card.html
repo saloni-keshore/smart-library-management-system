@@ -1,6 +1,6 @@
-<div class="col-xl-2 col-lg-4 col-md-6">
+<div class="{{ col_class|default('col-xl-2 col-lg-4 col-md-6') }}">
 
-    <div class="card stat-card shadow-sm border-0">
+    <div class="card stat-card shadow-sm border-0 {{ accent_class|default('') }}">
 
         <div class="card-body stat-card-body">
 

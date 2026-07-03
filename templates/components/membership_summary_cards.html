@@ -1,0 +1,94 @@
+<div class="row g-3">
+
+    {% with
+    title="Total Memberships",
+    value=total_memberships,
+    trend="All Plans",
+    trend_color="text-primary",
+    trend_icon="bi-collection",
+    icon="bi bi-collection-fill text-primary",
+    col_class="col-xl-3 col-lg-4 col-md-6 col-6 kpi-col-7",
+    accent_class="accent-primary"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Monthly Plan",
+    value=plan_counts["Monthly"],
+    trend=plan_percentages["Monthly"] ~ "% of total",
+    trend_color="text-primary",
+    trend_icon="bi-calendar3",
+    icon="bi bi-calendar3 text-primary",
+    col_class="col-xl-3 col-lg-4 col-md-6 col-6 kpi-col-7",
+    accent_class="accent-primary"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Quarterly Plan",
+    value=plan_counts["Quarterly"],
+    trend=plan_percentages["Quarterly"] ~ "% of total",
+    trend_color="text-info",
+    trend_icon="bi-calendar2-range",
+    icon="bi bi-calendar2-range text-info",
+    col_class="col-xl-3 col-lg-4 col-md-6 col-6 kpi-col-7",
+    accent_class="accent-info"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Half-Yearly Plan",
+    value=plan_counts["Half-Yearly"],
+    trend=plan_percentages["Half-Yearly"] ~ "% of total",
+    trend_color="text-warning",
+    trend_icon="bi-calendar2-week",
+    icon="bi bi-calendar2-week text-warning",
+    col_class="col-xl-3 col-lg-4 col-md-6 col-6 kpi-col-7",
+    accent_class="accent-warning"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Yearly Plan",
+    value=plan_counts["Yearly"],
+    trend=plan_percentages["Yearly"] ~ "% of total",
+    trend_color="text-violet",
+    trend_icon="bi-calendar2-check",
+    icon="bi bi-calendar2-check text-violet",
+    col_class="col-xl-3 col-lg-4 col-md-6 col-6 kpi-col-7",
+    accent_class="accent-violet"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Active Members",
+    value=active_memberships,
+    trend="Currently Active",
+    trend_color="text-success",
+    trend_icon="bi-check-circle-fill",
+    icon="bi bi-person-check-fill text-success",
+    col_class="col-xl-3 col-lg-4 col-md-6 col-6 kpi-col-7",
+    accent_class="accent-success"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Expired Members",
+    value=expired_memberships,
+    trend="Need Renewal",
+    trend_color="text-danger",
+    trend_icon="bi-x-circle-fill",
+    icon="bi bi-person-slash text-danger",
+    col_class="col-xl-3 col-lg-4 col-md-6 col-6 kpi-col-7",
+    accent_class="accent-danger"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+</div>

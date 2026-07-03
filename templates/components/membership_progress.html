@@ -1,0 +1,89 @@
+<div class="col-lg-5 analytics-col analytics-col-progress">
+
+    <div class="analytics-col-header">
+        <h5 class="fw-bold mb-0 section-title">
+            Plan-wise Breakdown
+        </h5>
+    </div>
+
+    <div class="analytics-col-body">
+
+        <div class="progress-item">
+            <div class="d-flex justify-content-between align-items-baseline">
+                <span class="progress-label">
+                    <span class="plan-dot plan-dot-monthly"></span>
+                    Monthly
+                </span>
+                <span class="progress-percent">{{ plan_percentages["Monthly"] }}%</span>
+            </div>
+            <div class="progress-count">
+                {{ plan_counts["Monthly"] }} membership{{ "s" if plan_counts["Monthly"] != 1 else "" }}
+            </div>
+            <div class="progress distribution-progress">
+                <div class="progress-bar plan-bar-monthly animated-bar" role="progressbar"
+                     style="width: 0%;" data-target-width="{{ plan_percentages['Monthly'] }}"
+                     aria-valuenow="{{ plan_percentages['Monthly'] }}" aria-valuemin="0" aria-valuemax="100">
+                </div>
+            </div>
+        </div>
+
+        <div class="progress-item">
+            <div class="d-flex justify-content-between align-items-baseline">
+                <span class="progress-label">
+                    <span class="plan-dot plan-dot-quarterly"></span>
+                    Quarterly
+                </span>
+                <span class="progress-percent">{{ plan_percentages["Quarterly"] }}%</span>
+            </div>
+            <div class="progress-count">
+                {{ plan_counts["Quarterly"] }} membership{{ "s" if plan_counts["Quarterly"] != 1 else "" }}
+            </div>
+            <div class="progress distribution-progress">
+                <div class="progress-bar plan-bar-quarterly animated-bar" role="progressbar"
+                     style="width: 0%;" data-target-width="{{ plan_percentages['Quarterly'] }}"
+                     aria-valuenow="{{ plan_percentages['Quarterly'] }}" aria-valuemin="0" aria-valuemax="100">
+                </div>
+            </div>
+        </div>
+
+        <div class="progress-item">
+            <div class="d-flex justify-content-between align-items-baseline">
+                <span class="progress-label">
+                    <span class="plan-dot plan-dot-half-yearly"></span>
+                    Half-Yearly
+                </span>
+                <span class="progress-percent">{{ plan_percentages["Half-Yearly"] }}%</span>
+            </div>
+            <div class="progress-count">
+                {{ plan_counts["Half-Yearly"] }} membership{{ "s" if plan_counts["Half-Yearly"] != 1 else "" }}
+            </div>
+            <div class="progress distribution-progress">
+                <div class="progress-bar plan-bar-half-yearly animated-bar" role="progressbar"
+                     style="width: 0%;" data-target-width="{{ plan_percentages['Half-Yearly'] }}"
+                     aria-valuenow="{{ plan_percentages['Half-Yearly'] }}" aria-valuemin="0" aria-valuemax="100">
+                </div>
+            </div>
+        </div>
+
+        <div class="progress-item progress-item-last">
+            <div class="d-flex justify-content-between align-items-baseline">
+                <span class="progress-label">
+                    <span class="plan-dot plan-dot-yearly"></span>
+                    Yearly
+                </span>
+                <span class="progress-percent">{{ plan_percentages["Yearly"] }}%</span>
+            </div>
+            <div class="progress-count">
+                {{ plan_counts["Yearly"] }} membership{{ "s" if plan_counts["Yearly"] != 1 else "" }}
+            </div>
+            <div class="progress distribution-progress">
+                <div class="progress-bar plan-bar-yearly animated-bar" role="progressbar"
+                     style="width: 0%;" data-target-width="{{ plan_percentages['Yearly'] }}"
+                     aria-valuenow="{{ plan_percentages['Yearly'] }}" aria-valuemin="0" aria-valuemax="100">
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>

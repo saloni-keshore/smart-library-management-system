@@ -1,0 +1,48 @@
+<div class="col-lg-7 analytics-col analytics-col-chart">
+
+    <div class="analytics-col-header">
+
+        <h5 class="fw-bold mb-0 section-title">
+            Plan-wise Distribution
+        </h5>
+
+    </div>
+
+    <div class="analytics-col-body">
+
+        <div class="chart-stage distribution-donut-stage" data-chart-stage data-reveal-delay="900">
+
+            <div class="chart-skeleton chart-skeleton-pie" aria-hidden="true">
+
+                <div class="skeleton-pie-ring">
+
+                    <div class="skeleton-pie-hole"></div>
+
+                    <div class="skeleton-shimmer"></div>
+
+                </div>
+
+                <p class="chart-loader-text">
+                    Loading distribution data...
+                </p>
+
+            </div>
+
+            <div class="chart-content" data-chart-content>
+
+                <div class="distribution-chart-wrapper">
+
+                    <img
+                        src="{{ url_for('static', filename='charts/membership_distribution_donut.png') }}"
+                        class="distribution-donut-img chart-scale-in"
+                        alt="Membership Plan Distribution Donut Chart">
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>

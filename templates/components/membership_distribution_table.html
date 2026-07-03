@@ -1,0 +1,200 @@
+<div class="card border-0 shadow-sm rounded-4 distribution-table-card">
+
+    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+
+        <h5 class="fw-bold mb-0 section-title">
+            Membership Records
+        </h5>
+
+        <span class="text-muted small" id="membershipRowCount"></span>
+
+    </div>
+
+    <div class="card-body p-0">
+
+        <div class="table-responsive table-scroll">
+
+            <table class="table table-sm table-hover align-middle mb-0 distribution-table" id="membershipDistributionTable">
+
+                <thead class="table-light">
+
+                    <tr>
+                        <th>Library ID</th>
+                        <th>Student</th>
+                        <th>Mobile</th>
+                        <th>Plan</th>
+                        <th>Join Date</th>
+                        <th>Expiry Date</th>
+                        <th>Status</th>
+                        <th>Pending</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% if memberships %}
+
+                    {% for m in memberships %}
+                    <tr
+                        class="table-row-fade"
+                        data-status="{{ m.status|lower }}"
+                        data-plan="{{ m.plan_name|lower }}"
+                        data-search="{{ (m.full_name ~ ' ' ~ m.mobile ~ ' ' ~ m.library_id)|lower }}">
+
+                        <td>{{ m.library_id }}</td>
+                        <td>{{ m.full_name }}</td>
+                        <td>{{ m.mobile }}</td>
+                        <td>{{ m.plan_name }}</td>
+                        <td>{{ m.joining_date or "-" }}</td>
+                        <td>{{ m.end_date }}</td>
+
+                        <td>
+                            {% if m.status == "Active" %}
+                            <span class="badge-soft badge-soft-success">Active</span>
+                            {% else %}
+                            <span class="badge-soft badge-soft-danger">Expired</span>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if m.pending_amount and m.pending_amount > 0 %}
+                            <span class="pending-amount pending-amount-due">₹{{ m.pending_amount }}</span>
+                            {% else %}
+                            <span class="pending-amount pending-amount-clear">₹{{ m.pending_amount }}</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-end">
+
+                            <a
+                                href="{{ url_for('student.view', student_id=m.student_id) }}"
+                                class="action-btn action-btn-secondary"
+                                title="View Student">
+
+                                <i class="bi bi-eye"></i>
+
+                            </a>
+
+                            <button
+                                type="button"
+                                class="action-btn action-btn-primary receipt-btn"
+                                title="View Receipt"
+                                data-bs-toggle="modal"
+                                data-bs-target="#receiptModal"
+                                data-library-id="{{ m.library_id }}"
+                                data-student="{{ m.full_name }}"
+                                data-mobile="{{ m.mobile }}"
+                                data-plan="{{ m.plan_name }}"
+                                data-join-date="{{ m.joining_date or '-' }}"
+                                data-end-date="{{ m.end_date }}"
+                                data-total-fee="{{ m.total_fee }}"
+                                data-paid-amount="{{ m.paid_amount }}"
+                                data-pending-amount="{{ m.pending_amount }}"
+                                data-receipt-number="{{ m.receipt_number or '-' }}"
+                                data-payment-mode="{{ m.payment_mode or '-' }}"
+                                data-payment-date="{{ m.payment_date or '-' }}"
+                                data-last-amount="{{ m.last_amount_paid or 0 }}"
+                                {% if not m.receipt_number %}disabled{% endif %}>
+
+                                <i class="bi bi-receipt"></i>
+
+                            </button>
+
+                        </td>
+
+                    </tr>
+                    {% endfor %}
+
+                    {% else %}
+
+                    <tr>
+                        <td colspan="9" class="p-0 border-0">
+
+                            <div class="empty-state">
+
+                                <div class="empty-state-icon-wrap">
+                                    <i class="bi bi-pie-chart empty-state-icon"></i>
+                                </div>
+
+                                <h6 class="empty-state-title">
+                                    No memberships found
+                                </h6>
+
+                                <small class="empty-state-subtitle">
+                                    Membership records will appear here once created.
+                                </small>
+
+                            </div>
+
+                        </td>
+                    </tr>
+
+                    {% endif %}
+
+                </tbody>
+
+            </table>
+
+            <div id="membershipNoResults" class="empty-state d-none">
+
+                <div class="empty-state-icon-wrap">
+                    <i class="bi bi-search empty-state-icon"></i>
+                </div>
+
+                <h6 class="empty-state-title">
+                    No memberships found
+                </h6>
+
+                <small class="empty-state-subtitle">
+                    Try a different filter or search term.
+                </small>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Receipt Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content rounded-4 border-0" id="receiptModalContent">
+
+            <div class="modal-header border-0">
+
+                <h5 class="modal-title fw-bold">
+                    Payment Receipt
+                </h5>
+
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+
+            </div>
+
+            <div class="modal-body" id="receiptModalBody">
+                <!-- Filled dynamically by membership_distribution.js -->
+            </div>
+
+            <div class="modal-footer border-0">
+
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    Close
+                </button>
+
+                <button type="button" class="btn btn-primary" id="receiptPrintBtn">
+                    <i class="bi bi-printer"></i>
+                    Print
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>

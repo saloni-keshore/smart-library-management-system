@@ -1,0 +1,992 @@
+/* ==========================================================
+   MEMBERSHIP DISTRIBUTION DETAILS PAGE
+
+   Everything that touches a shared class (.stat-card, .dashboard-card,
+   .card, .btn, .form-control, .empty-state, h2/h5, ...) is scoped under
+   .membership-distribution-page so this redesign never bleeds into the
+   dashboard or any other screen that reuses those same components.
+========================================================== */
+
+.membership-distribution-page{
+
+    --md-primary:#2563eb;
+    --md-primary-dark:#1d4ed8;
+    --md-success:#16a34a;
+    --md-success-soft-bg:#dcfce7;
+    --md-success-soft-text:#15803d;
+    --md-warning:#f59e0b;
+    --md-danger:#ef4444;
+    --md-danger-soft-bg:#fee2e2;
+    --md-danger-soft-text:#dc2626;
+    --md-info:#06b6d4;
+    --md-violet:#7c3aed;
+    --md-bg:#f8fafc;
+    --md-card:#ffffff;
+    --md-shadow:0 10px 30px rgba(15,23,42,.06);
+    --md-shadow-hover:0 16px 34px rgba(15,23,42,.10);
+
+    background:var(--md-bg);
+
+}
+
+.text-violet{
+
+    color:var(--md-violet) !important;
+
+}
+
+
+/* ==========================================================
+   SECTION RHYTHM (tightened further for information density)
+========================================================== */
+
+.membership-distribution-page .distribution-section{
+
+    margin-bottom:10px;
+
+}
+
+.membership-distribution-page .distribution-section:last-child{
+
+    margin-bottom:0;
+
+}
+
+.membership-distribution-page .page-header-row{
+
+    margin-bottom:0;
+
+}
+
+
+/* ==========================================================
+   TYPOGRAPHY HIERARCHY
+========================================================== */
+
+.membership-distribution-page .page-title{
+
+    font-size:26px;
+    font-weight:700;
+    color:#0f172a;
+    letter-spacing:-.01em;
+
+}
+
+.membership-distribution-page .page-subtitle{
+
+    font-size:13px;
+    color:#64748b;
+
+}
+
+.membership-distribution-page .section-title{
+
+    font-size:16px;
+    font-weight:700;
+    color:#0f172a;
+
+}
+
+
+/* ==========================================================
+   SHARED SURFACES: SHADOW + RADIUS TOKENS
+========================================================== */
+
+.membership-distribution-page .shadow-sm{
+
+    box-shadow:var(--md-shadow) !important;
+    transition:box-shadow .3s ease, transform .3s ease;
+
+}
+
+.membership-distribution-page .btn{
+
+    border-radius:12px;
+
+}
+
+.membership-distribution-page .form-control{
+
+    border-radius:12px;
+
+}
+
+.membership-distribution-page .dashboard-card .card-header{
+
+    padding:8px 16px;
+
+}
+
+.membership-distribution-page .dashboard-card .card-body{
+
+    padding:10px 16px;
+
+}
+
+
+/* ==========================================================
+   ENTRANCE ANIMATIONS
+========================================================== */
+
+@keyframes mdFadeIn{
+
+    from{ opacity:0; transform:translateY(10px); }
+    to{ opacity:1; transform:translateY(0); }
+
+}
+
+@keyframes mdRowFade{
+
+    from{ opacity:0; transform:translateY(6px); }
+    to{ opacity:1; transform:translateY(0); }
+
+}
+
+@keyframes mdScaleIn{
+
+    from{ opacity:0; transform:scale(.92); }
+    to{ opacity:1; transform:scale(1); }
+
+}
+
+.membership-distribution-page .stat-card,
+.membership-distribution-page .dashboard-card,
+.membership-distribution-page .distribution-table-card{
+
+    animation:mdFadeIn .35s ease both;
+
+}
+
+.membership-distribution-page .row.g-3 > div:nth-child(2) .stat-card{ animation-delay:.03s; }
+.membership-distribution-page .row.g-3 > div:nth-child(3) .stat-card{ animation-delay:.06s; }
+.membership-distribution-page .row.g-3 > div:nth-child(4) .stat-card{ animation-delay:.09s; }
+.membership-distribution-page .row.g-3 > div:nth-child(5) .stat-card{ animation-delay:.12s; }
+.membership-distribution-page .row.g-3 > div:nth-child(6) .stat-card{ animation-delay:.15s; }
+.membership-distribution-page .row.g-3 > div:nth-child(7) .stat-card{ animation-delay:.18s; }
+
+.chart-scale-in{
+
+    animation:mdScaleIn .45s cubic-bezier(.34,1.56,.64,1) both;
+
+}
+
+
+/* ==========================================================
+   KPI CARDS
+========================================================== */
+
+.membership-distribution-page .stat-card{
+
+    border-radius:16px;
+    border-top:3px solid transparent;
+    height:112px;
+    box-shadow:var(--md-shadow) !important;
+    
+}
+
+.membership-distribution-page .stat-card:hover{
+
+    transform:translateY(-4px);
+    box-shadow:var(--md-shadow-hover) !important;
+
+}
+
+.membership-distribution-page .stat-card-body{
+
+    padding:16px 18px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    height:100%;
+
+}
+
+.membership-distribution-page .stat-card-title{
+
+    font-size:13px;
+    font-weight:600;
+
+    line-height:1;
+
+    margin:6px 0;
+
+    color:#0f172a;
+
+
+}
+
+.membership-distribution-page .stat-card-value{
+
+    font-size:22px;
+    line-height:1.15;
+
+}
+
+.membership-distribution-page .stat-card-footer small{
+
+    font-size:11px;
+
+}
+
+.membership-distribution-page .icon-circle{
+
+    width:38px;
+    height:38px;
+    min-width:38px;
+    font-size:18px;
+    border-radius:12px;
+
+}
+
+/* On wide desktops all 7 KPI cards fit on one row, saving a full row
+   of vertical space vs the 4-per-row wrap used below 1400px. */
+@media (min-width:1400px){
+
+    .kpi-col-7{
+
+        flex:0 0 14.2857%;
+        max-width:14.2857%;
+
+    }
+
+}
+
+.accent-primary{ border-top-color:var(--md-primary); }
+.accent-info{ border-top-color:var(--md-info); }
+.accent-warning{ border-top-color:var(--md-warning); }
+.accent-violet{ border-top-color:var(--md-violet); }
+.accent-success{ border-top-color:var(--md-success); }
+.accent-danger{ border-top-color:var(--md-danger); }
+
+
+/* ==========================================================
+   ANALYTICS SECTION
+   (donut chart + plan breakdown rendered as one unified card,
+   split by a hairline divider, sharing height/padding/rhythm)
+========================================================== */
+
+.analytics-card{
+
+    overflow:hidden;
+
+}
+
+.analytics-row{
+
+    align-items:stretch;
+
+}
+
+.analytics-col{
+
+    display:flex;
+    flex-direction:column;
+
+}
+
+.analytics-col-header{
+
+    padding:10px 20px 4px;
+
+}
+
+.analytics-col-header .section-title{
+
+    font-size:15px;
+
+}
+
+.analytics-col-body{
+
+    padding:0 20px 10px;
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+
+}
+
+@media (min-width:992px){
+
+    .analytics-col-chart{
+
+        border-right:1px solid #eef2f7;
+
+    }
+
+}
+
+@media (max-width:991.98px){
+
+    .analytics-col-chart{
+
+        border-bottom:1px solid #eef2f7;
+
+    }
+
+}
+
+
+/* ==========================================================
+   DONUT CHART
+========================================================== */
+
+.distribution-donut-stage{
+
+    height:320px;
+    overflow:visible;
+
+}
+
+/* Deliberately its own class (not the shared .chart-wrapper, which
+   caps small dashboard widgets at max-height:195px and would clip
+   this larger chart). */
+.distribution-chart-wrapper{
+
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:8px;
+    box-sizing:border-box;
+
+}
+
+.distribution-donut-img{
+
+    width:auto;
+    height:auto;
+    max-width:100%;
+    max-height:100%;
+    object-fit:contain;
+
+}
+
+@media (max-width:1199.98px){
+
+    .distribution-donut-stage{
+
+        height:330px;
+
+    }
+
+}
+
+@media (max-width:767.98px){
+
+    .distribution-donut-stage{
+
+        height:260px;
+
+    }
+
+}
+
+
+/* ==========================================================
+   PLAN-WISE PROGRESS BARS
+========================================================== */
+
+.membership-distribution-page .progress-item{
+
+    margin-bottom:14px;
+
+}
+
+.membership-distribution-page .progress-item-last{
+
+    margin-bottom:0;
+
+}
+
+.progress-label{
+
+    font-size:.88rem;
+    font-weight:600;
+    color:#374151;
+    display:flex;
+    align-items:center;
+
+}
+
+.progress-percent{
+
+    font-size:.88rem;
+    font-weight:700;
+    color:#475569;
+
+}
+
+.progress-count{
+
+    font-size:.76rem;
+    color:#94a3b8;
+    margin:1px 0 6px 18px;
+
+}
+
+.distribution-progress{
+
+    height:16px;
+    border-radius:999px;
+    background:#eef2f7;
+    overflow:hidden;
+
+}
+
+.distribution-progress .progress-bar{
+
+    border-radius:999px;
+    transition:width .9s cubic-bezier(.4,0,.2,1);
+
+}
+
+.plan-dot{
+
+    width:10px;
+    height:10px;
+    min-width:10px;
+    border-radius:50%;
+    display:inline-block;
+    margin-right:8px;
+
+}
+
+.plan-dot-monthly,
+.plan-bar-monthly{
+
+    background-color:#2563eb;
+
+}
+
+.plan-dot-quarterly,
+.plan-bar-quarterly{
+
+    background-color:#06b6d4;
+
+}
+
+.plan-dot-half-yearly,
+.plan-bar-half-yearly{
+
+    background-color:#f59e0b;
+
+}
+
+.plan-dot-yearly,
+.plan-bar-yearly{
+
+    background-color:#7c3aed;
+
+}
+
+
+/* ==========================================================
+   QUICK INSIGHTS
+========================================================== */
+
+.insight-card{
+
+    border-radius:16px;
+    box-shadow:var(--md-shadow) !important;
+    transition:transform .25s ease, box-shadow .25s ease;
+
+}
+
+.insight-card:hover{
+
+    transform:translateY(-3px);
+    box-shadow:var(--md-shadow-hover) !important;
+
+}
+
+.insight-card-body{
+
+    padding:9px 14px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+
+}
+
+.insight-icon-wrap{
+
+    width:34px;
+    height:34px;
+    min-width:34px;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:15px;
+
+}
+
+.insight-icon-primary{ background:#eff6ff; color:var(--md-primary); }
+.insight-icon-info{ background:#ecfeff; color:var(--md-info); }
+.insight-icon-success{ background:var(--md-success-soft-bg); color:var(--md-success-soft-text); }
+.insight-icon-warning{ background:#fef3c7; color:var(--md-warning); }
+
+.insight-text{
+
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+
+}
+
+.insight-title{
+
+    font-size:11px;
+    font-weight:600;
+    color:#94a3b8;
+    text-transform:uppercase;
+    letter-spacing:.02em;
+    white-space:nowrap;
+
+}
+
+.insight-value{
+
+    font-size:17px;
+    font-weight:700;
+    color:#0f172a;
+    line-height:1.3;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+
+}
+
+.insight-subtitle{
+
+    font-size:11px;
+    color:#64748b;
+
+}
+
+
+/* ==========================================================
+   FILTER CHIPS + SEARCH FIELD
+========================================================== */
+
+.filters-bar{
+
+    padding:2px 2px;
+
+}
+
+.filter-chip{
+
+    border:1px solid #e2e8f0;
+    background:#ffffff;
+    color:#4b5563;
+    padding:.4rem 1rem;
+    border-radius:999px;
+    font-size:.83rem;
+    font-weight:600;
+    transition:all .25s ease;
+
+}
+
+.filter-chip:hover{
+
+    border-color:#2563eb;
+    color:#2563eb;
+    transform:translateY(-1px);
+    box-shadow:0 4px 10px rgba(37,99,235,.15);
+
+}
+
+.filter-chip.active{
+
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    border-color:transparent;
+    color:#ffffff;
+    box-shadow:0 6px 16px rgba(37,99,235,.28);
+
+}
+
+.filter-chip.active:hover{
+
+    color:#ffffff;
+    transform:translateY(-1px);
+
+}
+
+.search-field-compact{
+
+    position:relative;
+    width:300px;
+    max-width:100%;
+
+}
+
+.search-field-compact i{
+
+    position:absolute;
+    left:14px;
+    top:50%;
+    transform:translateY(-50%);
+    color:#94a3b8;
+    font-size:.85rem;
+    pointer-events:none;
+
+}
+
+.search-field-compact .form-control{
+
+    padding-left:34px;
+    border-radius:999px;
+    border:1px solid #e2e8f0;
+    box-shadow:0 2px 8px rgba(15,23,42,.04);
+
+}
+
+.search-field-compact .form-control:focus{
+
+    border-color:#93c5fd;
+    box-shadow:0 0 0 3px rgba(37,99,235,.12);
+
+}
+
+
+/* ==========================================================
+   MEMBERSHIP TABLE
+========================================================== */
+
+.table-scroll{
+
+    max-height:480px;
+    overflow:auto;
+
+}
+
+.distribution-table thead th{
+
+    position:sticky;
+    top:0;
+    z-index:2;
+    background:#f8fafc;
+    box-shadow:0 1px 0 #e2e8f0;
+    font-weight:700;
+    font-size:.8rem;
+    color:#475569;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    padding:10px 14px;
+    vertical-align:middle;
+
+}
+
+.distribution-table td{
+
+    padding:14px;
+    vertical-align:middle;
+
+}
+
+.distribution-table tbody tr{
+
+    border-bottom:1px solid #f1f5f9;
+    transition:background-color .15s ease;
+
+}
+
+.distribution-table tbody tr:nth-child(even){
+
+    background:#fafbfc;
+
+}
+
+.distribution-table tbody tr:hover{
+
+    background:#eff6ff;
+
+}
+
+.table-row-fade{
+
+    animation:mdRowFade .3s ease both;
+
+}
+
+.table-row-fade:nth-child(1){ animation-delay:.02s; }
+.table-row-fade:nth-child(2){ animation-delay:.05s; }
+.table-row-fade:nth-child(3){ animation-delay:.08s; }
+.table-row-fade:nth-child(4){ animation-delay:.11s; }
+.table-row-fade:nth-child(5){ animation-delay:.14s; }
+.table-row-fade:nth-child(6){ animation-delay:.17s; }
+.table-row-fade:nth-child(7){ animation-delay:.20s; }
+.table-row-fade:nth-child(8){ animation-delay:.23s; }
+
+.badge-soft{
+
+    display:inline-flex;
+    align-items:center;
+    padding:.35em .8em;
+    border-radius:999px;
+    font-size:.78rem;
+    font-weight:600;
+
+}
+
+.badge-soft-success{
+
+    background:var(--md-success-soft-bg);
+    color:var(--md-success-soft-text);
+
+}
+
+.badge-soft-danger{
+
+    background:var(--md-danger-soft-bg);
+    color:var(--md-danger-soft-text);
+
+}
+
+.pending-amount{
+
+    font-weight:600;
+
+}
+
+.pending-amount-due{
+
+    color:var(--md-danger);
+
+}
+
+.pending-amount-clear{
+
+    color:var(--md-success);
+
+}
+
+.action-btn{
+
+    width:32px;
+    height:32px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:10px;
+    border:1px solid #e2e8f0;
+    background:#ffffff;
+    color:#475569;
+    transition:all .2s ease;
+
+}
+
+.action-btn + .action-btn{
+
+    margin-left:6px;
+
+}
+
+.action-btn:hover{
+
+    transform:translateY(-2px);
+    box-shadow:0 6px 14px rgba(15,23,42,.12);
+
+}
+
+.action-btn-primary{
+
+    color:var(--md-primary);
+    border-color:#bfdbfe;
+
+}
+
+.action-btn-primary:hover{
+
+    background:#eff6ff;
+
+}
+
+.action-btn-secondary:hover{
+
+    background:#f8fafc;
+    color:#0f172a;
+
+}
+
+.action-btn[disabled]{
+
+    opacity:.4;
+    pointer-events:none;
+
+}
+
+
+/* ==========================================================
+   EMPTY STATES
+========================================================== */
+
+.empty-state-icon-wrap{
+
+    width:64px;
+    height:64px;
+    border-radius:50%;
+    background:#eff6ff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0 auto 12px;
+
+}
+
+.empty-state-icon-wrap .empty-state-icon{
+
+    font-size:1.7rem;
+    color:var(--md-primary);
+
+}
+
+
+/* ==========================================================
+   BACK BUTTON
+========================================================== */
+
+.back-btn{
+
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:6px 14px;
+    margin-bottom:6px;
+    border:1px solid #e2e8f0;
+    border-radius:999px;
+    background:#ffffff;
+    color:#475569;
+    font-size:13px;
+    font-weight:600;
+    text-decoration:none;
+    transition:all .2s ease;
+
+}
+
+.back-btn:hover{
+
+    background:var(--md-primary);
+    border-color:var(--md-primary);
+    color:#ffffff;
+    transform:translateX(-2px);
+
+}
+
+.back-btn i{
+
+    font-size:14px;
+
+}
+
+
+/* ==========================================================
+   RECEIPT MODAL
+========================================================== */
+
+.receipt-row{
+
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+    padding:.45rem 0;
+    font-size:.9rem;
+    color:#374151;
+    border-bottom:1px dashed #f1f5f9;
+
+}
+
+.receipt-row:last-child{
+
+    border-bottom:none;
+
+}
+
+.receipt-row span{
+
+    color:#6b7280;
+
+}
+
+@media print{
+
+    body *{
+
+        visibility:hidden;
+
+    }
+
+    #receiptModalContent,
+    #receiptModalContent *{
+
+        visibility:visible;
+
+    }
+
+    #receiptModalContent{
+
+        position:fixed;
+        inset:0;
+        margin:auto;
+        box-shadow:none;
+
+    }
+
+    #receiptModalContent .modal-footer,
+    #receiptModalContent .btn-close{
+
+        display:none !important;
+
+    }
+
+}
+
+
+/* ==========================================================
+   RESPONSIVE FINE-TUNING
+========================================================== */
+
+@media (max-width:767.98px){
+
+    .membership-distribution-page .page-title{
+
+        font-size:22px;
+
+    }
+
+    .filters-bar{
+
+        align-items:stretch !important;
+
+    }
+
+    .search-field-compact{
+
+        width:100%;
+
+    }
+
+    .analytics-col-header,
+    .analytics-col-body{
+
+        padding-left:16px;
+        padding-right:16px;
+
+    }
+
+    .insight-card-body{
+
+        padding:10px 12px;
+
+    }
+
+    .insight-value{
+
+        font-size:15px;
+
+    }
+
+}
