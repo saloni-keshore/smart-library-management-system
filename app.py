@@ -13,6 +13,7 @@ from routes.setting import setting_bp
 from routes.notification import notification_bp, get_notification_summary
 from routes.membership_analytics import membership_analytics_bp
 from routes.membership_distribution import membership_distribution_bp
+from routes.business_intelligence import business_intelligence_bp
 
 def create_app():
     app = Flask(__name__)
@@ -31,6 +32,7 @@ def create_app():
     app.register_blueprint(notification_bp)
     app.register_blueprint(membership_analytics_bp)
     app.register_blueprint(membership_distribution_bp)
+    app.register_blueprint(business_intelligence_bp)
     @app.context_processor
     def inject_notification_summary():
         if "admin_id" not in session:

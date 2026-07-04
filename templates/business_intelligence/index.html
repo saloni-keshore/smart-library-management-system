@@ -1,0 +1,72 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Business Intelligence
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/business_intelligence.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid py-3 bi-page">
+
+    <!-- Header -->
+    <div class="bi-section">
+        <h2 class="page-title mb-1">Business Intelligence</h2>
+        <p class="page-subtitle mb-0">
+            How your library is really performing - not just numbers, but what they mean.
+        </p>
+    </div>
+
+    <!-- Overview: Health Score, Revenue Growth, Revenue/Expense Health -->
+    <div class="bi-section row g-3">
+        {% include "components/bi_health_score.html" %}
+        {% include "components/bi_revenue_growth.html" %}
+        {% include "components/bi_health_status.html" %}
+    </div>
+
+    <!-- Action Center -->
+    <div class="bi-section row g-3">
+        {% include "components/bi_action_center.html" %}
+    </div>
+
+    <!-- Top Revenue Sources / Top Expense Categories -->
+    <div class="bi-section row g-3">
+        {% include "components/bi_top_revenue.html" %}
+        {% include "components/bi_top_expense.html" %}
+    </div>
+
+    <!-- Revenue Trend / Membership Growth -->
+    <div class="bi-section row g-3">
+        {% include "components/bi_revenue_trend_chart.html" %}
+        {% include "components/bi_membership_growth_chart.html" %}
+    </div>
+
+    <!-- Business Timeline / AI Library Advisor (placeholder) -->
+    <div class="bi-section row g-3">
+        {% include "components/bi_timeline.html" %}
+        {% include "components/bi_advisor.html" %}
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<script>
+    window.biChartData = {
+        healthScore: {{ health_score | tojson }},
+        revenueTrend: {{ revenue_trend_chart | tojson }},
+        membershipGrowth: {{ membership_growth_chart | tojson }}
+    };
+</script>
+
+<script src="{{ url_for('static', filename='js/business_intelligence.js') }}"></script>
+
+{% endblock %}

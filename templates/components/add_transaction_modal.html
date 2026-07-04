@@ -1,0 +1,206 @@
+<div class="modal fade"
+     id="transactionModal"
+     tabindex="-1">
+
+    <div class="modal-dialog modal-lg">
+
+        <div class="modal-content border-0 rounded-4">
+
+            <form
+                id="transactionForm"
+                method="POST"
+                action="{{ url_for('cashbook.add_transaction') }}">
+
+                <!-- Header -->
+                <div class="modal-header">
+
+                    <h4 class="fw-bold">
+                        New Transaction
+                    </h4>
+
+                    <button
+                        type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal">
+                    </button>
+
+                </div>
+
+                <!-- Body -->
+                <div class="modal-body">
+
+                    <div class="row g-4">
+
+                        <!-- Transaction Type -->
+                        <div class="col-md-6">
+
+                            <label class="form-label">
+                                Transaction Type
+                            </label>
+
+                            <select
+                                id="transactionType"
+                                name="transaction_type"
+                                class="form-select"
+                                required>
+
+                                <option value="Income">
+                                    Income
+                                </option>
+
+                                <option value="Expense">
+                                    Expense
+                                </option>
+
+                            </select>
+
+                        </div>
+
+                        <!-- Category -->
+                        <div class="col-md-6">
+
+                            <label class="form-label">
+                                Category
+                            </label>
+
+                            <select
+                                id="transactionCategory"
+                                name="category"
+                                class="form-select"
+                                required>
+
+                            </select>
+
+                        </div>
+
+                        <!-- Amount -->
+                        <div class="col-md-6">
+
+                            <label class="form-label">
+                                Amount
+                            </label>
+
+                            <input
+                                type="number"
+                                name="amount"
+                                class="form-control"
+                                placeholder="₹ 0"
+                                min="0"
+                                step="0.01"
+                                required>
+
+                        </div>
+
+                        <!-- Payment Method -->
+                        <div class="col-md-6">
+
+                            <label class="form-label">
+                                Payment Method
+                            </label>
+
+                            <select
+                                name="payment_method"
+                                class="form-select"
+                                required>
+
+                                <option value="Cash">
+                                    Cash
+                                </option>
+
+                                <option value="UPI">
+                                    UPI
+                                </option>
+
+                                <option value="Bank Transfer">
+                                    Bank Transfer
+                                </option>
+
+                            </select>
+
+                        </div>
+
+                        <!-- Date -->
+                        <div class="col-md-6">
+
+                            <label class="form-label">
+                                Date
+                            </label>
+
+                            <input
+                                type="date"
+                                name="transaction_date"
+                                class="form-control"
+                                required>
+
+                        </div>
+
+                        <!-- Student / Vendor -->
+                        <div class="col-md-6">
+
+                            <label
+                                class="form-label"
+                                id="personLabel">
+
+                                Student
+
+                            </label>
+
+                            <input
+                                type="text"
+                                id="personInput"
+                                name="person"
+                                class="form-control"
+                                placeholder="Student / Vendor Name">
+
+                        </div>
+
+                        <!-- Description -->
+                        <div class="col-12">
+
+                            <label class="form-label">
+                                Description
+                            </label>
+
+                            <textarea
+                                name="description"
+                                class="form-control"
+                                rows="3"
+                                placeholder="Enter transaction details..."></textarea>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <!-- Footer -->
+                <div class="modal-footer">
+
+                    <button
+                        type="button"
+                        class="btn btn-light"
+                        data-bs-dismiss="modal">
+
+                        Cancel
+
+                    </button>
+
+                    <button
+                        type="submit"
+                        class="btn btn-primary">
+
+                        <i class="bi bi-check-circle me-2"></i>
+
+                        Save Transaction
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>

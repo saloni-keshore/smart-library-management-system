@@ -1,0 +1,81 @@
+<div class="row g-3">
+
+    {% with
+    title="Total Income",
+    value="₹" ~ "{:,.0f}".format(total_income),
+    trend="All Time",
+    trend_color="text-success",
+    trend_icon="bi-graph-up-arrow",
+    icon="bi bi-cash-stack text-success",
+    col_class="col-xl-2 col-lg-4 col-md-6",
+    accent_class="accent-success"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Total Expense",
+    value="₹" ~ "{:,.0f}".format(total_expense),
+    trend="All Time",
+    trend_color="text-danger",
+    trend_icon="bi-graph-down-arrow",
+    icon="bi bi-wallet2 text-danger",
+    col_class="col-xl-2 col-lg-4 col-md-6",
+    accent_class="accent-danger"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Net Profit",
+    value="₹" ~ "{:,.0f}".format(net_profit),
+    trend="Income − Expense",
+    trend_color="text-primary",
+    trend_icon="bi-bar-chart-fill",
+    icon="bi bi-piggy-bank-fill text-primary",
+    col_class="col-xl-2 col-lg-4 col-md-6",
+    accent_class="accent-primary"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Cash Balance",
+    value="₹" ~ "{:,.0f}".format(cash_balance),
+    trend="Cash In Hand",
+    trend_color="text-info",
+    trend_icon="bi-cash-coin",
+    icon="bi bi-safe2-fill text-info",
+    col_class="col-xl-2 col-lg-4 col-md-6",
+    accent_class="accent-info"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Pending Fees",
+    value="₹" ~ "{:,.0f}".format(pending_fees),
+    trend="To Be Collected",
+    trend_color="text-warning",
+    trend_icon="bi-hourglass-split",
+    icon="bi bi-exclamation-circle-fill text-warning",
+    col_class="col-xl-2 col-lg-4 col-md-6",
+    accent_class="accent-warning"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+    {% with
+    title="Today's Transactions",
+    value=todays_transactions,
+    trend="Since Midnight",
+    trend_color="text-muted",
+    trend_icon="bi-calendar-check",
+    icon="bi bi-receipt text-primary",
+    col_class="col-xl-2 col-lg-4 col-md-6",
+    accent_class="accent-violet"
+    %}
+    {% include "components/stat_card.html" %}
+    {% endwith %}
+
+</div>

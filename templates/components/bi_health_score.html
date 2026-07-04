@@ -1,0 +1,43 @@
+{#
+  Business Health Score
+  A single 0-100 score (see database/bi_queries.py::get_business_health_score)
+  blending revenue growth, expense discipline, fee collection and membership
+  renewal into one number, rendered as a circular gauge with Chart.js.
+#}
+
+{% set status_classes = {
+    "Excellent": "bi-status-excellent",
+    "Good": "bi-status-good",
+    "Average": "bi-status-average",
+    "Needs Attention": "bi-status-attention"
+} %}
+
+{% set status_icons = {
+    "Excellent": "bi-stars",
+    "Good": "bi-hand-thumbs-up-fill",
+    "Average": "bi-dash-circle-fill",
+    "Needs Attention": "bi-exclamation-triangle-fill"
+} %}
+
+<div class="col-lg-4">
+    <div class="card bi-card border-0">
+        <div class="bi-card-body text-center">
+
+            <h3 class="bi-section-title mb-0">Business Health Score</h3>
+            <p class="bi-section-subtitle mb-0">Overall performance at a glance</p>
+
+            <div class="bi-gauge-stage mt-2">
+                <canvas id="biHealthGauge"></canvas>
+                <div class="bi-gauge-center">
+                    <span class="bi-gauge-score">{{ health_score.score }}</span>
+                    <span class="bi-gauge-max">out of 100</span>
+                    <span class="bi-status-pill {{ status_classes.get(health_score.status, 'bi-status-average') }}">
+                        <i class="bi {{ status_icons.get(health_score.status, 'bi-dash-circle-fill') }}"></i>
+                        {{ health_score.status }}
+                    </span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>

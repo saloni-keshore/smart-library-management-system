@@ -142,3 +142,71 @@ CREATE TABLE IF NOT EXISTS cashbook (
     FOREIGN KEY(payment_id)
     REFERENCES payments(payment_id)
 );
+
+-- expense table 
+CREATE TABLE expenses (
+
+    expense_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    admin_id INTEGER NOT NULL,
+
+    title TEXT NOT NULL,
+
+    category TEXT NOT NULL,
+
+    amount REAL NOT NULL,
+
+    payment_method TEXT,
+
+    vendor TEXT,
+
+    notes TEXT,
+
+    expense_date DATE NOT NULL,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+);
+
+--transaction table
+CREATE TABLE IF NOT EXISTS transactions (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    transaction_type TEXT NOT NULL,
+
+    category TEXT NOT NULL,
+
+    person TEXT,
+
+    amount REAL NOT NULL,
+
+    payment_method TEXT,
+
+    transaction_date TEXT,
+
+    description TEXT,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+);
+
+--adding columns to cashbook table
+ALTER TABLE cashbook
+ADD COLUMN category TEXT;
+
+ALTER TABLE cashbook
+ADD COLUMN person TEXT;
+
+ALTER TABLE cashbook
+ADD COLUMN admin_id INTEGER;
+
+ALTER TABLE cashbook
+ADD COLUMN payment_method TEXT;
+
+-- Financial ledger: unique reference number + origin of every entry
+ALTER TABLE cashbook
+ADD COLUMN reference_id TEXT;
+
+ALTER TABLE cashbook
+ADD COLUMN source TEXT;

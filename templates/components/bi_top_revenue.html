@@ -1,0 +1,40 @@
+{#
+  Top Revenue Sources
+  Income categories ranked by total, with each row's share of total income
+  (see database/bi_queries.py::get_top_revenue_sources).
+#}
+
+{% set bar_colors = ["#2563eb", "#16a34a", "#f59e0b", "#7c3aed", "#06b6d4"] %}
+
+<div class="col-lg-6">
+    <div class="card bi-card border-0">
+        <div class="bi-card-body">
+
+            <h3 class="bi-section-title mb-0">Top Revenue Sources</h3>
+            <p class="bi-section-subtitle mb-2">Income categories ranked by contribution</p>
+
+            {% if top_revenue_sources %}
+                {% for item in top_revenue_sources %}
+                <div class="bi-rank-item">
+                    <div class="bi-rank-number">{{ item.rank }}</div>
+                    <div class="bi-rank-main">
+                        <div class="bi-rank-top-line">
+                            <span class="bi-rank-category">{{ item.category }}</span>
+                            <span class="bi-rank-amount">₹{{ "{:,.0f}".format(item.amount) }}</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="bi-rank-bar-track flex-grow-1">
+                                <div class="bi-rank-bar-fill" style="width:{{ item.percentage }}%; background:{{ bar_colors[(item.rank - 1) % bar_colors|length] }};"></div>
+                            </div>
+                            <span class="bi-rank-percentage">{{ item.percentage }}%</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <p class="empty-state-text mb-0">No income recorded yet.</p>
+            {% endif %}
+
+        </div>
+    </div>
+</div>

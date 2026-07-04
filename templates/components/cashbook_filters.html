@@ -1,0 +1,101 @@
+<div class="card border-0 shadow-sm rounded-4 cashbook-filters mb-4">
+
+    <div class="card-body">
+
+        <form
+            id="cashbookFilterForm"
+            method="GET"
+            action="{{ url_for('cashbook.index') }}"
+            class="row g-3 align-items-end">
+
+            <div class="col-lg-3 col-md-6">
+                <label class="form-label small text-muted">Search</label>
+                <input
+                    type="text"
+                    name="search"
+                    class="form-control"
+                    placeholder="Category, person, reference..."
+                    value="{{ filters.search }}">
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">From</label>
+                <input
+                    type="date"
+                    name="date_from"
+                    class="form-control"
+                    value="{{ filters.date_from }}">
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">To</label>
+                <input
+                    type="date"
+                    name="date_to"
+                    class="form-control"
+                    value="{{ filters.date_to }}">
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">Type</label>
+                <select name="transaction_type" class="form-select">
+                    <option value="">All</option>
+                    {% for t in filter_transaction_types %}
+                    <option value="{{ t }}" {{ "selected" if filters.transaction_type == t }}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">Category</label>
+                <select name="category" class="form-select">
+                    <option value="">All</option>
+                    {% for c in filter_categories %}
+                    <option value="{{ c }}" {{ "selected" if filters.category == c }}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">Payment Method</label>
+                <select name="payment_method" class="form-select">
+                    <option value="">All</option>
+                    {% for m in filter_payment_methods %}
+                    <option value="{{ m }}" {{ "selected" if filters.payment_method == m }}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">Source</label>
+                <select name="source" class="form-select">
+                    <option value="">All</option>
+                    {% for s in filter_sources %}
+                    <option value="{{ s }}" {{ "selected" if filters.source == s }}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All</option>
+                    <option value="Completed" {{ "selected" if filters.status == "Completed" }}>Completed</option>
+                </select>
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill">
+                    <i class="bi bi-funnel"></i>
+                    Apply
+                </button>
+                <a href="{{ url_for('cashbook.index') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+
+        </form>
+
+    </div>
+
+</div>

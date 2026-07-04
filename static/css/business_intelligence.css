@@ -1,0 +1,723 @@
+/* ==========================================================
+   BUSINESS INTELLIGENCE CENTER
+
+   Scoped entirely under .bi-page, following the same isolation
+   pattern as .membership-distribution-page: shared classes like
+   .card, .btn and h2 are never touched globally, so this page can
+   never bleed into the Dashboard, Cashbook or Membership Analytics.
+========================================================== */
+
+.bi-page{
+
+    --bi-primary:#2563eb;
+    --bi-primary-dark:#1d4ed8;
+    --bi-success:#16a34a;
+    --bi-success-soft-bg:#dcfce7;
+    --bi-success-soft-text:#15803d;
+    --bi-warning:#f59e0b;
+    --bi-warning-soft-bg:#fef3c7;
+    --bi-warning-soft-text:#b45309;
+    --bi-danger:#ef4444;
+    --bi-danger-soft-bg:#fee2e2;
+    --bi-danger-soft-text:#dc2626;
+    --bi-info:#06b6d4;
+    --bi-violet:#7c3aed;
+    --bi-bg:#f8fafc;
+    --bi-card:#ffffff;
+    --bi-border:#eef2f7;
+    --bi-ink:#0f172a;
+    --bi-muted:#64748b;
+    --bi-faint:#94a3b8;
+    --bi-shadow:0 10px 30px rgba(15,23,42,.06);
+    --bi-shadow-hover:0 16px 34px rgba(15,23,42,.10);
+
+    background:var(--bi-bg);
+
+}
+
+
+/* ==========================================================
+   PAGE HEADER + SECTION RHYTHM
+========================================================== */
+
+.bi-page .page-title{
+
+    font-size:26px;
+    font-weight:700;
+    color:var(--bi-ink);
+    letter-spacing:-.01em;
+
+}
+
+.bi-page .page-subtitle{
+
+    font-size:13px;
+    color:var(--bi-muted);
+
+}
+
+.bi-section{
+
+    margin-bottom:22px;
+
+}
+
+.bi-section:last-child{
+
+    margin-bottom:0;
+
+}
+
+.bi-section-title{
+
+    font-size:16px;
+    font-weight:700;
+    color:var(--bi-ink);
+    margin-bottom:2px;
+
+}
+
+.bi-section-subtitle{
+
+    font-size:12.5px;
+    color:var(--bi-muted);
+
+}
+
+
+/* ==========================================================
+   BASE CARD SURFACE
+========================================================== */
+
+.bi-card{
+
+    background:var(--bi-card);
+    border:1px solid var(--bi-border);
+    border-radius:18px;
+    box-shadow:var(--bi-shadow);
+    transition:box-shadow .25s ease, transform .25s ease;
+    height:100%;
+
+}
+
+.bi-card-body{
+
+    padding:20px 22px;
+
+}
+
+.bi-card-header{
+
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:16px 22px 0;
+
+}
+
+
+/* ==========================================================
+   BUSINESS HEALTH SCORE (circular gauge)
+========================================================== */
+
+.bi-gauge-stage{
+
+    position:relative;
+    height:190px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+}
+
+.bi-gauge-center{
+
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    pointer-events:none;
+
+}
+
+.bi-gauge-score{
+
+    font-size:40px;
+    font-weight:800;
+    color:var(--bi-ink);
+    line-height:1;
+
+}
+
+.bi-gauge-max{
+
+    font-size:12px;
+    color:var(--bi-faint);
+    margin-top:2px;
+
+}
+
+.bi-status-pill{
+
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-top:10px;
+    padding:.32rem .85rem;
+    border-radius:999px;
+    font-size:12.5px;
+    font-weight:700;
+
+}
+
+.bi-status-pill i{
+
+    font-size:11px;
+
+}
+
+.bi-status-excellent{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
+.bi-status-good{ background:#eff6ff; color:var(--bi-primary-dark); }
+.bi-status-average{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
+.bi-status-attention{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
+
+
+/* ==========================================================
+   REVENUE GROWTH
+========================================================== */
+
+.bi-growth-values{
+
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:12px;
+    margin-top:14px;
+
+}
+
+.bi-growth-block{
+
+    display:flex;
+    flex-direction:column;
+
+}
+
+.bi-growth-label{
+
+    font-size:11.5px;
+    font-weight:600;
+    color:var(--bi-faint);
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    margin-bottom:4px;
+
+}
+
+.bi-growth-amount{
+
+    font-size:20px;
+    font-weight:700;
+    color:var(--bi-ink);
+
+}
+
+.bi-growth-amount-muted{
+
+    font-size:17px;
+    font-weight:600;
+    color:var(--bi-muted);
+
+}
+
+.bi-growth-badge{
+
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-top:16px;
+    padding:.4rem .9rem;
+    border-radius:999px;
+    font-size:13px;
+    font-weight:700;
+
+}
+
+.bi-growth-badge-up{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
+.bi-growth-badge-down{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
+.bi-growth-badge-flat{ background:#f1f5f9; color:var(--bi-muted); }
+
+
+/* ==========================================================
+   REVENUE / EXPENSE HEALTH PILLS
+========================================================== */
+
+.bi-status-row{
+
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:14px 0;
+
+}
+
+.bi-status-row + .bi-status-row{
+
+    border-top:1px solid var(--bi-border);
+
+}
+
+.bi-status-icon{
+
+    width:40px;
+    height:40px;
+    min-width:40px;
+    border-radius:12px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:18px;
+
+}
+
+.bi-status-icon-healthy{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
+.bi-status-icon-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
+.bi-status-icon-critical{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
+
+.bi-status-text{
+
+    display:flex;
+    flex-direction:column;
+    flex:1;
+    min-width:0;
+
+}
+
+.bi-status-title{
+
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--bi-ink);
+
+}
+
+.bi-status-subtitle{
+
+    font-size:12px;
+    color:var(--bi-muted);
+
+}
+
+.bi-status-badge{
+
+    padding:.3rem .75rem;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:700;
+    white-space:nowrap;
+
+}
+
+.bi-status-badge-healthy{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
+.bi-status-badge-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
+.bi-status-badge-critical{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
+
+
+/* ==========================================================
+   ACTION CENTER
+========================================================== */
+
+.bi-action-item{
+
+    display:flex;
+    align-items:flex-start;
+    gap:14px;
+    padding:14px 16px;
+    border-radius:14px;
+    background:#fbfcfe;
+    border:1px solid var(--bi-border);
+    border-left:3px solid transparent;
+
+}
+
+.bi-action-item + .bi-action-item{
+
+    margin-top:10px;
+
+}
+
+.bi-action-item-success{ border-left-color:var(--bi-success); }
+.bi-action-item-warning{ border-left-color:var(--bi-warning); }
+.bi-action-item-danger{ border-left-color:var(--bi-danger); }
+.bi-action-item-info{ border-left-color:var(--bi-info); }
+
+.bi-action-icon{
+
+    width:34px;
+    height:34px;
+    min-width:34px;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:15px;
+
+}
+
+.bi-action-item-success .bi-action-icon{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
+.bi-action-item-warning .bi-action-icon{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
+.bi-action-item-danger .bi-action-icon{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
+.bi-action-item-info .bi-action-icon{ background:#ecfeff; color:var(--bi-info); }
+
+.bi-action-title{
+
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--bi-ink);
+    margin-bottom:2px;
+
+}
+
+.bi-action-description{
+
+    font-size:12.5px;
+    color:var(--bi-muted);
+
+}
+
+
+/* ==========================================================
+   TOP REVENUE SOURCES / EXPENSE CATEGORIES
+========================================================== */
+
+.bi-rank-item{
+
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:11px 0;
+
+}
+
+.bi-rank-item + .bi-rank-item{
+
+    border-top:1px solid var(--bi-border);
+
+}
+
+.bi-rank-number{
+
+    width:24px;
+    height:24px;
+    min-width:24px;
+    border-radius:8px;
+    background:#f1f5f9;
+    color:var(--bi-muted);
+    font-size:11.5px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+}
+
+.bi-rank-main{
+
+    flex:1;
+    min-width:0;
+
+}
+
+.bi-rank-top-line{
+
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:6px;
+
+}
+
+.bi-rank-category{
+
+    font-size:13px;
+    font-weight:600;
+    color:var(--bi-ink);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+
+}
+
+.bi-rank-amount{
+
+    font-size:13px;
+    font-weight:700;
+    color:var(--bi-ink);
+    white-space:nowrap;
+
+}
+
+.bi-rank-bar-track{
+
+    height:6px;
+    border-radius:999px;
+    background:#f1f5f9;
+    overflow:hidden;
+
+}
+
+.bi-rank-bar-fill{
+
+    height:100%;
+    border-radius:999px;
+    transition:width .8s cubic-bezier(.4,0,.2,1);
+
+}
+
+.bi-rank-percentage{
+
+    min-width:38px;
+    text-align:right;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--bi-faint);
+
+}
+
+
+/* ==========================================================
+   CHARTS
+========================================================== */
+
+.bi-chart-stage{
+
+    height:260px;
+    position:relative;
+
+}
+
+
+/* ==========================================================
+   BUSINESS TIMELINE
+========================================================== */
+
+.bi-timeline{
+
+    position:relative;
+
+}
+
+.bi-timeline-item{
+
+    position:relative;
+    display:flex;
+    gap:14px;
+    padding-bottom:18px;
+
+}
+
+.bi-timeline-item:last-child{
+
+    padding-bottom:0;
+
+}
+
+.bi-timeline-rail{
+
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+
+}
+
+.bi-timeline-dot{
+
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    margin-top:4px;
+    flex-shrink:0;
+
+}
+
+.bi-timeline-dot-income{ background:var(--bi-success); }
+.bi-timeline-dot-expense{ background:var(--bi-danger); }
+
+.bi-timeline-line{
+
+    width:1px;
+    flex:1;
+    background:var(--bi-border);
+    margin-top:4px;
+
+}
+
+.bi-timeline-item:last-child .bi-timeline-line{
+
+    display:none;
+
+}
+
+.bi-timeline-body{
+
+    flex:1;
+    min-width:0;
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+
+}
+
+.bi-timeline-desc{
+
+    font-size:13px;
+    font-weight:600;
+    color:var(--bi-ink);
+
+}
+
+.bi-timeline-meta{
+
+    font-size:11.5px;
+    color:var(--bi-faint);
+    margin-top:2px;
+
+}
+
+.bi-timeline-amount{
+
+    font-size:13px;
+    font-weight:700;
+    white-space:nowrap;
+
+}
+
+.bi-timeline-amount-income{ color:var(--bi-success-soft-text); }
+.bi-timeline-amount-expense{ color:var(--bi-danger-soft-text); }
+
+
+/* ==========================================================
+   AI LIBRARY ADVISOR (placeholder container, no logic yet)
+========================================================== */
+
+.bi-advisor-card{
+
+    border:1.5px dashed #d6dee8;
+    border-radius:18px;
+    background:linear-gradient(180deg,#fbfcff 0%,#f8fafc 100%);
+    box-shadow:none;
+
+}
+
+.bi-advisor-body{
+
+    padding:34px 24px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    height:100%;
+    justify-content:center;
+
+}
+
+.bi-advisor-icon{
+
+    width:52px;
+    height:52px;
+    border-radius:14px;
+    background:#eef2ff;
+    color:var(--bi-violet);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:22px;
+    margin-bottom:14px;
+
+}
+
+.bi-advisor-title{
+
+    font-size:15px;
+    font-weight:700;
+    color:var(--bi-ink);
+    margin-bottom:4px;
+
+}
+
+.bi-advisor-subtitle{
+
+    font-size:12.5px;
+    color:var(--bi-muted);
+    max-width:280px;
+    line-height:1.5;
+
+}
+
+.bi-advisor-badge{
+
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-top:14px;
+    padding:.3rem .8rem;
+    border-radius:999px;
+    background:#f1f5f9;
+    color:var(--bi-faint);
+    font-size:11px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+
+}
+
+
+/* ==========================================================
+   EMPTY STATE (shared by both Chart.js charts on this page)
+========================================================== */
+
+.bi-page .empty-state-text{
+
+    font-size:13px;
+    color:var(--bi-faint);
+    text-align:center;
+    padding:60px 0;
+
+}
+
+
+/* ==========================================================
+   RESPONSIVE FINE-TUNING
+========================================================== */
+
+@media (max-width:767.98px){
+
+    .bi-page .page-title{
+
+        font-size:22px;
+
+    }
+
+    .bi-card-body{
+
+        padding:16px 18px;
+
+    }
+
+    .bi-gauge-stage{
+
+        height:170px;
+
+    }
+
+    .bi-gauge-score{
+
+        font-size:34px;
+
+    }
+
+}

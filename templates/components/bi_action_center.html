@@ -1,0 +1,33 @@
+{#
+  Action Center
+  Actionable recommendations derived from the same signals used above
+  (upcoming expiries, pending fees, expense ratio, retention, revenue
+  growth) - see database/bi_queries.py::get_action_items.
+#}
+
+<div class="col-12">
+    <div class="card bi-card border-0">
+        <div class="bi-card-body">
+
+            <h3 class="bi-section-title mb-0">Action Center</h3>
+            <p class="bi-section-subtitle mb-3">What needs your attention right now</p>
+
+            <div class="row g-2">
+                {% for item in action_items %}
+                <div class="col-md-6">
+                    <div class="bi-action-item bi-action-item-{{ item.type }}">
+                        <div class="bi-action-icon">
+                            <i class="bi {{ item.icon }}"></i>
+                        </div>
+                        <div>
+                            <div class="bi-action-title">{{ item.title }}</div>
+                            <div class="bi-action-description">{{ item.description }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+        </div>
+    </div>
+</div>

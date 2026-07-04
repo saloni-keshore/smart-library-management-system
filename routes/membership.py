@@ -11,6 +11,7 @@ from flask import (
 from datetime import date
 
 from database.db import get_connection
+from database.cashbook_queries import insert_income_entry
 
 membership_bp = Blueprint(
     "membership",
@@ -116,6 +117,18 @@ def create(student_id):
                 payment_mode, paid_amount, date.today(), remarks
             ))
 
+            insert_income_entry(
+                conn,
+                admin_id,
+                category="Admission Fee",
+                person=student["full_name"],
+                description=remarks or f"Admission payment - {plan_name}",
+                amount=paid_amount,
+                payment_method=payment_mode,
+                entry_date=date.today().isoformat(),
+                source="Admission"
+            )
+
         conn.commit()
         conn.close()
 
@@ -214,6 +227,18 @@ def renew(student_id):
                 membership_id, student_id, receipt_number,
                 payment_mode, paid_amount, date.today(), remarks
             ))
+
+            insert_income_entry(
+                conn,
+                admin_id,
+                category="Membership Renewal",
+                person=student["full_name"],
+                description=remarks or f"Membership renewal - {plan_name}",
+                amount=paid_amount,
+                payment_method=payment_mode,
+                entry_date=date.today().isoformat(),
+                source="Renewal"
+            )
 
         conn.commit()
         conn.close()

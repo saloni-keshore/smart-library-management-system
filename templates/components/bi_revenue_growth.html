@@ -1,0 +1,44 @@
+{#
+  Revenue Growth
+  Compares this month's revenue to last month's (see
+  database/bi_queries.py::get_revenue_growth) and shows the % change.
+#}
+
+<div class="col-lg-4">
+    <div class="card bi-card border-0">
+        <div class="bi-card-body">
+
+            <h3 class="bi-section-title mb-0">Revenue Growth</h3>
+            <p class="bi-section-subtitle mb-0">Month-over-month comparison</p>
+
+            <div class="bi-growth-values">
+                <div class="bi-growth-block">
+                    <span class="bi-growth-label">Previous Month</span>
+                    <span class="bi-growth-amount-muted">₹{{ "{:,.0f}".format(revenue_growth.previous_month) }}</span>
+                </div>
+                <div class="bi-growth-block text-end">
+                    <span class="bi-growth-label">Current Month</span>
+                    <span class="bi-growth-amount">₹{{ "{:,.0f}".format(revenue_growth.current_month) }}</span>
+                </div>
+            </div>
+
+            {% if revenue_growth.growth_pct > 0 %}
+            <span class="bi-growth-badge bi-growth-badge-up">
+                <i class="bi bi-arrow-up-right"></i>
+                {{ "%.1f"|format(revenue_growth.growth_pct) }}% growth
+            </span>
+            {% elif revenue_growth.growth_pct < 0 %}
+            <span class="bi-growth-badge bi-growth-badge-down">
+                <i class="bi bi-arrow-down-right"></i>
+                {{ "%.1f"|format(revenue_growth.growth_pct|abs) }}% decline
+            </span>
+            {% else %}
+            <span class="bi-growth-badge bi-growth-badge-flat">
+                <i class="bi bi-dash"></i>
+                No change
+            </span>
+            {% endif %}
+
+        </div>
+    </div>
+</div>

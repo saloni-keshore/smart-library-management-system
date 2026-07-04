@@ -1,0 +1,43 @@
+{#
+  Business Timeline
+  Recent financial activity, reusing Cashbook's own get_recent_transactions
+  query (see database/bi_queries.py::get_business_timeline) instead of
+  querying the cashbook table again.
+#}
+
+<div class="col-lg-8">
+    <div class="card bi-card border-0">
+        <div class="bi-card-body">
+
+            <h3 class="bi-section-title mb-0">Business Timeline</h3>
+            <p class="bi-section-subtitle mb-3">Recent financial activity</p>
+
+            {% if timeline %}
+            <div class="bi-timeline">
+                {% for entry in timeline %}
+                <div class="bi-timeline-item">
+                    <div class="bi-timeline-rail">
+                        <div class="bi-timeline-dot {{ 'bi-timeline-dot-income' if entry.type == 'Income' else 'bi-timeline-dot-expense' }}"></div>
+                        <div class="bi-timeline-line"></div>
+                    </div>
+                    <div class="bi-timeline-body">
+                        <div>
+                            <div class="bi-timeline-desc">
+                                {{ entry.category }}{% if entry.person %} &middot; {{ entry.person }}{% endif %}
+                            </div>
+                            <div class="bi-timeline-meta">{{ entry.entry_date }}</div>
+                        </div>
+                        <span class="bi-timeline-amount {{ 'bi-timeline-amount-income' if entry.type == 'Income' else 'bi-timeline-amount-expense' }}">
+                            {{ '+' if entry.type == 'Income' else '-' }}₹{{ "{:,.0f}".format(entry.amount) }}
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-state-text mb-0">No financial activity recorded yet.</p>
+            {% endif %}
+
+        </div>
+    </div>
+</div>

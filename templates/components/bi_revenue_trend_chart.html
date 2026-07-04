@@ -1,0 +1,21 @@
+{#
+  Revenue Trend
+  Line chart of monthly revenue vs expenses over the last 6 months,
+  built from database/bi_queries.py::last_n_months + Cashbook's existing
+  get_monthly_income / get_monthly_expense (see routes/business_intelligence.py).
+#}
+
+<div class="col-lg-6">
+    <div class="card bi-card border-0">
+        <div class="bi-card-body">
+
+            <h3 class="bi-section-title mb-0">Revenue Trend</h3>
+            <p class="bi-section-subtitle mb-2">Last 6 months, revenue vs expenses</p>
+
+            <div class="bi-chart-stage">
+                <canvas id="biRevenueTrendChart"></canvas>
+            </div>
+
+        </div>
+    </div>
+</div>

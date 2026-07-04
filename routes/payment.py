@@ -11,6 +11,7 @@ from flask import (
 from datetime import date
 
 from database.db import get_connection
+from database.cashbook_queries import insert_income_entry
 
 
 payment_bp = Blueprint(
@@ -140,6 +141,18 @@ def collect(membership_id):
             SET paid_amount=?, pending_amount=?
             WHERE membership_id=?
         """, (new_paid, new_pending, membership_id))
+
+        insert_income_entry(
+            conn,
+            admin_id,
+            category="Membership Fee",
+            person=student["full_name"],
+            description=remarks or f"Pending fee payment - {membership['plan_name']}",
+            amount=amount,
+            payment_method=payment_mode,
+            entry_date=date.today().isoformat(),
+            source="Payments"
+        )
 
         conn.commit()
         conn.close()

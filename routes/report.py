@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, redirect, url_for
 
 report_bp = Blueprint(
     "report",
@@ -9,4 +9,5 @@ report_bp = Blueprint(
 
 @report_bp.route("/")
 def index():
-    return render_template("reports/index.html")
+    # Reports has been replaced by the Business Intelligence Center.
+    return redirect(url_for("business_intelligence.index"))

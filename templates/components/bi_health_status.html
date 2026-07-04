@@ -1,0 +1,52 @@
+{#
+  Revenue Health + Expense Health
+  Two compact status rows sharing one card. Revenue Health classifies the
+  month-over-month growth trend; Expense Health classifies this month's
+  expense-to-income ratio. Both come from database/bi_queries.py.
+#}
+
+{% set icon_class = {
+    "Healthy": "bi-status-icon-healthy",
+    "Warning": "bi-status-icon-warning",
+    "Critical": "bi-status-icon-critical"
+} %}
+
+{% set badge_class = {
+    "Healthy": "bi-status-badge-healthy",
+    "Warning": "bi-status-badge-warning",
+    "Critical": "bi-status-badge-critical"
+} %}
+
+<div class="col-lg-4">
+    <div class="card bi-card border-0">
+        <div class="bi-card-body py-3">
+
+            <div class="bi-status-row">
+                <div class="bi-status-icon {{ icon_class.get(revenue_health_status, 'bi-status-icon-warning') }}">
+                    <i class="bi bi-graph-up"></i>
+                </div>
+                <div class="bi-status-text">
+                    <span class="bi-status-title">Revenue Health</span>
+                    <span class="bi-status-subtitle">Based on month-over-month growth</span>
+                </div>
+                <span class="bi-status-badge {{ badge_class.get(revenue_health_status, 'bi-status-badge-warning') }}">
+                    {{ revenue_health_status }}
+                </span>
+            </div>
+
+            <div class="bi-status-row">
+                <div class="bi-status-icon {{ icon_class.get(expense_health.status, 'bi-status-icon-warning') }}">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+                <div class="bi-status-text">
+                    <span class="bi-status-title">Expense Health</span>
+                    <span class="bi-status-subtitle">{{ expense_health.ratio_pct }}% of revenue spent this month</span>
+                </div>
+                <span class="bi-status-badge {{ badge_class.get(expense_health.status, 'bi-status-badge-warning') }}">
+                    {{ expense_health.status }}
+                </span>
+            </div>
+
+        </div>
+    </div>
+</div>
