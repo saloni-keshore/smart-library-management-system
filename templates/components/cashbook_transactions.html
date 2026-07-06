@@ -46,19 +46,23 @@
 
                         <th>Date</th>
 
+                        <th>Transaction ID</th>
+
                         <th>Type</th>
 
                         <th>Category</th>
 
-                        <th>Person</th>
+                        <th class="d-none d-xl-table-cell">Description</th>
 
-                        <th>Payment Method</th>
-
-                        <th>Reference ID</th>
+                        <th>Student / Vendor</th>
 
                         <th class="text-end">Amount</th>
 
-                        <th>Status</th>
+                        <th class="d-none d-lg-table-cell">Payment Method</th>
+
+                        <th>Source</th>
+
+                        <th class="d-none d-lg-table-cell">Created By</th>
 
                         <th class="text-center">Actions</th>
 
@@ -69,6 +73,7 @@
                 <tbody>
 
                     {% for t in ledger.rows %}
+                    {% set is_manual = t.source == 'Cashbook Manual Entry' %}
                     <tr
                         class="cashbook-row"
                         data-id="{{ t.entry_id }}"
@@ -86,6 +91,10 @@
                         <td>{{ t.entry_date }}</td>
 
                         <td>
+                            <code class="cashbook-ref">{{ t.reference_id or '—' }}</code>
+                        </td>
+
+                        <td>
                             <span class="badge rounded-pill bg-{{ 'success' if t.type == 'Income' else 'danger' }}-subtle text-{{ 'success' if t.type == 'Income' else 'danger' }}">
                                 {{ t.type }}
                             </span>
@@ -93,17 +102,11 @@
 
                         <td>{{ t.category }}</td>
 
+                        <td class="d-none d-xl-table-cell cashbook-description-cell" title="{{ t.description or '' }}">
+                            {{ t.description or '—' }}
+                        </td>
+
                         <td>{{ t.person or '—' }}</td>
-
-                        <td>
-                            <span class="badge rounded-pill bg-light text-dark border">
-                                {{ t.payment_method or '—' }}
-                            </span>
-                        </td>
-
-                        <td>
-                            <code class="cashbook-ref">{{ t.reference_id or '—' }}</code>
-                        </td>
 
                         <td class="text-end text-{{ 'success' if t.type == 'Income' else 'danger' }} fw-bold">
 
@@ -111,15 +114,25 @@
 
                         </td>
 
-                        <td>
-
-                            <span class="badge rounded-pill bg-success-subtle text-success">
-
-                                Completed
-
+                        <td class="d-none d-lg-table-cell">
+                            <span class="badge rounded-pill bg-light text-dark border">
+                                {{ t.payment_method or '—' }}
                             </span>
-
                         </td>
+
+                        <td>
+                            {% if is_manual %}
+                            <span class="badge rounded-pill cashbook-source-badge cashbook-source-manual" title="Cashbook Manual Entry">
+                                <i class="bi bi-pencil-square"></i> Manual
+                            </span>
+                            {% else %}
+                            <span class="badge rounded-pill cashbook-source-badge cashbook-source-auto" title="{{ t.source }}">
+                                <i class="bi bi-lightning-charge-fill"></i> Auto
+                            </span>
+                            {% endif %}
+                        </td>
+
+                        <td class="d-none d-lg-table-cell">{{ t.created_by or '—' }}</td>
 
                         <td class="text-center">
 
@@ -132,7 +145,7 @@
 
                             </button>
 
-                            {% if t.source == 'Cashbook Manual Entry' %}
+                            {% if is_manual %}
                             <button
                                 type="button"
                                 class="btn btn-sm btn-light cashbook-edit-btn"
@@ -159,7 +172,7 @@
                     {% else %}
                     <tr>
 
-                        <td colspan="9" class="text-center text-muted py-5 cashbook-empty-state">
+                        <td colspan="11" class="text-center text-muted py-5 cashbook-empty-state">
                             <i class="bi bi-inbox display-6 d-block mb-2"></i>
                             No transactions match these filters.
                         </td>

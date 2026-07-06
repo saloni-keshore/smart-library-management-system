@@ -8,6 +8,11 @@ from flask import (
 from database.db import get_connection
 from utils.charts import ( generate_revenue_chart,
                            generate_membership_chart )
+from database.cashbook_categories import (
+    MANUAL_INCOME_CATEGORIES,
+    MANUAL_EXPENSE_CATEGORIES,
+    PAYMENT_METHODS
+)
 
 
 dashboard_bp = Blueprint(
@@ -167,7 +172,11 @@ def dashboard():
         today_collection=today_collection,
         expiries=expiries,
         expiries_total=expiries_total,
-        admissions=admissions
+        upcoming_renewals=expiries_total,
+        admissions=admissions,
+        manual_income_categories=MANUAL_INCOME_CATEGORIES,
+        manual_expense_categories=MANUAL_EXPENSE_CATEGORIES,
+        payment_methods=PAYMENT_METHODS
     )
 
    

@@ -38,12 +38,33 @@
                                 Category
                             </label>
 
-                            <input
-                                type="text"
-                                id="editCategory"
+                            <select
+                                id="editIncomeCategorySelect"
                                 name="category"
-                                class="form-control"
+                                class="form-select cashbook-edit-category-select"
+                                data-type="Income"
                                 required>
+
+                                <option value="">Select category</option>
+                                {% for c in manual_income_categories %}
+                                <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
+
+                            </select>
+
+                            <select
+                                id="editExpenseCategorySelect"
+                                name="category"
+                                class="form-select cashbook-edit-category-select d-none"
+                                data-type="Expense"
+                                disabled>
+
+                                <option value="">Select category</option>
+                                {% for c in manual_expense_categories %}
+                                <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
+
+                            </select>
 
                         </div>
 

@@ -11,6 +11,8 @@
                 method="POST"
                 action="{{ url_for('cashbook.add_transaction') }}">
 
+                <input type="hidden" name="redirect_to" id="transactionRedirectTo" value="cashbook">
+
                 <!-- Header -->
                 <div class="modal-header">
 
@@ -64,10 +66,30 @@
                             </label>
 
                             <select
-                                id="transactionCategory"
+                                id="incomeCategorySelect"
                                 name="category"
-                                class="form-select"
+                                class="form-select cashbook-category-select"
+                                data-type="Income"
                                 required>
+
+                                <option value="">Select category</option>
+                                {% for c in manual_income_categories %}
+                                <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
+
+                            </select>
+
+                            <select
+                                id="expenseCategorySelect"
+                                name="category"
+                                class="form-select cashbook-category-select d-none"
+                                data-type="Expense"
+                                disabled>
+
+                                <option value="">Select category</option>
+                                {% for c in manual_expense_categories %}
+                                <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
 
                             </select>
 
@@ -82,6 +104,7 @@
 
                             <input
                                 type="number"
+                                id="transactionAmount"
                                 name="amount"
                                 class="form-control"
                                 placeholder="₹ 0"
@@ -128,6 +151,7 @@
 
                             <input
                                 type="date"
+                                id="transactionDate"
                                 name="transaction_date"
                                 class="form-control"
                                 required>
@@ -162,6 +186,7 @@
                             </label>
 
                             <textarea
+                                id="transactionDescription"
                                 name="description"
                                 class="form-control"
                                 rows="3"

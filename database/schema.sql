@@ -191,6 +191,42 @@ CREATE TABLE IF NOT EXISTS transactions (
 
 );
 
+-- Audit Trail: one row per financial change (auto or manual) to cashbook
+CREATE TABLE IF NOT EXISTS audit_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER NOT NULL,
+    entry_id INTEGER,
+    action TEXT NOT NULL,
+    details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id),
+    FOREIGN KEY (entry_id) REFERENCES cashbook(entry_id)
+);
+
+-- Library Settings: one row per admin, holds the Settings > Library Profile form
+CREATE TABLE IF NOT EXISTS library_settings (
+    setting_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER NOT NULL UNIQUE,
+    library_name TEXT NOT NULL,
+    owner_name TEXT,
+    phone TEXT NOT NULL,
+    email TEXT,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    pincode TEXT,
+    opening_time TEXT,
+    closing_time TEXT,
+    weekly_holiday TEXT,
+    logo_path TEXT,
+    stamp_path TEXT,
+    signature_path TEXT,
+    receipt_footer TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
+);
+
 --adding columns to cashbook table
 ALTER TABLE cashbook
 ADD COLUMN category TEXT;
@@ -210,3 +246,31 @@ ADD COLUMN reference_id TEXT;
 
 ALTER TABLE cashbook
 ADD COLUMN source TEXT;
+
+--membership_settings Table
+
+CREATE TABLE IF NOT EXISTS membership_settings (
+
+    plan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    admin_id INTEGER NOT NULL,
+
+    plan_name TEXT NOT NULL,
+
+    duration_months INTEGER NOT NULL,
+
+    admission_fee REAL DEFAULT 0,
+
+    membership_fee REAL NOT NULL,
+
+    security_deposit REAL DEFAULT 0,
+
+    grace_days INTEGER DEFAULT 0,
+
+    is_active INTEGER DEFAULT 1,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+);

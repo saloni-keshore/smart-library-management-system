@@ -67,6 +67,42 @@ Cashbook
 
        {% include "components/cashbook_transactions.html" %}
 
+    <!-- Audit Trail -->
+
+    {% include "components/cashbook_activity_log.html" %}
+
+</div>
+
+<!-- Floating Action Button -->
+<div class="cashbook-fab-wrapper dropup">
+
+    <button
+        type="button"
+        class="btn btn-primary rounded-circle cashbook-fab"
+        data-bs-toggle="dropdown"
+        aria-expanded="false"
+        title="Add Transaction">
+
+        <i class="bi bi-plus-lg"></i>
+
+    </button>
+
+    <ul class="dropdown-menu dropdown-menu-end shadow cashbook-fab-menu">
+
+        <li>
+            <button type="button" class="dropdown-item cashbook-fab-option" data-preset-type="Income" data-preset-redirect="cashbook">
+                <i class="bi bi-cash-stack text-success me-2"></i> Add Income
+            </button>
+        </li>
+
+        <li>
+            <button type="button" class="dropdown-item cashbook-fab-option" data-preset-type="Expense" data-preset-redirect="cashbook">
+                <i class="bi bi-wallet2 text-danger me-2"></i> Add Expense
+            </button>
+        </li>
+
+    </ul>
+
 </div>
 
 {% include "components/add_transaction_modal.html" %}
@@ -90,6 +126,7 @@ Cashbook
     };
 </script>
 
+<script src="{{ url_for('static', filename='js/transaction_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/cashbook.js') }}"></script>
 
 {% endblock %}

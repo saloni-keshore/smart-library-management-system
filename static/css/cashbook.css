@@ -52,16 +52,90 @@
 
 }
 
-/* Accent borders for the two new KPI cards (Cash Balance, Today's Transactions) */
+/* Accent top borders + tinted icon backgrounds, one pair per KPI card type.
+   (accent-success/danger/primary/warning also exist as bare CSS custom
+   properties on the Membership Distribution page, but that stylesheet
+   only sets border-top-color - with no border-top-width/style it was a
+   no-op here, so every color is redeclared in full for the Cashbook page.) */
 
+.cashbook-page .accent-success{ border-top:3px solid #16a34a; }
+.cashbook-page .accent-danger{ border-top:3px solid #ef4444; }
+.cashbook-page .accent-primary{ border-top:3px solid #2563eb; }
+.cashbook-page .accent-warning{ border-top:3px solid #f59e0b; }
 .cashbook-page .accent-info{ border-top:3px solid #06b6d4; }
-
 .cashbook-page .accent-violet{ border-top:3px solid #7c3aed; }
+
+.cashbook-page .accent-success .icon-circle{ background:rgba(22, 163, 74, .12); }
+.cashbook-page .accent-danger .icon-circle{ background:rgba(239, 68, 68, .12); }
+.cashbook-page .accent-primary .icon-circle{ background:rgba(37, 99, 235, .12); }
+.cashbook-page .accent-warning .icon-circle{ background:rgba(245, 158, 11, .12); }
+.cashbook-page .accent-info .icon-circle{ background:rgba(6, 182, 212, .12); }
+.cashbook-page .accent-violet .icon-circle{ background:rgba(124, 58, 237, .12); }
+
+/* Primary "Today" cards get more visual weight; secondary all-time cards
+   sit one size down so the eye lands on today's numbers first. */
+
+.cashbook-page .cashbook-primary-cards .stat-card{
+    min-height:132px;
+}
+
+.cashbook-page .cashbook-primary-cards .stat-card-value{
+    font-size:36px;
+}
+
+.cashbook-page .cashbook-secondary-cards .stat-card{
+    min-height:104px;
+    opacity:.92;
+}
+
+.cashbook-page .cashbook-secondary-cards .stat-card-value{
+    font-size:24px;
+}
+
+.cashbook-page .cashbook-secondary-cards .stat-card-title{
+    font-size:12px;
+}
+
+/* Chart containers - fixed heights so Chart.js's responsive resizing can't
+   blow the donuts/line chart up to fill the whole card width. */
+
+.cashbook-page .cashbook-donut-wrapper{
+    position:relative;
+    height:260px;
+}
+
+.cashbook-page .cashbook-line-wrapper{
+    position:relative;
+    height:300px;
+}
+
+.cashbook-page .dashboard-card{
+    transition:transform .2s ease, box-shadow .2s ease;
+}
+
+.cashbook-page .dashboard-card:hover{
+    transform:translateY(-2px);
+    box-shadow:0 10px 24px rgba(15, 23, 42, .08) !important;
+}
 
 /* Filters bar */
 
+.cashbook-page .cashbook-filters{
+    border-radius:16px;
+}
+
 .cashbook-page .cashbook-filters .form-label{
     margin-bottom:4px;
+    font-size:12px;
+    font-weight:600;
+    color:#64748b;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+}
+
+.cashbook-page .cashbook-filters .form-select,
+.cashbook-page .cashbook-filters .form-control{
+    border-radius:10px;
 }
 
 /* Transactions table */
@@ -93,6 +167,31 @@
     color:#475569;
 }
 
+.cashbook-page .cashbook-description-cell{
+    max-width:220px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+/* Auto / Manual source badges */
+
+.cashbook-page .cashbook-source-badge{
+    font-size:11px;
+    font-weight:600;
+    padding:.35em .65em;
+}
+
+.cashbook-page .cashbook-source-auto{
+    background-color:rgba(37, 99, 235, .1);
+    color:#2563eb;
+}
+
+.cashbook-page .cashbook-source-manual{
+    background-color:rgba(124, 58, 237, .1);
+    color:#7c3aed;
+}
+
 .cashbook-page .cashbook-empty-state i{
     color:#cbd5e1;
 }
@@ -114,4 +213,112 @@
 .cashbook-page .pagination .page-item.active .page-link{
     background-color:#2563eb;
     border-color:#2563eb;
+}
+
+/* Floating Action Button */
+
+.cashbook-fab-wrapper{
+    position:fixed;
+    right:28px;
+    bottom:28px;
+    z-index:1030;
+}
+
+.cashbook-fab{
+    width:58px;
+    height:58px;
+    font-size:22px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 8px 24px rgba(37,99,235,.35);
+    transition:transform .2s ease, box-shadow .2s ease;
+}
+
+.cashbook-fab:hover{
+    transform:translateY(-3px) scale(1.05);
+    box-shadow:0 12px 28px rgba(37,99,235,.45);
+}
+
+.cashbook-fab-menu{
+    border-radius:14px;
+    padding:8px;
+    min-width:200px;
+}
+
+.cashbook-fab-menu .dropdown-item{
+    border-radius:8px;
+    padding:.55rem .75rem;
+    font-weight:500;
+}
+
+.cashbook-fab-menu .dropdown-item:hover{
+    background-color:#f1f5f9;
+}
+
+/* Audit Trail panel */
+
+.cashbook-activity-log .cashbook-activity-list{
+    max-height:280px;
+    overflow-y:auto;
+}
+
+.cashbook-activity-item{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    padding:10px 4px;
+    border-bottom:1px solid #f1f5f9;
+    font-size:13px;
+}
+
+.cashbook-activity-item:last-child{
+    border-bottom:none;
+}
+
+.cashbook-activity-badge{
+    font-size:10px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.02em;
+    padding:.3em .6em;
+}
+
+.cashbook-activity-created{
+    background-color:rgba(124, 58, 237, .1);
+    color:#7c3aed;
+}
+
+.cashbook-activity-autocreated{
+    background-color:rgba(37, 99, 235, .1);
+    color:#2563eb;
+}
+
+.cashbook-activity-updated{
+    background-color:rgba(245, 158, 11, .12);
+    color:#b45309;
+}
+
+.cashbook-activity-details{
+    flex:1;
+    min-width:200px;
+    color:#334155;
+}
+
+.cashbook-activity-meta{
+    font-size:12px;
+    white-space:nowrap;
+}
+
+@media (max-width: 576px){
+    .cashbook-fab-wrapper{
+        right:18px;
+        bottom:18px;
+    }
+    .cashbook-fab{
+        width:52px;
+        height:52px;
+        font-size:20px;
+    }
 }

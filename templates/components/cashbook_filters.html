@@ -14,11 +14,22 @@
                     type="text"
                     name="search"
                     class="form-control"
-                    placeholder="Category, person, reference..."
+                    placeholder="Student name, transaction ID, remarks..."
                     value="{{ filters.search }}">
             </div>
 
             <div class="col-lg-2 col-md-3 col-6">
+                <label class="form-label small text-muted">Date Range</label>
+                <select name="date_preset" id="datePresetSelect" class="form-select">
+                    <option value="">All Time</option>
+                    <option value="today" {{ "selected" if filters.date_preset == "today" }}>Today</option>
+                    <option value="this_week" {{ "selected" if filters.date_preset == "this_week" }}>This Week</option>
+                    <option value="this_month" {{ "selected" if filters.date_preset == "this_month" }}>This Month</option>
+                    <option value="custom" {{ "selected" if filters.date_preset == "custom" }}>Custom</option>
+                </select>
+            </div>
+
+            <div class="col-lg-2 col-md-3 col-6 cashbook-custom-date {{ 'd-none' if filters.date_preset != 'custom' }}">
                 <label class="form-label small text-muted">From</label>
                 <input
                     type="date"
@@ -27,7 +38,7 @@
                     value="{{ filters.date_from }}">
             </div>
 
-            <div class="col-lg-2 col-md-3 col-6">
+            <div class="col-lg-2 col-md-3 col-6 cashbook-custom-date {{ 'd-none' if filters.date_preset != 'custom' }}">
                 <label class="form-label small text-muted">To</label>
                 <input
                     type="date"
@@ -73,14 +84,6 @@
                     {% for s in filter_sources %}
                     <option value="{{ s }}" {{ "selected" if filters.source == s }}>{{ s }}</option>
                     {% endfor %}
-                </select>
-            </div>
-
-            <div class="col-lg-2 col-md-3 col-6">
-                <label class="form-label small text-muted">Status</label>
-                <select name="status" class="form-select">
-                    <option value="">All</option>
-                    <option value="Completed" {{ "selected" if filters.status == "Completed" }}>Completed</option>
                 </select>
             </div>
 

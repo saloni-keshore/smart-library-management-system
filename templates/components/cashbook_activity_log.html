@@ -1,0 +1,37 @@
+<div class="card border-0 shadow-sm rounded-4 mt-4 cashbook-activity-log">
+
+    <div class="card-body">
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+
+            <div>
+                <h5 class="fw-bold mb-1">
+                    <i class="bi bi-shield-check text-primary me-1"></i>
+                    Audit Trail
+                </h5>
+                <small class="text-muted">Every financial change, automatic or manual</small>
+            </div>
+
+        </div>
+
+        {% if activity_log %}
+        <ul class="list-unstyled mb-0 cashbook-activity-list">
+            {% for log in activity_log %}
+            <li class="cashbook-activity-item">
+                <span class="badge rounded-pill cashbook-activity-badge cashbook-activity-{{ log.action|lower|replace('-', '')|replace(' ', '') }}">
+                    {{ log.action }}
+                </span>
+                <span class="cashbook-activity-details">{{ log.details }}</span>
+                <span class="cashbook-activity-meta text-muted">
+                    {{ log.performed_by or 'System' }} · {{ log.created_at }}
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted text-center mb-0 py-3">No activity recorded yet.</p>
+        {% endif %}
+
+    </div>
+
+</div>

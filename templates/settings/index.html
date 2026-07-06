@@ -1,16 +1,92 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}Settings{% endblock %}
+{% block title %}
+Settings
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
 
 {% block content %}
 
-<div class="container mt-4">
+<div class="container-fluid py-3 settings-page">
 
-    <h2><i class="bi bi-gear"></i> Settings</h2>
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
 
-    <div class="alert alert-info mt-4">
-        <i class="bi bi-info-circle"></i>
-        Settings module is coming soon.
+        <div>
+
+            <h2 class="fw-bold mb-1">
+                Settings
+            </h2>
+
+            <p class="text-muted mb-0">
+                Manage your library configuration.
+            </p>
+
+        </div>
+
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Settings Sections -->
+    <div class="row g-3">
+
+        <div class="col-lg-3 col-md-6">
+
+            <a href="{{ url_for('setting.library_profile') }}" class="text-decoration-none">
+
+                <div class="action-card">
+
+                    <div class="action-icon bg-primary">
+                        <i class="bi bi-building"></i>
+                    </div>
+
+                    <h5>
+                        Library Profile
+                    </h5>
+
+                    <p>
+                        Name, contact details, timings and branding
+                    </p>
+
+                </div>
+
+            </a>
+
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+
+            <div class="action-card settings-card-disabled">
+
+                <div class="action-icon bg-secondary">
+                    <i class="bi bi-people"></i>
+                </div>
+
+                <h5>
+                    Membership Settings
+                </h5>
+
+                <p>
+                    Coming soon
+                </p>
+
+            </div>
+
+        </div>
+
     </div>
 
 </div>

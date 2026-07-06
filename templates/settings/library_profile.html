@@ -1,0 +1,477 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Library Profile
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid py-3 settings-page">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <div>
+
+            <h2 class="fw-bold mb-1">
+                Library Profile
+            </h2>
+
+            <p class="text-muted mb-0">
+                These details appear on receipts and reports across the app.
+            </p>
+
+        </div>
+
+        <a href="{{ url_for('setting.index') }}" class="btn btn-secondary rounded-3">
+            <i class="bi bi-arrow-left"></i>
+            Back to Settings
+        </a>
+
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST"
+          action="{{ url_for('setting.library_profile') }}"
+          enctype="multipart/form-data"
+          id="libraryProfileForm"
+          data-has-logo="{{ '1' if settings and settings.logo_path else '0' }}"
+          data-remove-logo-url="{{ url_for('setting.remove_library_logo') }}"
+          novalidate>
+
+        <div class="row g-4">
+
+            <!-- LEFT: Logo + meta -->
+            <div class="col-lg-4 library-sidebar">
+
+                <div class="card shadow-sm border-0">
+
+                    <div class="card-body text-center">
+
+                        <h5 class="mb-3 text-primary text-start">
+                            Library Logo
+                        </h5>
+
+                        <div class="mb-3">
+
+                            {% if settings and settings.logo_path %}
+                            <img src="{{ url_for('static', filename=settings.logo_path) }}"
+                                 alt="Library Logo"
+                                 class="settings-logo-circle"
+                                 id="logoPreview">
+                            {% else %}
+                            <div class="settings-logo-circle-empty" id="logoPreview">
+                                <i class="bi bi-building"></i>
+                            </div>
+                            {% endif %}
+
+                        </div>
+
+                        <div class="d-flex justify-content-center gap-2 mb-4">
+
+                            <label for="logoInput" class="btn btn-outline-primary btn-sm rounded-pill mb-0">
+                                <i class="bi bi-upload"></i>
+                                Upload Logo
+                            </label>
+
+                            <button type="button" id="removeLogoBtn" class="btn btn-outline-danger btn-sm rounded-pill">
+                                <i class="bi bi-trash"></i>
+                                Remove Logo
+                            </button>
+
+                        </div>
+
+                        <input type="file"
+                               name="logo"
+                               id="logoInput"
+                               accept=".png,.jpg,.jpeg,.webp"
+                               class="d-none">
+
+                        <input type="hidden" name="remove_logo" id="removeLogoFlag" value="0">
+
+                        <hr>
+
+                        <div class="settings-meta-list text-start">
+
+                            <div class="d-flex justify-content-between py-2 border-bottom">
+                                <span class="text-muted">Library Name</span>
+                                <span class="fw-semibold" id="metaLibraryName">{{ settings.library_name if settings else '—' }}</span>
+                            </div>
+
+                            <div class="d-flex justify-content-between py-2 border-bottom">
+                                <span class="text-muted">Library ID</span>
+                                <span class="fw-semibold">{{ library_id }}</span>
+                            </div>
+
+                            <div class="d-flex justify-content-between py-2 border-bottom">
+                                <span class="text-muted">Registration Date</span>
+                                <span class="fw-semibold" id="metaRegDate">{{ settings.created_at[:16] if settings else '—' }}</span>
+                            </div>
+
+                            <div class="d-flex justify-content-between py-2">
+                                <span class="text-muted">Last Updated</span>
+                                <span class="fw-semibold" id="metaLastUpdated">{{ settings.updated_at[:16] if settings else '—' }}</span>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- RIGHT: General Information + Branding -->
+            <div class="col-lg-8">
+
+                <div class="card shadow-sm border-0 mb-4">
+
+                    <div class="card-body">
+
+                        <h5 class="mb-3 text-primary">
+                            General Information
+                        </h5>
+
+                        <div class="row">
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Library Name <span class="text-danger">*</span>
+                                </label>
+
+                                <input type="text"
+                                       class="form-control"
+                                       name="library_name"
+                                       value="{{ settings.library_name if settings else '' }}"
+                                       required>
+
+                                <div class="invalid-feedback">Library name is required.</div>
+
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Owner Name <span class="text-danger">*</span>
+                                </label>
+
+                                <input type="text"
+                                       class="form-control"
+                                       name="owner_name"
+                                       value="{{ settings.owner_name if settings else '' }}"
+                                       required>
+
+                                <div class="invalid-feedback">Owner name is required.</div>
+
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Phone <span class="text-danger">*</span>
+                                </label>
+
+                                <input type="tel"
+                                       class="form-control"
+                                       name="phone"
+                                       inputmode="numeric"
+                                       value="{{ settings.phone if settings else '' }}"
+                                       required>
+
+                                <div class="invalid-feedback" id="phoneFeedback">Phone number must contain digits only.</div>
+
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Email
+                                </label>
+
+                                <input type="email"
+                                       class="form-control"
+                                       name="email"
+                                       value="{{ settings.email if settings else '' }}">
+
+                                <div class="invalid-feedback">Enter a valid email address.</div>
+
+                            </div>
+
+                            <div class="col-12 mb-3">
+
+                                <label class="form-label">
+                                    Address
+                                </label>
+
+                                <textarea class="form-control"
+                                          name="address"
+                                          class="form-control"
+                                          rows="2">{{ settings.address if settings else '' }}</textarea>
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    City
+                                </label>
+
+                                <input type="text"
+                                       class="form-control"
+                                       name="city"
+                                       value="{{ settings.city if settings else '' }}">
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    State
+                                </label>
+
+                                <input type="text"
+                                       class="form-control"
+                                       name="state"
+                                       value="{{ settings.state if settings else '' }}">
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Pincode
+                                </label>
+
+                                <input type="text"
+                                       class="form-control"
+                                       name="pincode"
+                                       value="{{ settings.pincode if settings else '' }}">
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Opening Time
+                                </label>
+
+                                <input type="time"
+                                       class="form-control"
+                                       name="opening_time"
+                                       id="openingTime"
+                                       value="{{ settings.opening_time if settings else '' }}">
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Closing Time
+                                </label>
+
+                                <input type="time"
+                                       class="form-control"
+                                       name="closing_time"
+                                       id="closingTime"
+                                       value="{{ settings.closing_time if settings else '' }}">
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Weekly Holiday
+                                </label>
+
+                                <select class="form-select" name="weekly_holiday">
+                                    <option value="" {% if not settings or not settings.weekly_holiday %}selected{% endif %}>None</option>
+                                    {% for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
+                                    <option value="{{ day }}" {% if settings and settings.weekly_holiday == day %}selected{% endif %}>{{ day }}</option>
+                                    {% endfor %}
+                                </select>
+
+                            </div>
+
+                            <div class="col-12">
+                                <small class="text-danger d-none" id="timeError">
+                                    Opening time must be before closing time.
+                                </small>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="card shadow-sm border-0">
+
+                    <div class="card-body">
+
+                        <h5 class="mb-3 text-primary">
+                            Branding
+                        </h5>
+
+                        <div class="row">
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Upload Signature
+                                </label>
+
+                                <div class="settings-upload-control">
+
+                                    <label for="signatureInput" class="btn btn-outline-primary btn-sm rounded-pill mb-0">
+                                        <i class="bi bi-upload"></i>
+                                        Upload Signature
+                                    </label>
+
+                                    <span class="settings-filename text-muted small" id="signatureFilename">
+                                        {{ settings.signature_path.split('/')[-1] if settings and settings.signature_path else 'No file selected' }}
+                                    </span>
+
+                                </div>
+
+                                <input type="file"
+                                       name="signature"
+                                       id="signatureInput"
+                                       accept=".png,.jpg,.jpeg,.webp"
+                                       class="d-none">
+
+                                <div class="settings-doc-preview mt-2" id="signaturePreviewWrap">
+                                    {% if settings and settings.signature_path %}
+                                    <img src="{{ url_for('static', filename=settings.signature_path) }}"
+                                         alt="Signature preview"
+                                         class="settings-doc-preview-img">
+                                    {% endif %}
+                                </div>
+
+                                <div class="invalid-feedback">Only PNG, JPG, JPEG or WEBP images are allowed.</div>
+
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Upload Stamp
+                                </label>
+
+                                <div class="settings-upload-control">
+
+                                    <label for="stampInput" class="btn btn-outline-primary btn-sm rounded-pill mb-0">
+                                        <i class="bi bi-upload"></i>
+                                        Upload Stamp
+                                    </label>
+
+                                    <span class="settings-filename text-muted small" id="stampFilename">
+                                        {{ settings.stamp_path.split('/')[-1] if settings and settings.stamp_path else 'No file selected' }}
+                                    </span>
+
+                                </div>
+
+                                <input type="file"
+                                       name="stamp"
+                                       id="stampInput"
+                                       accept=".png,.jpg,.jpeg,.webp"
+                                       class="d-none">
+
+                                <div class="settings-doc-preview mt-2" id="stampPreviewWrap">
+                                    {% if settings and settings.stamp_path %}
+                                    <img src="{{ url_for('static', filename=settings.stamp_path) }}"
+                                         alt="Stamp preview"
+                                         class="settings-doc-preview-img">
+                                    {% endif %}
+                                </div>
+
+                                <div class="invalid-feedback">Only PNG, JPG, JPEG or WEBP images are allowed.</div>
+
+                            </div>
+
+                            <div class="col-12">
+
+                                <label class="form-label">
+                                    Receipt Footer Message
+                                </label>
+
+                                <textarea class="form-control"
+                                          name="receipt_footer"
+                                          rows="2"
+                                          placeholder="e.g. Thank you for visiting! Fees once paid are non-refundable.">{{ settings.receipt_footer if settings else '' }}</textarea>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-4">
+
+            <button type="reset" class="btn btn-secondary rounded-3">
+                <i class="bi bi-arrow-counterclockwise"></i>
+                Reset
+            </button>
+
+            <button type="submit" class="btn btn-primary rounded-3" id="saveChangesBtn">
+                <span class="spinner-border spinner-border-sm d-none" id="saveSpinner" role="status" aria-hidden="true"></span>
+                <i class="bi bi-check-circle" id="saveIcon"></i>
+                <span id="saveButtonText">Save Changes</span>
+            </button>
+
+        </div>
+
+    </form>
+
+    <!-- Toast -->
+    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+
+        <div id="settingsToast"
+             class="toast align-items-center text-bg-success border-0"
+             role="alert"
+             aria-live="assertive"
+             aria-atomic="true"
+             data-bs-delay="2000"
+             data-bs-autohide="true">
+
+            <div class="d-flex">
+
+                <div class="toast-body" id="settingsToastBody">
+                    ✓ Library Profile Updated Successfully
+                </div>
+
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}

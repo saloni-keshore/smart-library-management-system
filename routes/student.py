@@ -40,6 +40,7 @@ def index():
 
             m.membership_id,
             m.plan_name,
+            m.paid_amount,
             m.pending_amount,
             CASE
                 WHEN m.end_date IS NOT NULL AND m.end_date < DATE('now') THEN 'Expired'

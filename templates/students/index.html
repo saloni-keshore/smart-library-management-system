@@ -50,6 +50,8 @@ Students
 
                         <th>Status</th>
 
+                        <th>Paid</th>
+
                         <th>Pending</th>
 
                         <th width="130">
@@ -105,6 +107,12 @@ Students
                         </span>
 
                         {% endif %}
+
+                    </td>
+
+                    <td>
+
+                        ₹{{ student.paid_amount or 0 }}
 
                     </td>
 

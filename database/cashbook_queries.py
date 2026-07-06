@@ -9,6 +9,7 @@ another admin's transactions.
 from datetime import date
 
 from database.db import get_connection
+from database.audit_queries import log_entry
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +107,14 @@ def insert_transaction(
         "Cashbook Manual Entry"
     ))
 
+    log_entry(
+        cursor,
+        admin_id,
+        cursor.lastrowid,
+        "Created",
+        f"Manual {transaction_type} of ₹{amount} added under '{category}' ({reference_id})"
+    )
+
     conn.commit()
     conn.close()
 
@@ -144,6 +153,15 @@ def insert_income_entry(
         admin_id, category, person, description, amount,
         payment_method, entry_date, reference_id, source
     ))
+
+    log_entry(
+        cursor,
+        admin_id,
+        cursor.lastrowid,
+        "Auto-Created",
+        f"Automatic Income of ₹{amount} recorded under '{category}' for "
+        f"{person or 'N/A'} via {source} ({reference_id})"
+    )
 
     return reference_id
 
@@ -198,8 +216,18 @@ def update_manual_transaction(
         entry_id, admin_id
     ))
 
-    conn.commit()
     updated = cursor.rowcount > 0
+
+    if updated:
+        log_entry(
+            cursor,
+            admin_id,
+            entry_id,
+            "Updated",
+            f"Transaction edited - now ₹{amount} under '{category}'"
+        )
+
+    conn.commit()
     conn.close()
 
     return updated
@@ -232,6 +260,31 @@ def get_total_income(admin_id):
 
 def get_total_expense(admin_id):
     return _get_total_by_type(admin_id, "Expense")
+
+
+def _get_today_total_by_type(admin_id, transaction_type):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT IFNULL(SUM(amount), 0) AS total
+        FROM cashbook
+        WHERE admin_id = ? AND type = ? AND entry_date = DATE('now')
+    """, (admin_id, transaction_type))
+
+    total = cursor.fetchone()["total"]
+    conn.close()
+
+    return total
+
+
+def get_today_income(admin_id):
+    return _get_today_total_by_type(admin_id, "Income")
+
+
+def get_today_expense(admin_id):
+    return _get_today_total_by_type(admin_id, "Expense")
 
 
 def get_pending_fees(admin_id):
@@ -444,9 +497,10 @@ def get_cashbook_ledger(
         conditions.append("c.payment_method = ?")
         params.append(payment_method)
 
-    if source:
-        conditions.append("c.source = ?")
-        params.append(source)
+    if source == "Manual":
+        conditions.append("c.source = 'Cashbook Manual Entry'")
+    elif source == "Automatic":
+        conditions.append("c.source != 'Cashbook Manual Entry'")
 
     where_clause = " AND ".join(conditions)
 

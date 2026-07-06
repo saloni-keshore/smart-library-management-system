@@ -1,110 +1,5 @@
-document.addEventListener("DOMContentLoaded", () => {
-
-    const typeSelect = document.getElementById("transactionType");
-
-    const categorySelect = document.getElementById("transactionCategory");
-
-    // Manual entries only cover what isn't already automatic (Admission,
-    // Membership Fee and Renewal all post to Cashbook on their own).
-    const incomeCategories = [
-
-        "Misc Income"
-
-    ];
-
-    const expenseCategories = [
-
-        "Electricity",
-
-        "Internet",
-
-        "Furniture",
-
-        "Books",
-
-        "Salary",
-
-        "Repairs",
-
-        "Misc Expenses"
-
-    ];
-
-    function loadCategories(type){
-
-        const personLabel = document.getElementById("personLabel");
-
-        const personInput = document.getElementById("personInput");
-
-        categorySelect.innerHTML = "";
-
-        if(type==="Income"){
-
-            personLabel.innerText="Student";
-            personInput.placeholder="Rahul Sharma";
-
-        }
-        else{
-
-            personLabel.innerText="Paid To";
-            personInput.placeholder="Electricity Board";
-
-        }
-
-        let list = type === "Income"
-            ? incomeCategories
-            : expenseCategories;
-
-        list.forEach(item=>{
-
-            let option = document.createElement("option");
-
-            option.value = item;
-
-            option.textContent = item;
-
-            categorySelect.appendChild(option);
-
-        });
-
-    }
-
-    if (typeSelect && categorySelect) {
-
-        loadCategories(typeSelect.value);
-
-        typeSelect.addEventListener("change",()=>{
-
-            loadCategories(typeSelect.value);
-
-        });
-
-    }
-
-});
-
-document.addEventListener("DOMContentLoaded", () => {
-
-    const transactionForm = document.getElementById("transactionForm");
-
-    transactionForm?.addEventListener("submit", (event) => {
-
-        const submitBtn = transactionForm.querySelector("button[type='submit']");
-
-        if (transactionForm.dataset.submitting === "true") {
-            event.preventDefault();
-            return;
-        }
-
-        transactionForm.dataset.submitting = "true";
-
-        if (submitBtn) {
-            submitBtn.disabled = true;
-        }
-
-    });
-
-});
+// Category select toggling + submit-guard for the "New Transaction" modal
+// now live in transaction_modal.js, shared with the Dashboard quick actions.
 
 document.addEventListener("DOMContentLoaded", () => {
 
@@ -158,9 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
         chartData.incomeExpense,
         {
             responsive: true,
+            maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
             plugins: {
-                legend: { position: "bottom" }
+                legend: { position: "bottom", labels: { boxWidth: 12, padding: 16 } }
             },
             scales: {
                 y: {
@@ -176,40 +72,34 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     );
 
+    const donutOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "68%",
+        plugins: {
+            legend: { position: "bottom", labels: { boxWidth: 12, padding: 16 } }
+        }
+    };
+
     renderChart(
         "expenseCategoryChart",
         "doughnut",
         chartData.expenseCategory,
-        {
-            responsive: true,
-            plugins: {
-                legend: { position: "bottom" }
-            }
-        }
+        donutOptions
     );
 
     renderChart(
         "revenueSourceChart",
         "doughnut",
         chartData.revenueSource,
-        {
-            responsive: true,
-            plugins: {
-                legend: { position: "bottom" }
-            }
-        }
+        donutOptions
     );
 
     renderChart(
         "paymentMethodChart",
         "doughnut",
         chartData.paymentMethod,
-        {
-            responsive: true,
-            plugins: {
-                legend: { position: "bottom" }
-            }
-        }
+        donutOptions
     );
 
 });
@@ -253,6 +143,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     });
 
+    const editIncomeCategorySelect = document.getElementById("editIncomeCategorySelect");
+    const editExpenseCategorySelect = document.getElementById("editExpenseCategorySelect");
+
     document.querySelectorAll(".cashbook-edit-btn").forEach((btn) => {
 
         btn.addEventListener("click", () => {
@@ -264,7 +157,16 @@ document.addEventListener("DOMContentLoaded", () => {
             const template = form.dataset.urlTemplate;
             form.action = template.replace(/0$/, row.dataset.id);
 
-            document.getElementById("editCategory").value = row.dataset.category || "";
+            const type = row.dataset.type;
+
+            [editIncomeCategorySelect, editExpenseCategorySelect].forEach((select) => {
+                if (!select) return;
+                const isActive = select.dataset.type === type;
+                select.classList.toggle("d-none", !isActive);
+                select.disabled = !isActive;
+                if (isActive) select.value = row.dataset.category || "";
+            });
+
             document.getElementById("editAmount").value = row.dataset.amount || "";
             document.getElementById("editPaymentMethod").value = row.dataset.paymentMethod || "Cash";
             document.getElementById("editDate").value = row.dataset.date || "";
@@ -273,6 +175,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
             editModal.show();
 
+        });
+
+    });
+
+});
+
+// Date range preset - reveal the raw From/To inputs only for "Custom".
+document.addEventListener("DOMContentLoaded", () => {
+
+    const presetSelect = document.getElementById("datePresetSelect");
+    const customFields = document.querySelectorAll(".cashbook-custom-date");
+
+    presetSelect?.addEventListener("change", () => {
+
+        const isCustom = presetSelect.value === "custom";
+
+        customFields.forEach((field) => {
+            field.classList.toggle("d-none", !isCustom);
         });
 
     });

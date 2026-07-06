@@ -1,37 +1,5 @@
 <div class="row g-3 mb-4">
 
-    <!-- New Enquiry -->
-
-    <div class="col-lg-3 col-md-6">
-
-        <a href="{{ url_for('enquiry.add') }}" class="text-decoration-none">
-
-            <div class="action-card">
-
-                <div class="action-icon bg-primary">
-
-                    <i class="bi bi-person-plus-fill"></i>
-
-                </div>
-
-                <h5>
-
-                    New Enquiry
-
-                </h5>
-
-                <p>
-
-                    Add a new visitor enquiry
-
-                </p>
-
-            </div>
-
-        </a>
-
-    </div>
-
     <!-- New Admission -->
 
     <div class="col-lg-3 col-md-6">
@@ -64,7 +32,7 @@
 
     </div>
 
-    <!-- Collect Payment -->
+    <!-- Collect Fees -->
 
     <div class="col-lg-3 col-md-6">
 
@@ -80,13 +48,105 @@
 
                 <h5>
 
-                    Collect Payment
+                    Collect Fees
 
                 </h5>
 
                 <p>
 
                     Receive membership fees
+
+                </p>
+
+            </div>
+
+        </a>
+
+    </div>
+
+    <!-- Add Income -->
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="action-card quick-add-trigger"
+             data-preset-type="Income"
+             data-preset-redirect="dashboard">
+
+            <div class="action-icon bg-success">
+
+                <i class="bi bi-cash-stack"></i>
+
+            </div>
+
+            <h5>
+
+                Add Income
+
+            </h5>
+
+            <p>
+
+                Donation, fine, book sale...
+
+            </p>
+
+        </div>
+
+    </div>
+
+    <!-- Add Expense -->
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="action-card quick-add-trigger"
+             data-preset-type="Expense"
+             data-preset-redirect="dashboard">
+
+            <div class="action-icon bg-danger">
+
+                <i class="bi bi-wallet2"></i>
+
+            </div>
+
+            <h5>
+
+                Add Expense
+
+            </h5>
+
+            <p>
+
+                Bills, rent, salary...
+
+            </p>
+
+        </div>
+
+    </div>
+
+    <!-- New Enquiry -->
+
+    <div class="col-lg-3 col-md-6">
+
+        <a href="{{ url_for('enquiry.add') }}" class="text-decoration-none">
+
+            <div class="action-card">
+
+                <div class="action-icon bg-primary">
+
+                    <i class="bi bi-person-plus-fill"></i>
+
+                </div>
+
+                <h5>
+
+                    New Enquiry
+
+                </h5>
+
+                <p>
+
+                    Add a new visitor enquiry
 
                 </p>
 
@@ -128,4 +188,68 @@
 
     </div>
 
+    <!-- Add Fine -->
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="action-card quick-add-trigger"
+             data-preset-type="Income"
+             data-preset-category="Library Fine"
+             data-preset-redirect="dashboard">
+
+            <div class="action-icon bg-warning">
+
+                <i class="bi bi-exclamation-octagon-fill"></i>
+
+            </div>
+
+            <h5>
+
+                Add Fine
+
+            </h5>
+
+            <p>
+
+                Record a library fine
+
+            </p>
+
+        </div>
+
+    </div>
+
+    <!-- Record Donation -->
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="action-card quick-add-trigger"
+             data-preset-type="Income"
+             data-preset-category="Donation"
+             data-preset-redirect="dashboard">
+
+            <div class="action-icon bg-info">
+
+                <i class="bi bi-heart-fill"></i>
+
+            </div>
+
+            <h5>
+
+                Record Donation
+
+            </h5>
+
+            <p>
+
+                Log a donation received
+
+            </p>
+
+        </div>
+
+    </div>
+
 </div>
+
+{% include "components/add_transaction_modal.html" %}

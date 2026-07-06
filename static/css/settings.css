@@ -1,0 +1,196 @@
+.settings-page{
+
+    animation: fadeIn .35s ease;
+
+}
+
+@keyframes fadeIn{
+
+    from{
+
+        opacity:0;
+
+        transform:translateY(10px);
+
+    }
+
+    to{
+
+        opacity:1;
+
+        transform:translateY(0);
+
+    }
+
+}
+
+.settings-page .settings-card-disabled{
+
+    cursor:not-allowed;
+
+    opacity:.55;
+
+}
+
+.settings-page .settings-card-disabled:hover{
+
+    transform:none;
+
+    box-shadow:0 6px 16px rgba(0,0,0,.04);
+
+    border-color:#eef2f7;
+
+}
+
+.settings-page .settings-logo-circle,
+.settings-page .settings-logo-circle-empty{
+
+    width:180px;
+
+    height:180px;
+
+    border-radius:50%;
+
+    margin:0 auto;
+
+}
+
+.settings-page .settings-logo-circle{
+
+    object-fit:cover;
+
+    border:5px solid #ffffff;
+
+    box-shadow:0 12px 30px rgba(0,0,0,.12);
+
+}
+
+.settings-page .settings-logo-circle-empty{
+
+    display:flex;
+
+    justify-content:center;
+
+    align-items:center;
+
+    font-size:48px;
+
+    color:#94a3b8;
+
+    background:#f8fafc;
+
+    border:3px dashed #cbd5e1;
+
+}
+
+.settings-page .settings-meta-list{
+
+    font-size:14px;
+
+}
+
+/* Card polish: soft lift on hover, smooth transitions everywhere */
+
+.settings-page .card{
+
+    transition:box-shadow .25s ease, transform .25s ease;
+
+}
+
+.settings-page .card:hover{
+
+    box-shadow:0 10px 24px rgba(0,0,0,.08);
+
+}
+
+.settings-page .form-control,
+.settings-page .form-select{
+
+    transition:border-color .2s ease, box-shadow .2s ease;
+
+}
+
+.settings-page .btn{
+
+    transition:all .2s ease;
+
+}
+
+/* Themed file upload controls (replaces the native "Choose File" input) */
+
+.settings-page .settings-upload-control{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+
+    flex-wrap:wrap;
+
+}
+
+.settings-page .settings-filename{
+
+    max-width:220px;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+    white-space:nowrap;
+
+}
+
+.settings-page .settings-doc-preview:empty{
+
+    display:none;
+
+}
+
+.settings-page .settings-doc-preview-img{
+
+    height:64px;
+
+    width:auto;
+
+    max-width:100%;
+
+    object-fit:contain;
+
+    border:1px solid #eef2f7;
+
+    border-radius:10px;
+
+    background:#f8fafc;
+
+    padding:4px;
+
+}
+
+/* Field-level validation highlighting */
+
+.settings-page .form-control.is-invalid,
+.settings-page .form-select.is-invalid{
+
+    border-color:#ef4444;
+
+}
+
+.settings-page .form-control.is-invalid:focus{
+
+    box-shadow:0 0 0 .25rem rgba(239,68,68,.15);
+
+}
+
+
+/* ==========================
+   Sticky Library Sidebar
+========================== */
+
+ 
+.settings-page .library-sidebar{
+    position: sticky;
+    top: 25px;
+    align-self: flex-start;
+}
