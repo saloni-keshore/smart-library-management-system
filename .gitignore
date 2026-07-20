@@ -1,0 +1,28 @@
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables / secrets
+.env
+
+# SQLite transient files (the main database itself is intentionally tracked)
+*.db-journal
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.idea/
+.vscode/
