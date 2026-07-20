@@ -11,6 +11,12 @@ from werkzeug.utils import secure_filename
 from database.settings_queries import (
     get_library_settings, save_library_settings, clear_library_logo
 )
+from database.membership_settings_queries import (
+        get_membership_settings,
+        save_membership_settings,
+    )
+
+
 
 setting_bp = Blueprint(
     "setting",
@@ -21,13 +27,174 @@ setting_bp = Blueprint(
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+MEMBERSHIP_SETTING_FIELDS = {
+    "monthly_fee": ("Monthly Plan Fee", "currency"),
+    "monthly_days": ("Monthly Plan Days", "number"),
+    "quarterly_fee": ("Quarterly Plan Fee", "currency"),
+    "quarterly_days": ("Quarterly Plan Days", "number"),
+    "half_yearly_fee": ("Half-yearly Plan Fee", "currency"),
+    "half_yearly_days": ("Half-yearly Plan Days", "number"),
+    "yearly_fee": ("Yearly Plan Fee", "currency"),
+    "yearly_days": ("Yearly Plan Days", "number"),
+    "admission_fee": ("Admission Fee", "currency"),
+    "late_fee_per_day": ("Late Fee Per Day", "currency"),
+    "renewal_grace_days": ("Renewal Grace Days", "number"),
+    "reminder_days": ("Reminder Days", "number"),
+    "auto_expiry": ("Auto Expiry", "boolean"),
+    "allow_early_renewal": ("Allow Early Renewal", "boolean"),
+    "send_reminders": ("Send Reminders", "boolean"),
+}
+
+MEMBERSHIP_SETTING_DEFAULTS = {
+    "monthly_fee": 0.0,
+    "monthly_days": 30,
+    "quarterly_fee": 0.0,
+    "quarterly_days": 90,
+    "half_yearly_fee": 0.0,
+    "half_yearly_days": 180,
+    "yearly_fee": 0.0,
+    "yearly_days": 365,
+    "admission_fee": 0.0,
+    "late_fee_per_day": 0.0,
+    "renewal_grace_days": 7,
+    "reminder_days": 3,
+    "auto_expiry": 1,
+    "allow_early_renewal": 1,
+    "send_reminders": 1,
+}
+
+
+def _format_membership_setting(value, value_type):
+    if value_type == "currency":
+        return f"₹{float(value):g}"
+    if value_type == "boolean":
+        return "Enabled" if int(value) else "Disabled"
+    return str(int(value))
+
+
+def _build_membership_changes(existing, submitted):
+    """Return display-ready changes while comparing normalized values."""
+
+    previous = (
+        {field: existing[field] for field in MEMBERSHIP_SETTING_FIELDS}
+        if existing else MEMBERSHIP_SETTING_DEFAULTS
+    )
+    changes = []
+
+    for field, (label, value_type) in MEMBERSHIP_SETTING_FIELDS.items():
+        old_value = previous[field]
+        new_value = submitted[field]
+        normalized_old = float(old_value) if value_type == "currency" else int(old_value)
+        normalized_new = float(new_value) if value_type == "currency" else int(new_value)
+
+        if normalized_old != normalized_new:
+            changes.append({
+                "setting": label,
+                "previous": _format_membership_setting(old_value, value_type),
+                "new": _format_membership_setting(new_value, value_type),
+            })
+
+    return changes
+
+# ==========================================================
+# Settings Home
+# ==========================================================
 
 @setting_bp.route("/")
 def index():
+
     if "admin_id" not in session:
         return redirect("/")
 
     return render_template("settings/index.html")
+
+# ==========================================================
+# Membership Settings
+
+@setting_bp.route("/membership", methods=["GET", "POST"])
+def membership_settings():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    if request.method == "POST":
+
+        existing = get_membership_settings(admin_id)
+
+        def number(name, default, integer=False):
+            raw_value = request.form.get(name, str(default)).strip()
+            try:
+                value = int(raw_value) if integer else float(raw_value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{name.replace('_', ' ').title()} must be a number.")
+            if value < 0:
+                raise ValueError(f"{name.replace('_', ' ').title()} cannot be negative.")
+            return value
+
+        try:
+            data = {
+
+                "monthly_fee": number("monthly_fee", 0),
+                "monthly_days": number("monthly_days", 30, integer=True),
+
+                "quarterly_fee": number("quarterly_fee", 0),
+                "quarterly_days": number("quarterly_days", 90, integer=True),
+
+                "half_yearly_fee": number("half_yearly_fee", 0),
+                "half_yearly_days": number("half_yearly_days", 180, integer=True),
+
+                "yearly_fee": number("yearly_fee", 0),
+                "yearly_days": number("yearly_days", 365, integer=True),
+
+                "admission_fee": number("admission_fee", 0),
+                "late_fee_per_day": number("late_fee_per_day", 0),
+                "renewal_grace_days": number("renewal_grace_days", 7, integer=True),
+
+                "auto_expiry":
+                    1 if request.form.get("auto_expiry") else 0,
+
+                "allow_early_renewal":
+                    1 if request.form.get("allow_early_renewal") else 0,
+
+                "send_reminders":
+                    1 if request.form.get("send_reminders") else 0,
+
+                "reminder_days": number("reminder_days", 3, integer=True),
+            }
+        except ValueError as error:
+            flash(str(error), "danger")
+            return redirect(url_for("setting.membership_settings"))
+
+        changes = _build_membership_changes(existing, data)
+        save_membership_settings(admin_id, data)
+
+        session["membership_change_summary"] = {
+            "changes": changes,
+            "updated_by": session.get("username", "Admin"),
+            "updated_on": datetime.now().strftime("%d %b %Y %I:%M %p"),
+        }
+
+        flash(
+            "Membership settings updated successfully.",
+            "success"
+        )
+
+        return redirect(
+            url_for("setting.membership_settings")
+        )
+
+    settings = get_membership_settings(admin_id)
+    change_summary = session.pop("membership_change_summary", None)
+
+    return render_template(
+        "settings/membership_settings.html",
+        settings=settings,
+        changes=change_summary["changes"] if change_summary else None,
+        updated_by=change_summary["updated_by"] if change_summary else None,
+        updated_on=change_summary["updated_on"] if change_summary else None,
+    )
 
 
 @setting_bp.route("/library", methods=["GET", "POST"])
@@ -175,6 +342,24 @@ def remove_library_logo():
 
     return jsonify(success=True, message="Logo removed successfully.")
 
+@setting_bp.route("/receipt")
+def receipt_settings():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    flash("Receipt Settings module coming soon.", "info")
+
+    return redirect(url_for("setting.index"))
+
+@setting_bp.route("/notification")
+def notification_settings():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    flash("Notification Settings coming soon.", "info")
+    return redirect(url_for("setting.index"))
 
 def _allowed_file(filename):
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""

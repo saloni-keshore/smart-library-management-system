@@ -250,27 +250,24 @@ ADD COLUMN source TEXT;
 --membership_settings Table
 
 CREATE TABLE IF NOT EXISTS membership_settings (
-
-    plan_id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-    admin_id INTEGER NOT NULL,
-
-    plan_name TEXT NOT NULL,
-
-    duration_months INTEGER NOT NULL,
-
-    admission_fee REAL DEFAULT 0,
-
-    membership_fee REAL NOT NULL,
-
-    security_deposit REAL DEFAULT 0,
-
-    grace_days INTEGER DEFAULT 0,
-
-    is_active INTEGER DEFAULT 1,
-
+    setting_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER NOT NULL UNIQUE,
+    monthly_fee REAL NOT NULL DEFAULT 0,
+    monthly_days INTEGER NOT NULL DEFAULT 30,
+    quarterly_fee REAL NOT NULL DEFAULT 0,
+    quarterly_days INTEGER NOT NULL DEFAULT 90,
+    half_yearly_fee REAL NOT NULL DEFAULT 0,
+    half_yearly_days INTEGER NOT NULL DEFAULT 180,
+    yearly_fee REAL NOT NULL DEFAULT 0,
+    yearly_days INTEGER NOT NULL DEFAULT 365,
+    admission_fee REAL NOT NULL DEFAULT 0,
+    late_fee_per_day REAL NOT NULL DEFAULT 0,
+    renewal_grace_days INTEGER NOT NULL DEFAULT 7,
+    auto_expiry INTEGER NOT NULL DEFAULT 1 CHECK (auto_expiry IN (0, 1)),
+    allow_early_renewal INTEGER NOT NULL DEFAULT 1 CHECK (allow_early_renewal IN (0, 1)),
+    send_reminders INTEGER NOT NULL DEFAULT 1 CHECK (send_reminders IN (0, 1)),
+    reminder_days INTEGER NOT NULL DEFAULT 3,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
 );

@@ -40,14 +40,16 @@ Settings
         {% endif %}
     {% endwith %}
 
-    <!-- Settings Sections -->
-    <div class="row g-3">
+    <!-- Settings Cards -->
+    <div class="row g-4">
 
+        <!-- Library Profile -->
         <div class="col-lg-3 col-md-6">
 
-            <a href="{{ url_for('setting.library_profile') }}" class="text-decoration-none">
+            <a href="{{ url_for('setting.library_profile') }}"
+               class="text-decoration-none">
 
-                <div class="action-card">
+                <div class="action-card h-100">
 
                     <div class="action-icon bg-primary">
                         <i class="bi bi-building"></i>
@@ -58,7 +60,7 @@ Settings
                     </h5>
 
                     <p>
-                        Name, contact details, timings and branding
+                        Name, branding, timings and contact information.
                     </p>
 
                 </div>
@@ -67,23 +69,81 @@ Settings
 
         </div>
 
+        <!-- Membership Settings -->
         <div class="col-lg-3 col-md-6">
 
-            <div class="action-card settings-card-disabled">
+            <a href="{{ url_for('setting.membership_settings') }}"
+               class="text-decoration-none">
 
-                <div class="action-icon bg-secondary">
-                    <i class="bi bi-people"></i>
+                <div class="action-card h-100">
+
+                    <div class="action-icon bg-success">
+                        <i class="bi bi-person-vcard"></i>
+                    </div>
+
+                    <h5>
+                        Membership Settings
+                    </h5>
+
+                    <p>
+                        Plans, fees, validity, renewal and fine rules.
+                    </p>
+
                 </div>
 
-                <h5>
-                    Membership Settings
-                </h5>
+            </a>
 
-                <p>
-                    Coming soon
-                </p>
+        </div>
 
-            </div>
+        <!-- Receipt Settings -->
+        <div class="col-lg-3 col-md-6">
+
+            <a href="{{ url_for('setting.receipt_settings') }}"
+               class="text-decoration-none">
+
+                <div class="action-card h-100">
+
+                    <div class="action-icon bg-warning">
+                        <i class="bi bi-receipt"></i>
+                    </div>
+
+                    <h5>
+                        Receipt Settings
+                    </h5>
+
+                    <p>
+                        Receipt numbering, branding and printing options.
+                    </p>
+
+                </div>
+
+            </a>
+
+        </div>
+
+        <!-- Notification Settings -->
+        <div class="col-lg-3 col-md-6">
+
+            <a href="{{ url_for('setting.notification_settings') }}"
+               class="text-decoration-none">
+
+                <div class="action-card h-100">
+
+                    <div class="action-icon bg-info">
+                        <i class="bi bi-bell"></i>
+                    </div>
+
+                    <h5>
+                        Notification Settings
+                    </h5>
+
+                    <p>
+                        Renewal reminders, alerts and automation.
+                    </p>
+
+                </div>
+
+            </a>
 
         </div>
 
@@ -92,3 +152,4 @@ Settings
 </div>
 
 {% endblock %}
+

@@ -1,0 +1,145 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Membership Settings{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 settings-page">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Membership Settings</h2>
+            <p class="text-muted mb-0">Configure fees, validity, renewals and reminders.</p>
+        </div>
+        <a href="{{ url_for('setting.index') }}" class="btn btn-secondary rounded-3">
+            <i class="bi bi-arrow-left"></i> Back to Settings
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('setting.membership_settings') }}">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h5 class="text-primary mb-3">Plans and validity</h5>
+                <div class="row g-3">
+                    {% for prefix, label, default_days in [
+                        ('monthly', 'Monthly', 30),
+                        ('quarterly', 'Quarterly', 90),
+                        ('half_yearly', 'Half-yearly', 180),
+                        ('yearly', 'Yearly', 365)
+                    ] %}
+                    <div class="col-lg-3 col-md-6">
+                        <label class="form-label">{{ label }} fee</label>
+                        <input class="form-control" type="number" min="0" step="0.01"
+                               name="{{ prefix }}_fee" required
+                               value="{{ settings[prefix + '_fee'] if settings else 0 }}">
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <label class="form-label">{{ label }} days</label>
+                        <input class="form-control" type="number" min="1" step="1"
+                               name="{{ prefix }}_days" required
+                               value="{{ settings[prefix + '_days'] if settings else default_days }}">
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h5 class="text-primary mb-3">Fees and renewal rules</h5>
+                <div class="row g-3">
+                    {% for name, label, default in [
+                        ('admission_fee', 'Admission fee', 0),
+                        ('late_fee_per_day', 'Late fee per day', 0),
+                        ('renewal_grace_days', 'Renewal grace days', 7),
+                        ('reminder_days', 'Reminder days before expiry', 3)
+                    ] %}
+                    <div class="col-lg-3 col-md-6">
+                        <label class="form-label">{{ label }}</label>
+                        <input class="form-control" type="number" min="0"
+                               step="{{ '0.01' if 'fee' in name else '1' }}" name="{{ name }}" required
+                               value="{{ settings[name] if settings else default }}">
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="row mt-3">
+                    {% for name, label, default in [
+                        ('auto_expiry', 'Automatically expire memberships', 1),
+                        ('allow_early_renewal', 'Allow early renewal', 1),
+                        ('send_reminders', 'Send expiry reminders', 1)
+                    ] %}
+                    <div class="col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="{{ name }}" id="{{ name }}"
+                                   {% if (settings and settings[name]) or (not settings and default) %}checked{% endif %}>
+                            <label class="form-check-label" for="{{ name }}">{{ label }}</label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <button class="btn btn-primary px-4" type="submit">
+            <i class="bi bi-check-lg"></i> Save Membership Settings
+        </button>
+    </form>
+
+    {% if changes is not none %}
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-body">
+            <h5 class="text-primary mb-3">
+                <i class="bi bi-clock-history me-2"></i>Configuration Changes
+            </h5>
+
+            {% if changes %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Setting</th>
+                            <th scope="col">Previous Value</th>
+                            <th scope="col">New Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for change in changes %}
+                        <tr>
+                            <td class="fw-semibold">{{ change.setting }}</td>
+                            <td class="text-muted">{{ change.previous }}</td>
+                            <td class="text-success fw-semibold">{{ change.new }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-light border mb-0" role="status">
+                No configuration changes were detected. All values were already up to date.
+            </div>
+            {% endif %}
+
+            <div class="d-flex flex-column flex-md-row gap-3 gap-md-5 mt-4 pt-3 border-top small">
+                <div>
+                    <span class="text-muted d-block">Updated By:</span>
+                    <span class="fw-semibold">{{ updated_by }}</span>
+                </div>
+                <div>
+                    <span class="text-muted d-block">Updated On:</span>
+                    <span class="fw-semibold">{{ updated_on }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
