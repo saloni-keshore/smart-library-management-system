@@ -147,6 +147,84 @@ Settings
 
         </div>
 
+        <!-- Staff & User Access -->
+        <div class="col-lg-3 col-md-6">
+
+            <a href="{{ url_for('setting.staff_access') }}"
+               class="text-decoration-none">
+
+                <div class="action-card h-100">
+
+                    <div class="action-icon bg-secondary">
+                        <i class="bi bi-people"></i>
+                    </div>
+
+                    <h5>
+                        Staff & User Access
+                    </h5>
+
+                    <p>
+                        Administrator account and future role-based access.
+                    </p>
+
+                </div>
+
+            </a>
+
+        </div>
+
+        <!-- Data & Backup -->
+        <div class="col-lg-3 col-md-6">
+
+            <a href="{{ url_for('setting.data_backup') }}"
+               class="text-decoration-none">
+
+                <div class="action-card h-100">
+
+                    <div class="action-icon bg-dark">
+                        <i class="bi bi-hdd-network"></i>
+                    </div>
+
+                    <h5>
+                        Data & Backup
+                    </h5>
+
+                    <p>
+                        Export your data and take manual backups.
+                    </p>
+
+                </div>
+
+            </a>
+
+        </div>
+
+        <!-- Security Settings -->
+        <div class="col-lg-3 col-md-6">
+
+            <a href="{{ url_for('setting.security_settings') }}"
+               class="text-decoration-none">
+
+                <div class="action-card h-100">
+
+                    <div class="action-icon bg-danger">
+                        <i class="bi bi-shield-lock"></i>
+                    </div>
+
+                    <h5>
+                        Security Settings
+                    </h5>
+
+                    <p>
+                        Password, sessions and account security.
+                    </p>
+
+                </div>
+
+            </a>
+
+        </div>
+
     </div>
 
 </div>

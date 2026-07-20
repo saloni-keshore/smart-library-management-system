@@ -222,6 +222,45 @@ CREATE TABLE IF NOT EXISTS library_settings (
     stamp_path TEXT,
     signature_path TEXT,
     receipt_footer TEXT,
+    receipt_prefix TEXT DEFAULT 'LIB',
+    next_receipt_number INTEGER DEFAULT 1001,
+    auto_increment_receipt INTEGER DEFAULT 1,
+    print_logo INTEGER DEFAULT 1,
+    print_stamp INTEGER DEFAULT 1,
+    print_signature INTEGER DEFAULT 1,
+    paper_size TEXT DEFAULT 'A4',
+    auto_print INTEGER DEFAULT 0,
+    auto_email INTEGER DEFAULT 0,
+    open_pdf_after_save INTEGER DEFAULT 1,
+    duplicate_copy INTEGER DEFAULT 0,
+
+    -- Notification Settings (Reminder Rules)
+    reminder_7_days INTEGER DEFAULT 1,
+    reminder_3_days INTEGER DEFAULT 1,
+    reminder_1_day INTEGER DEFAULT 1,
+    notify_on_expiry_day INTEGER DEFAULT 1,
+    notify_after_expiry INTEGER DEFAULT 1,
+
+    -- Notification Settings (Channels)
+    notify_in_app INTEGER DEFAULT 1,
+    notify_sms INTEGER DEFAULT 0,
+    notify_email INTEGER DEFAULT 0,
+    notify_whatsapp INTEGER DEFAULT 0,
+
+    -- Notification Settings (Quiet Hours)
+    quiet_hours_enabled INTEGER DEFAULT 0,
+    quiet_hours_start TEXT DEFAULT '22:00',
+    quiet_hours_end TEXT DEFAULT '07:00',
+    quiet_hours_allow_critical INTEGER DEFAULT 1,
+
+    -- Notification Settings (Dashboard Notifications)
+    dash_show_badge_count INTEGER DEFAULT 1,
+    dash_show_expiry_today INTEGER DEFAULT 1,
+    dash_show_expiry_tomorrow INTEGER DEFAULT 1,
+    dash_show_overdue INTEGER DEFAULT 1,
+    dash_show_pending_fees INTEGER DEFAULT 1,
+    dash_show_new_admissions INTEGER DEFAULT 1,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
@@ -248,6 +287,10 @@ ALTER TABLE cashbook
 ADD COLUMN source TEXT;
 
 --membership_settings Table
+-- NOTE: reminder_days/send_reminders are superseded by the notification_*/
+-- reminder_* columns on library_settings (Settings > Notification Settings
+-- now owns reminder behaviour) - kept here unused for backward compatibility,
+-- see docs/11_FUTURE_WORK.md.
 
 CREATE TABLE IF NOT EXISTS membership_settings (
     setting_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -267,6 +310,31 @@ CREATE TABLE IF NOT EXISTS membership_settings (
     allow_early_renewal INTEGER NOT NULL DEFAULT 1 CHECK (allow_early_renewal IN (0, 1)),
     send_reminders INTEGER NOT NULL DEFAULT 1 CHECK (send_reminders IN (0, 1)),
     reminder_days INTEGER NOT NULL DEFAULT 3,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
+);
+
+-- Data & Backup: one row per admin, tracks the last manual backup taken.
+-- Kept separate from library_settings because a backup can be taken before
+-- a Library Profile row exists (library_settings.library_name/phone are
+-- NOT NULL, so it can't hold a lazily-created bare row).
+CREATE TABLE IF NOT EXISTS backup_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER NOT NULL UNIQUE,
+    last_backup_at TIMESTAMP,
+    backup_filename TEXT,
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
+);
+
+-- Security Settings: one row per admin. Kept separate from library_settings
+-- for the same reason as backup_log.
+CREATE TABLE IF NOT EXISTS security_settings (
+    setting_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER NOT NULL UNIQUE,
+    session_timeout_minutes INTEGER NOT NULL DEFAULT 60,
+    remember_me_enabled INTEGER NOT NULL DEFAULT 0 CHECK (remember_me_enabled IN (0, 1)),
+    login_notifications_enabled INTEGER NOT NULL DEFAULT 0 CHECK (login_notifications_enabled IN (0, 1)),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(admin_id)

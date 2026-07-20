@@ -10,7 +10,7 @@ No build step — all CSS/JS is hand-authored and served directly via `url_for('
 | `business_intelligence.css` | 723 | BI dashboard page. Own `:root` tokens prefixed `--bi-*` |
 | `cashbook.css` | 323 | Cashbook page |
 | `membership_distribution.css` | 992 | Membership Distribution page. Own `:root` tokens prefixed `--md-*` |
-| `settings.css` | 195 | Settings pages |
+| `settings.css` | 299 | Settings pages, incl. the Receipt Settings live-preview card, the Notification Settings preview card (`.settings-notif-preview`), and the "Coming Soon" placeholder styles shared by Staff & User Access / Security Settings (`.settings-coming-soon-badge`, `.settings-coming-soon-icon`, `.settings-role-card`) |
 | `login.css` | 75 | Auth pages (`auth_base.html`). Sets `font-family: 'Poppins', sans-serif` |
 
 **Color tokens actually in use** (from `--bi-*`/`--md-*` variables, consistent across both files): primary `#2563eb`, success `#16a34a`, warning `#f59e0b`, danger `#ef4444`, info `#06b6d4`, violet `#7c3aed`, plus soft bg/text tint pairs and neutral tones `#0f172a` (ink), `#64748b` (muted), `#eef2f7` (border), `#f8fafc` (bg). This is the real, current palette — treat it as authoritative over any older design-intent documents.
@@ -26,7 +26,7 @@ Each page-specific stylesheet defines its **own** `:root` tokens rather than sha
 | `dashboard-charts.js` | 57 | Generic skeleton-loader controller — reveals `[data-chart-stage]` elements after a delay; exposes `window.revealDashboardChart()` |
 | `login.js` | 19 | Password show/hide toggle on the login page |
 | `membership_distribution.js` | 144 | Animated bars/table interactions for the distribution page |
-| `settings.js` | 314 | Library Profile form validation, toast notifications, file upload preview |
+| `settings.js` | 455 | Library Profile form validation, toast notifications, file upload preview (`libraryProfileForm`); Receipt Settings live preview — receipt number, logo/stamp/signature toggles, paper size (`receiptSettingsForm`); Notification Settings quiet-hours enable/disable of the start/end time inputs (`notificationSettingsForm`); Security Settings new/confirm password match validation (`securityPasswordForm`) — each block guarded by its own form-presence check |
 | `transaction_modal.js` | 116 | Shared Add/Edit Transaction modal logic (category toggling by type, person label swap, submit guard) — reused by Cashbook and Dashboard quick actions |
 
 ## `static/charts/` — server-generated PNGs

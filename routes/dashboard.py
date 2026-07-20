@@ -13,6 +13,7 @@ from database.cashbook_categories import (
     MANUAL_EXPENSE_CATEGORIES,
     PAYMENT_METHODS
 )
+from database.notification_settings_queries import get_notification_settings
 
 
 dashboard_bp = Blueprint(
@@ -161,6 +162,12 @@ def dashboard():
 
     conn.close()
 
+    notification_settings = get_notification_settings(admin_id)
+    dash_show_pending_fees = (
+        bool(notification_settings["dash_show_pending_fees"])
+        if notification_settings else True
+    )
+
     return render_template(
         "dashboard/index.html",
         total_students=total_students,
@@ -176,7 +183,8 @@ def dashboard():
         admissions=admissions,
         manual_income_categories=MANUAL_INCOME_CATEGORIES,
         manual_expense_categories=MANUAL_EXPENSE_CATEGORIES,
-        payment_methods=PAYMENT_METHODS
+        payment_methods=PAYMENT_METHODS,
+        dash_show_pending_fees=dash_show_pending_fees
     )
 
    

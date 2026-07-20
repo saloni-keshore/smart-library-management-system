@@ -1,13 +1,18 @@
+import csv
+import io
 import os
 import re
+import shutil
 from datetime import datetime
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for, flash, session,
-    current_app, jsonify
+    current_app, jsonify, send_file, Response
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+from database.db import get_connection, DATABASE_PATH
 from database.settings_queries import (
     get_library_settings, save_library_settings, clear_library_logo
 )
@@ -15,6 +20,17 @@ from database.membership_settings_queries import (
         get_membership_settings,
         save_membership_settings,
     )
+from database.receipt_settings_queries import (
+    get_receipt_settings, save_receipt_settings
+)
+from database.notification_settings_queries import (
+    get_notification_settings, save_notification_settings
+)
+from database.backup_queries import get_backup_info, record_backup
+from database.security_settings_queries import (
+    get_security_settings, save_security_settings
+)
+from routes.auth import validate_password
 
 
 
@@ -39,11 +55,12 @@ MEMBERSHIP_SETTING_FIELDS = {
     "admission_fee": ("Admission Fee", "currency"),
     "late_fee_per_day": ("Late Fee Per Day", "currency"),
     "renewal_grace_days": ("Renewal Grace Days", "number"),
-    "reminder_days": ("Reminder Days", "number"),
     "auto_expiry": ("Auto Expiry", "boolean"),
     "allow_early_renewal": ("Allow Early Renewal", "boolean"),
-    "send_reminders": ("Send Reminders", "boolean"),
 }
+# reminder_days/send_reminders moved to Settings > Notification Settings
+# (library_settings.reminder_*/notify_* columns) - see
+# docs/11_FUTURE_WORK.md. Membership Settings only displays them read-only.
 
 MEMBERSHIP_SETTING_DEFAULTS = {
     "monthly_fee": 0.0,
@@ -57,10 +74,44 @@ MEMBERSHIP_SETTING_DEFAULTS = {
     "admission_fee": 0.0,
     "late_fee_per_day": 0.0,
     "renewal_grace_days": 7,
-    "reminder_days": 3,
     "auto_expiry": 1,
     "allow_early_renewal": 1,
-    "send_reminders": 1,
+}
+
+RECEIPT_PREFIX_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,10}$")
+
+PAPER_SIZE_LABELS = {
+    "A4": "A4",
+    "thermal_80mm": "Thermal 80mm",
+    "thermal_58mm": "Thermal 58mm",
+}
+
+RECEIPT_SETTING_FIELDS = {
+    "receipt_prefix": ("Receipt Prefix", "text"),
+    "next_receipt_number": ("Starting Receipt Number", "number"),
+    "auto_increment_receipt": ("Auto Increment Receipt Number", "boolean"),
+    "print_logo": ("Print Logo", "boolean"),
+    "print_stamp": ("Print Stamp", "boolean"),
+    "print_signature": ("Print Signature", "boolean"),
+    "paper_size": ("Paper Size", "paper_size"),
+    "auto_print": ("Auto Print After Payment", "boolean"),
+    "open_pdf_after_save": ("Open PDF After Save", "boolean"),
+    "duplicate_copy": ("Print Duplicate Copy", "boolean"),
+    "auto_email": ("Auto Email Receipt", "boolean"),
+}
+
+RECEIPT_SETTING_DEFAULTS = {
+    "receipt_prefix": "LIB",
+    "next_receipt_number": 1001,
+    "auto_increment_receipt": 1,
+    "print_logo": 1,
+    "print_stamp": 1,
+    "print_signature": 1,
+    "paper_size": "A4",
+    "auto_print": 0,
+    "open_pdf_after_save": 1,
+    "duplicate_copy": 0,
+    "auto_email": 0,
 }
 
 
@@ -95,6 +146,136 @@ def _build_membership_changes(existing, submitted):
             })
 
     return changes
+
+
+def _format_receipt_setting(value, value_type):
+    if value_type == "boolean":
+        return "Enabled" if int(value) else "Disabled"
+    if value_type == "paper_size":
+        return PAPER_SIZE_LABELS.get(value, value)
+    if value_type == "number":
+        return str(int(value))
+    return str(value)
+
+
+def _build_receipt_changes(existing, submitted):
+    """Return display-ready changes while comparing normalized values."""
+
+    previous = (
+        {field: existing[field] for field in RECEIPT_SETTING_FIELDS}
+        if existing else RECEIPT_SETTING_DEFAULTS
+    )
+    changes = []
+
+    for field, (label, value_type) in RECEIPT_SETTING_FIELDS.items():
+        old_value = previous[field]
+        new_value = submitted[field]
+
+        if value_type in ("text", "paper_size"):
+            normalized_old, normalized_new = str(old_value), str(new_value)
+        elif value_type == "number":
+            normalized_old, normalized_new = int(old_value), int(new_value)
+        else:
+            normalized_old, normalized_new = int(old_value), int(new_value)
+
+        if normalized_old != normalized_new:
+            changes.append({
+                "setting": label,
+                "previous": _format_receipt_setting(old_value, value_type),
+                "new": _format_receipt_setting(new_value, value_type),
+            })
+
+    return changes
+
+
+NOTIFICATION_SETTING_FIELDS = {
+    "reminder_7_days": ("7-Day Reminder", "boolean"),
+    "reminder_3_days": ("3-Day Reminder", "boolean"),
+    "reminder_1_day": ("1-Day Reminder", "boolean"),
+    "notify_on_expiry_day": ("Notify On Expiry Day", "boolean"),
+    "notify_after_expiry": ("Notify After Expiry", "boolean"),
+    "notify_in_app": ("In-App Notifications", "boolean"),
+    "notify_sms": ("SMS Notifications", "boolean"),
+    "notify_email": ("Email Notifications", "boolean"),
+    "notify_whatsapp": ("WhatsApp Notifications", "boolean"),
+    "quiet_hours_enabled": ("Quiet Hours", "boolean"),
+    "quiet_hours_start": ("Quiet Hours Start", "text"),
+    "quiet_hours_end": ("Quiet Hours End", "text"),
+    "quiet_hours_allow_critical": ("Allow Critical Alerts In Quiet Hours", "boolean"),
+    "dash_show_badge_count": ("Show Badge Count", "boolean"),
+    "dash_show_expiry_today": ("Show Expiry Today", "boolean"),
+    "dash_show_expiry_tomorrow": ("Show Expiry Tomorrow", "boolean"),
+    "dash_show_overdue": ("Show Overdue Students", "boolean"),
+    "dash_show_pending_fees": ("Show Pending Fees", "boolean"),
+    "dash_show_new_admissions": ("Show New Admissions", "boolean"),
+}
+
+NOTIFICATION_SETTING_DEFAULTS = {
+    "reminder_7_days": 1,
+    "reminder_3_days": 1,
+    "reminder_1_day": 1,
+    "notify_on_expiry_day": 1,
+    "notify_after_expiry": 1,
+    "notify_in_app": 1,
+    "notify_sms": 0,
+    "notify_email": 0,
+    "notify_whatsapp": 0,
+    "quiet_hours_enabled": 0,
+    "quiet_hours_start": "22:00",
+    "quiet_hours_end": "07:00",
+    "quiet_hours_allow_critical": 1,
+    "dash_show_badge_count": 1,
+    "dash_show_expiry_today": 1,
+    "dash_show_expiry_tomorrow": 1,
+    "dash_show_overdue": 1,
+    "dash_show_pending_fees": 1,
+    "dash_show_new_admissions": 1,
+}
+
+
+def _format_notification_setting(value, value_type):
+    if value_type == "boolean":
+        return "Enabled" if int(value) else "Disabled"
+    return str(value)
+
+
+def _build_notification_changes(existing, submitted):
+    """Return display-ready changes while comparing normalized values."""
+
+    previous = (
+        {field: existing[field] for field in NOTIFICATION_SETTING_FIELDS}
+        if existing else NOTIFICATION_SETTING_DEFAULTS
+    )
+    changes = []
+
+    for field, (label, value_type) in NOTIFICATION_SETTING_FIELDS.items():
+        old_value = previous[field]
+        new_value = submitted[field]
+
+        if value_type == "boolean":
+            normalized_old, normalized_new = int(old_value), int(new_value)
+        else:
+            normalized_old, normalized_new = str(old_value), str(new_value)
+
+        if normalized_old != normalized_new:
+            changes.append({
+                "setting": label,
+                "previous": _format_notification_setting(old_value, value_type),
+                "new": _format_notification_setting(new_value, value_type),
+            })
+
+    return changes
+
+
+def _format_file_size(size_bytes):
+    size = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+
+
+SESSION_TIMEOUT_OPTIONS = {15: "15 minutes", 30: "30 minutes", 60: "60 minutes", 0: "Never"}
 
 # ==========================================================
 # Settings Home
@@ -157,11 +338,6 @@ def membership_settings():
 
                 "allow_early_renewal":
                     1 if request.form.get("allow_early_renewal") else 0,
-
-                "send_reminders":
-                    1 if request.form.get("send_reminders") else 0,
-
-                "reminder_days": number("reminder_days", 3, integer=True),
             }
         except ValueError as error:
             flash(str(error), "danger")
@@ -191,6 +367,7 @@ def membership_settings():
     return render_template(
         "settings/membership_settings.html",
         settings=settings,
+        notification_settings=get_notification_settings(admin_id),
         changes=change_summary["changes"] if change_summary else None,
         updated_by=change_summary["updated_by"] if change_summary else None,
         updated_on=change_summary["updated_on"] if change_summary else None,
@@ -342,24 +519,359 @@ def remove_library_logo():
 
     return jsonify(success=True, message="Logo removed successfully.")
 
-@setting_bp.route("/receipt")
+@setting_bp.route("/receipt", methods=["GET", "POST"])
 def receipt_settings():
 
     if "admin_id" not in session:
         return redirect("/")
 
-    flash("Receipt Settings module coming soon.", "info")
+    admin_id = session["admin_id"]
+    existing = get_receipt_settings(admin_id)
 
-    return redirect(url_for("setting.index"))
+    if existing is None:
+        flash(
+            "Please complete your Library Profile before configuring receipt settings.",
+            "info"
+        )
+        return redirect(url_for("setting.library_profile"))
 
-@setting_bp.route("/notification")
+    if request.method == "POST":
+
+        receipt_prefix = request.form.get("receipt_prefix", "").strip().upper()
+        paper_size = request.form.get("paper_size", "A4").strip()
+        receipt_footer = request.form.get("receipt_footer", "").strip()
+
+        errors = []
+
+        if not receipt_prefix:
+            errors.append("Receipt prefix is required.")
+        elif not RECEIPT_PREFIX_PATTERN.match(receipt_prefix):
+            errors.append(
+                "Receipt prefix must be up to 10 characters: letters, numbers or dash only."
+            )
+
+        if paper_size not in PAPER_SIZE_LABELS:
+            errors.append("Select a valid paper size.")
+
+        try:
+            next_receipt_number = int(request.form.get("next_receipt_number", "0").strip())
+            if next_receipt_number <= 0:
+                errors.append("Starting receipt number must be greater than zero.")
+        except (TypeError, ValueError):
+            errors.append("Starting receipt number must be a number.")
+            next_receipt_number = None
+
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return redirect(url_for("setting.receipt_settings"))
+
+        data = {
+            "receipt_prefix": receipt_prefix,
+            "next_receipt_number": next_receipt_number,
+            "auto_increment_receipt":
+                1 if request.form.get("auto_increment_receipt") else 0,
+            "print_logo":
+                1 if request.form.get("print_logo") else 0,
+            "print_stamp":
+                1 if request.form.get("print_stamp") else 0,
+            "print_signature":
+                1 if request.form.get("print_signature") else 0,
+            "paper_size": paper_size,
+            "auto_print":
+                1 if request.form.get("auto_print") else 0,
+            "open_pdf_after_save":
+                1 if request.form.get("open_pdf_after_save") else 0,
+            "duplicate_copy":
+                1 if request.form.get("duplicate_copy") else 0,
+            "auto_email":
+                1 if request.form.get("auto_email") else 0,
+            "receipt_footer": receipt_footer or None,
+        }
+
+        changes = _build_receipt_changes(existing, data)
+        save_receipt_settings(admin_id, data)
+
+        session["receipt_change_summary"] = {
+            "changes": changes,
+            "updated_by": session.get("username", "Admin"),
+            "updated_on": datetime.now().strftime("%d %b %Y %I:%M %p"),
+        }
+
+        flash(
+            "✓ Receipt Settings saved successfully. "
+            "These settings will be applied to all future payment receipts.",
+            "success"
+        )
+        return redirect(url_for("setting.receipt_settings"))
+
+    change_summary = session.pop("receipt_change_summary", None)
+
+    return render_template(
+        "settings/receipt_settings.html",
+        settings=existing,
+        paper_sizes=PAPER_SIZE_LABELS,
+        changes=change_summary["changes"] if change_summary else None,
+        updated_by=change_summary["updated_by"] if change_summary else None,
+        updated_on=change_summary["updated_on"] if change_summary else None,
+    )
+
+@setting_bp.route("/notification", methods=["GET", "POST"])
 def notification_settings():
 
     if "admin_id" not in session:
         return redirect("/")
 
-    flash("Notification Settings coming soon.", "info")
-    return redirect(url_for("setting.index"))
+    admin_id = session["admin_id"]
+    existing = get_notification_settings(admin_id)
+
+    if existing is None:
+        flash(
+            "Please complete your Library Profile before configuring notification settings.",
+            "info"
+        )
+        return redirect(url_for("setting.library_profile"))
+
+    if request.method == "POST":
+
+        def time_value(name, default):
+            raw_value = request.form.get(name, default).strip()
+            try:
+                datetime.strptime(raw_value, "%H:%M")
+            except ValueError:
+                raise ValueError(f"{name.replace('_', ' ').title()} must be a valid time.")
+            return raw_value
+
+        def flag(name):
+            return 1 if request.form.get(name) else 0
+
+        try:
+            data = {
+                "reminder_7_days": flag("reminder_7_days"),
+                "reminder_3_days": flag("reminder_3_days"),
+                "reminder_1_day": flag("reminder_1_day"),
+                "notify_on_expiry_day": flag("notify_on_expiry_day"),
+                "notify_after_expiry": flag("notify_after_expiry"),
+
+                "notify_in_app": flag("notify_in_app"),
+                "notify_sms": flag("notify_sms"),
+                "notify_email": flag("notify_email"),
+                "notify_whatsapp": flag("notify_whatsapp"),
+
+                "quiet_hours_enabled": flag("quiet_hours_enabled"),
+                "quiet_hours_start": time_value("quiet_hours_start", "22:00"),
+                "quiet_hours_end": time_value("quiet_hours_end", "07:00"),
+                "quiet_hours_allow_critical": flag("quiet_hours_allow_critical"),
+
+                "dash_show_badge_count": flag("dash_show_badge_count"),
+                "dash_show_expiry_today": flag("dash_show_expiry_today"),
+                "dash_show_expiry_tomorrow": flag("dash_show_expiry_tomorrow"),
+                "dash_show_overdue": flag("dash_show_overdue"),
+                "dash_show_pending_fees": flag("dash_show_pending_fees"),
+                "dash_show_new_admissions": flag("dash_show_new_admissions"),
+            }
+        except ValueError as error:
+            flash(str(error), "danger")
+            return redirect(url_for("setting.notification_settings"))
+
+        changes = _build_notification_changes(existing, data)
+        save_notification_settings(admin_id, data)
+
+        session["notification_change_summary"] = {
+            "changes": changes,
+            "updated_by": session.get("username", "Admin"),
+            "updated_on": datetime.now().strftime("%d %b %Y %I:%M %p"),
+        }
+
+        flash("Notification settings saved successfully.", "success")
+        return redirect(url_for("setting.notification_settings"))
+
+    change_summary = session.pop("notification_change_summary", None)
+
+    return render_template(
+        "settings/notification_settings.html",
+        settings=existing,
+        changes=change_summary["changes"] if change_summary else None,
+        updated_by=change_summary["updated_by"] if change_summary else None,
+        updated_on=change_summary["updated_on"] if change_summary else None,
+    )
+
+
+# ==========================================================
+# Staff & User Access (placeholder)
+# ==========================================================
+
+@setting_bp.route("/staff")
+def staff_access():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    return render_template("settings/staff_access.html")
+
+
+# ==========================================================
+# Data & Backup
+# ==========================================================
+
+@setting_bp.route("/backup")
+def data_backup():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    db_size = _format_file_size(os.path.getsize(DATABASE_PATH)) if os.path.exists(DATABASE_PATH) else "Unknown"
+    backup_info = get_backup_info(admin_id)
+    backups_dir = os.path.join(current_app.root_path, "backups")
+
+    return render_template(
+        "settings/data_backup.html",
+        db_size=db_size,
+        last_backup_at=backup_info["last_backup_at"] if backup_info else None,
+        backup_location=backups_dir,
+    )
+
+
+@setting_bp.route("/backup/export-csv")
+def backup_export_csv():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM students WHERE admin_id = ? ORDER BY student_id",
+        (admin_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    if rows:
+        writer.writerow(rows[0].keys())
+        for row in rows:
+            writer.writerow(list(row))
+    else:
+        writer.writerow([
+            "student_id", "full_name", "mobile", "address", "id_proof",
+            "purpose", "shift", "join_date", "status"
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=students_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        }
+    )
+
+
+@setting_bp.route("/backup/create", methods=["POST"])
+def backup_create():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    backups_dir = os.path.join(current_app.root_path, "backups")
+    os.makedirs(backups_dir, exist_ok=True)
+
+    backup_filename = f"library_backup_{admin_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    backup_path = os.path.join(backups_dir, backup_filename)
+
+    shutil.copy2(DATABASE_PATH, backup_path)
+    record_backup(admin_id, backup_filename)
+
+    return send_file(backup_path, as_attachment=True, download_name=backup_filename)
+
+
+# ==========================================================
+# Security Settings
+# ==========================================================
+
+@setting_bp.route("/security", methods=["GET", "POST"])
+def security_settings():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    if request.method == "POST":
+
+        form_type = request.form.get("form_type")
+
+        if form_type == "password":
+            current_password = request.form.get("current_password", "")
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM admins WHERE admin_id = ?", (admin_id,))
+            admin = cursor.fetchone()
+
+            if not admin or not check_password_hash(admin["password"], current_password):
+                conn.close()
+                flash("Current password is incorrect.", "danger")
+                return redirect(url_for("setting.security_settings"))
+
+            if new_password != confirm_password:
+                conn.close()
+                flash("New passwords do not match.", "danger")
+                return redirect(url_for("setting.security_settings"))
+
+            error = validate_password(new_password)
+            if error:
+                conn.close()
+                flash(error, "danger")
+                return redirect(url_for("setting.security_settings"))
+
+            cursor.execute(
+                "UPDATE admins SET password = ? WHERE admin_id = ?",
+                (generate_password_hash(new_password), admin_id)
+            )
+            conn.commit()
+            conn.close()
+
+            flash("Password changed successfully.", "success")
+            return redirect(url_for("setting.security_settings"))
+
+        try:
+            session_timeout_minutes = int(request.form.get("session_timeout_minutes", "60"))
+        except (TypeError, ValueError):
+            session_timeout_minutes = 60
+
+        if session_timeout_minutes not in SESSION_TIMEOUT_OPTIONS:
+            session_timeout_minutes = 60
+
+        data = {
+            "session_timeout_minutes": session_timeout_minutes,
+            "remember_me_enabled": 1 if request.form.get("remember_me_enabled") else 0,
+            "login_notifications_enabled": 1 if request.form.get("login_notifications_enabled") else 0,
+        }
+
+        save_security_settings(admin_id, data)
+        flash("Security preferences saved successfully.", "success")
+        return redirect(url_for("setting.security_settings"))
+
+    settings = get_security_settings(admin_id)
+
+    return render_template(
+        "settings/security_settings.html",
+        settings=settings,
+        timeout_options=SESSION_TIMEOUT_OPTIONS,
+    )
+
 
 def _allowed_file(filename):
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""

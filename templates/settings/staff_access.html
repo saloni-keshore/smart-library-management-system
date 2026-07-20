@@ -1,0 +1,54 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Staff & User Access{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 settings-page">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Staff & User Access</h2>
+            <p class="text-muted mb-0">Manage who can access this library's account.</p>
+        </div>
+        <a href="{{ url_for('setting.index') }}" class="btn btn-secondary rounded-3">
+            <i class="bi bi-arrow-left"></i> Back to Settings
+        </a>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body text-center py-5">
+            <div class="settings-coming-soon-icon mb-3">
+                <i class="bi bi-people"></i>
+            </div>
+
+            <span class="badge settings-coming-soon-badge mb-3">Coming Soon</span>
+
+            <h4 class="fw-bold mb-2">Single Administrator Account</h4>
+            <p class="text-muted mb-4 mx-auto" style="max-width:560px;">
+                The current version of Smart Library supports one administrator account per library.
+                Future versions will support multiple staff accounts with role-based permissions.
+            </p>
+
+            <div class="row g-3 justify-content-center mx-auto" style="max-width:720px;">
+                {% for icon, role, description in [
+                    ('bi-person-badge', 'Owner', 'Full access to every module and setting.'),
+                    ('bi-door-open', 'Front Desk', 'Enquiries, admissions and day-to-day check-ins.'),
+                    ('bi-cash-coin', 'Accountant', 'Payments, cashbook and financial reports.'),
+                    ('bi-journal-bookmark', 'Librarian', 'Student records and membership management.')
+                ] %}
+                <div class="col-md-3 col-6">
+                    <div class="settings-role-card h-100">
+                        <i class="bi {{ icon }}"></i>
+                        <div class="fw-semibold mt-2">{{ role }}</div>
+                        <div class="text-muted small">{{ description }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

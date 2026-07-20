@@ -158,7 +158,21 @@ Append-only trail for cashbook changes. Written via `database/audit_queries.py`'
 | `opening_time`, `closing_time`, `weekly_holiday` | TEXT | |
 | `logo_path`, `stamp_path`, `signature_path` | TEXT | Relative to `static/`, e.g. `uploads/settings/logo_1_foo.png` |
 | `receipt_footer` | TEXT | Added later by `migrate_settings_receipt_footer.py` — absent from the original `migrate_library_settings.py` |
+| `receipt_prefix` TEXT DEFAULT 'LIB', `next_receipt_number` INTEGER DEFAULT 1001, `auto_increment_receipt` INTEGER DEFAULT 1 | | Added by `migrate_receipt_settings.py` — receipt numbering |
+| `print_logo`, `print_stamp`, `print_signature` | INTEGER DEFAULT 1 | Added by `migrate_receipt_settings.py` — which Library Profile assets to print on the receipt |
+| `paper_size` | TEXT DEFAULT 'A4' | Added by `migrate_receipt_settings.py` — `A4`, `thermal_80mm`, or `thermal_58mm` |
+| `auto_print`, `auto_email`, `duplicate_copy` | INTEGER DEFAULT 0 | Added by `migrate_receipt_settings.py` — printing/emailing preferences; not wired to any actual print/email logic yet, see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
+| `open_pdf_after_save` | INTEGER DEFAULT 1 | Added by `migrate_receipt_settings.py` |
+| `reminder_7_days`, `reminder_3_days`, `reminder_1_day`, `notify_on_expiry_day`, `notify_after_expiry` | INTEGER DEFAULT 1 | Added by `migrate_notification_settings.py` — Notification Settings' Reminder Rules section |
+| `notify_in_app` | INTEGER DEFAULT 1 | Added by `migrate_notification_settings.py` |
+| `notify_sms`, `notify_email`, `notify_whatsapp` | INTEGER DEFAULT 0 | Added by `migrate_notification_settings.py` — channel toggles; no SMS/Email/WhatsApp dispatch engine exists, save-only (see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-24) |
+| `quiet_hours_enabled` | INTEGER DEFAULT 0 | Added by `migrate_notification_settings.py` |
+| `quiet_hours_start` TEXT DEFAULT `'22:00'`, `quiet_hours_end` TEXT DEFAULT `'07:00'` | | Added by `migrate_notification_settings.py` |
+| `quiet_hours_allow_critical` | INTEGER DEFAULT 1 | Added by `migrate_notification_settings.py` |
+| `dash_show_badge_count`, `dash_show_expiry_today`, `dash_show_expiry_tomorrow`, `dash_show_overdue`, `dash_show_pending_fees`, `dash_show_new_admissions` | INTEGER DEFAULT 1 | Added by `migrate_notification_settings.py` — control the navbar bell/dashboard. `dash_show_pending_fees` is read by `routes/dashboard.py`; the badge/today/tomorrow/overdue flags are read by `app.py`'s `inject_notification_summary` context processor for `components/notification_dropdown.html`; `dash_show_new_admissions` has no consumer yet (TD-25) |
 | `created_at`, `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
+
+Receipt Settings (`routes/setting.py`'s `receipt_settings()`) and Notification Settings (`notification_settings()`) both read/write columns on this same row as Library Profile — there is no separate receipt-settings or notification-settings table (see ADR-7/ADR-8 in [DECISIONS.md](DECISIONS.md)).
 
 ### `membership_settings` (one row per admin)
 | Column | Type | Notes |
@@ -171,17 +185,40 @@ Append-only trail for cashbook changes. Written via `database/audit_queries.py`'
 | `yearly_fee` REAL DEFAULT 0, `yearly_days` INTEGER DEFAULT 365 | | |
 | `admission_fee` REAL DEFAULT 0, `late_fee_per_day` REAL DEFAULT 0 | | |
 | `renewal_grace_days` INTEGER DEFAULT 7 | | |
-| `auto_expiry`, `allow_early_renewal`, `send_reminders` | INTEGER DEFAULT 1, CHECK(0/1) | Boolean flags |
-| `reminder_days` | INTEGER DEFAULT 3 | |
+| `auto_expiry`, `allow_early_renewal` | INTEGER DEFAULT 1, CHECK(0/1) | Boolean flags |
+| `send_reminders` | INTEGER DEFAULT 1, CHECK(0/1) | **Unused as of 2026-07-21** — superseded by `library_settings.notify_*`/`reminder_*` columns (Notification Settings). Column left in place, no longer written by `save_membership_settings()`. See TD-23 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
+| `reminder_days` | INTEGER DEFAULT 3 | **Unused as of 2026-07-21** — same as `send_reminders` above |
 | `created_at`, `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 
 **Note:** this table stores *configured* plan pricing/policy, but `routes/membership.py`'s `create()`/`renew()` do **not** currently read from it — fee amounts are entered manually per-membership in the create/renew forms. There is no wiring yet from Membership Settings → the actual membership-creation flow. See [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+
+### `backup_log` (one row per admin)
+| Column | Type | Notes |
+|---|---|---|
+| `log_id` | INTEGER PK | |
+| `admin_id` | INTEGER NOT NULL **UNIQUE** FK → `admins` | |
+| `last_backup_at` | TIMESTAMP | Set to `CURRENT_TIMESTAMP` each time a backup is taken |
+| `backup_filename` | TEXT | Filename only (e.g. `library_backup_3_20260721_143000.db`), not a full path — the actual file lives under the project-root `backups/` folder |
+
+Created by `database/migrate_backup_log.py`. Deliberately **not** a column on `library_settings` — a backup can be taken before a Library Profile row exists (`library_settings.library_name`/`phone` are `NOT NULL`, so it can't hold a lazily-created bare row). See ADR-9 in [DECISIONS.md](DECISIONS.md). Written via `database/backup_queries.py`'s `record_backup(admin_id, backup_filename)` (upsert), called only from `routes/setting.py`'s `backup_create()` — there is no automatic/scheduled backup job (PF-5 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)).
+
+### `security_settings` (one row per admin)
+| Column | Type | Notes |
+|---|---|---|
+| `setting_id` | INTEGER PK | |
+| `admin_id` | INTEGER NOT NULL **UNIQUE** FK → `admins` | |
+| `session_timeout_minutes` | INTEGER NOT NULL DEFAULT 60 | One of `15`/`30`/`60`/`0` (`0` = "Never") — **not enforced**, no session-expiry middleware exists |
+| `remember_me_enabled` | INTEGER NOT NULL DEFAULT 0, CHECK(0/1) | **Not enforced** — no "remember me" cookie/token logic exists |
+| `login_notifications_enabled` | INTEGER NOT NULL DEFAULT 0, CHECK(0/1) | **Not enforced** — no login-notification delivery mechanism exists |
+| `created_at`, `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
+
+Created by `database/migrate_security_settings.py`. Deliberately separate from `library_settings` for the same reason as `backup_log` (ADR-9). Password change (Settings → Security Settings' "Change Password" form) does **not** use this table at all — it updates `admins.password` directly via `routes/setting.py`'s `security_settings()` and is fully functional; only the three columns above are persisted-but-unenforced (TD-26 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)).
 
 ## Multi-tenant (`admin_id`) summary
 
 | Table | Isolation mechanism |
 |---|---|
-| `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings` | Direct `admin_id` column with FK (except `expenses`/`cashbook`, see below) |
+| `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` | Direct `admin_id` column with FK (except `expenses`/`cashbook`, see below) |
 | `expenses` | Direct `admin_id` column, **no FK declared** |
 | `cashbook` | Direct `admin_id` column, added via `ALTER TABLE` — **no FK possible** in SQLite for altered columns |
 | `memberships`, `payments` | No `admin_id` column — isolated indirectly via `student_id → students.admin_id` |
@@ -199,6 +236,10 @@ Append-only trail for cashbook changes. Written via `database/audit_queries.py`'
 | `migrate_library_settings.py` | Creates `library_settings` (without `receipt_footer`) | Yes |
 | `migrate_settings_receipt_footer.py` | Adds `library_settings.receipt_footer` | Yes (checks `PRAGMA table_info` first) |
 | `migrate_membership_setting.py` | Creates `membership_settings`; validates existing schema against expected columns and raises if incompatible | Yes, with an explicit safety check |
+| `migrate_receipt_settings.py` | Adds `library_settings.receipt_prefix`, `next_receipt_number`, `auto_increment_receipt`, `print_logo`, `print_stamp`, `print_signature`, `paper_size`, `auto_print`, `auto_email`, `open_pdf_after_save`, `duplicate_copy` | Yes (checks `PRAGMA table_info` first) |
+| `migrate_notification_settings.py` | Adds 19 `library_settings` columns for Notification Settings (reminder rules, channels, quiet hours, dashboard-display) | Yes (checks `PRAGMA table_info` first) |
+| `migrate_backup_log.py` | Creates `backup_log`; validates existing schema against expected columns and raises if incompatible | Yes, with an explicit safety check |
+| `migrate_security_settings.py` | Creates `security_settings`; validates existing schema against expected columns and raises if incompatible | Yes, with an explicit safety check |
 
 There is **no migrations framework** (no Alembic/Flask-Migrate, no version table) — each script is run manually and independently, and correctness depends on running them in the right order on a fresh DB, or trusting each script's own idempotency guard on an existing one.
 

@@ -1,0 +1,270 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Notification Settings{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 settings-page">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Notification Settings</h2>
+            <p class="text-muted mb-0">Central place for reminder rules, channels, quiet hours and dashboard alerts.</p>
+        </div>
+        <a href="{{ url_for('setting.index') }}" class="btn btn-secondary rounded-3">
+            <i class="bi bi-arrow-left"></i> Back to Settings
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('setting.notification_settings') }}" id="notificationSettingsForm">
+        <div class="row g-4">
+
+            <!-- LEFT: Rules, Channels, Quiet Hours, Dashboard -->
+            <div class="col-lg-8">
+
+                <!-- Section 1: Reminder Rules -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Reminder Rules</h5>
+                        <p class="text-muted small mb-3">Choose how many days before expiry a reminder is triggered.</p>
+
+                        <div class="row">
+                            {% for name, label in [
+                                ('reminder_7_days', '7 days before expiry'),
+                                ('reminder_3_days', '3 days before expiry'),
+                                ('reminder_1_day', '1 day before expiry')
+                            ] %}
+                            <div class="col-md-4 mb-2">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="{{ name }}" id="{{ name }}"
+                                           {% if settings[name] %}checked{% endif %}>
+                                    <label class="form-check-label" for="{{ name }}">{{ label }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <hr>
+
+                        <div class="row">
+                            {% for name, label in [
+                                ('notify_on_expiry_day', 'Notify on expiry day'),
+                                ('notify_after_expiry', 'Notify after expiry')
+                            ] %}
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="{{ name }}" id="{{ name }}"
+                                           {% if settings[name] %}checked{% endif %}>
+                                    <label class="form-check-label" for="{{ name }}">{{ label }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Notification Channels -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Notification Channels</h5>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="notify_in_app" id="notify_in_app"
+                                           {% if settings.notify_in_app %}checked{% endif %}>
+                                    <label class="form-check-label" for="notify_in_app">In-App Notifications</label>
+                                </div>
+                            </div>
+
+                            {% for name, label in [
+                                ('notify_sms', 'SMS'),
+                                ('notify_email', 'Email'),
+                                ('notify_whatsapp', 'WhatsApp')
+                            ] %}
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="{{ name }}" id="{{ name }}"
+                                           {% if settings[name] %}checked{% endif %}>
+                                    <label class="form-check-label" for="{{ name }}">{{ label }}</label>
+                                </div>
+                                <div class="form-text">Integration coming soon. This only saves the preference.</div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Quiet Hours -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Quiet Hours</h5>
+
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="quiet_hours_enabled" id="quiet_hours_enabled"
+                                   {% if settings.quiet_hours_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="quiet_hours_enabled">Enable Quiet Hours</label>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Start Time</label>
+                                <input class="form-control" type="time" name="quiet_hours_start" id="quiet_hours_start"
+                                       value="{{ settings.quiet_hours_start or '22:00' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">End Time</label>
+                                <input class="form-control" type="time" name="quiet_hours_end" id="quiet_hours_end"
+                                       value="{{ settings.quiet_hours_end or '07:00' }}">
+                            </div>
+                        </div>
+
+                        <div class="form-check form-switch mt-3">
+                            <input class="form-check-input" type="checkbox" name="quiet_hours_allow_critical" id="quiet_hours_allow_critical"
+                                   {% if settings.quiet_hours_allow_critical %}checked{% endif %}>
+                            <label class="form-check-label" for="quiet_hours_allow_critical">Still allow critical alerts during quiet hours</label>
+                        </div>
+
+                        <div class="form-text mt-2">During quiet hours, routine reminders are held back; critical alerts can still be allowed above.</div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Dashboard Notifications -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Dashboard Notifications</h5>
+                        <p class="text-muted small mb-3">Controls what the notification bell and dashboard show.</p>
+
+                        <div class="row">
+                            {% for name, label in [
+                                ('dash_show_badge_count', 'Show badge count'),
+                                ('dash_show_expiry_today', 'Show expiry today'),
+                                ('dash_show_expiry_tomorrow', 'Show expiry tomorrow'),
+                                ('dash_show_overdue', 'Show overdue students'),
+                                ('dash_show_pending_fees', 'Show pending fees'),
+                                ('dash_show_new_admissions', 'Show new admissions')
+                            ] %}
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="{{ name }}" id="{{ name }}"
+                                           {% if settings[name] %}checked{% endif %}>
+                                    <label class="form-check-label" for="{{ name }}">{{ label }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary px-4" type="submit">
+                    <i class="bi bi-check-lg"></i> Save Notification Settings
+                </button>
+
+            </div>
+
+            <!-- RIGHT: Notification Preview -->
+            <div class="col-lg-4 library-sidebar">
+                <div class="card shadow-sm border-0">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Notification Preview</h5>
+                        <p class="text-muted small">Example notifications using dummy data.</p>
+
+                        <div class="settings-notif-preview mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-semibold">Expiry Reminder</div>
+                                    <div class="text-muted small">Rahul Sharma's membership expires in 3 days.</div>
+                                </div>
+                                <span class="badge bg-warning text-dark">3d</span>
+                            </div>
+                        </div>
+
+                        <div class="settings-notif-preview mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-semibold">Payment Pending</div>
+                                    <div class="text-muted small">Priya Verma has &#8377;500 pending fees.</div>
+                                </div>
+                                <span class="badge bg-danger">Due</span>
+                            </div>
+                        </div>
+
+                        <div class="settings-notif-preview">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-semibold">New Admission</div>
+                                    <div class="text-muted small">Amit Kumar joined the library today.</div>
+                                </div>
+                                <span class="badge bg-success">New</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </form>
+
+    {% if changes is not none %}
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-body">
+            <h5 class="text-primary mb-3">
+                <i class="bi bi-clock-history me-2"></i>Configuration Changes
+            </h5>
+
+            {% if changes %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Setting</th>
+                            <th scope="col">Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for change in changes %}
+                        <tr>
+                            <td class="fw-semibold">{{ change.setting }}</td>
+                            <td>
+                                <span class="text-muted">{{ change.previous }}</span>
+                                <i class="bi bi-arrow-right mx-2 text-primary"></i>
+                                <span class="text-success fw-semibold">{{ change.new }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-light border mb-0" role="status">
+                No configuration changes were detected. All values were already up to date.
+            </div>
+            {% endif %}
+
+            <div class="d-flex flex-column flex-md-row gap-3 gap-md-5 mt-4 pt-3 border-top small">
+                <div>
+                    <span class="text-muted d-block">Updated By:</span>
+                    <span class="fw-semibold">{{ updated_by }}</span>
+                </div>
+                <div>
+                    <span class="text-muted d-block">Updated On:</span>
+                    <span class="fw-semibold">{{ updated_on }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}

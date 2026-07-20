@@ -312,3 +312,144 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
 });
+
+// ------------------------------------------------------------------
+// Receipt Settings - live preview
+// ------------------------------------------------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const form = document.getElementById("receiptSettingsForm");
+    if (!form) return;
+
+    const prefixInput = document.getElementById("receiptPrefixInput");
+    const startingNumberInput = document.getElementById("startingReceiptNumberInput");
+    const paperSizeSelect = document.getElementById("paperSizeSelect");
+    const footerInput = document.getElementById("receiptFooterInput");
+
+    const printLogo = document.getElementById("print_logo");
+    const printStamp = document.getElementById("print_stamp");
+    const printSignature = document.getElementById("print_signature");
+
+    const numberPreviewEls = [
+        document.getElementById("receiptNumberPreview"),
+        document.getElementById("previewReceiptNumber")
+    ].filter(Boolean);
+
+    const previewCard = document.getElementById("receiptPreviewCard");
+    const previewLogoWrap = document.getElementById("previewLogoWrap");
+    const previewStampWrap = document.getElementById("previewStampWrap");
+    const previewSignatureWrap = document.getElementById("previewSignatureWrap");
+    const previewFooter = document.getElementById("previewFooter");
+    const footerCharCount = document.getElementById("footerCharCount");
+
+    // ------------------------------------------------------------------
+    // Receipt Prefix - force uppercase, strip disallowed characters
+    // ------------------------------------------------------------------
+
+    function sanitizePrefix() {
+        if (!prefixInput) return;
+        const sanitized = prefixInput.value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 10);
+        if (sanitized !== prefixInput.value) prefixInput.value = sanitized;
+    }
+
+    prefixInput?.addEventListener("input", sanitizePrefix);
+
+    function formattedReceiptNumber() {
+        const prefix = (prefixInput?.value || "LIB").trim() || "LIB";
+        const rawNumber = parseInt(startingNumberInput?.value, 10);
+        const number = Number.isFinite(rawNumber) && rawNumber > 0 ? rawNumber : 1;
+        return `${prefix}-${String(number).padStart(5, "0")}`;
+    }
+
+    function toggleMark(wrap, show) {
+        if (!wrap) return;
+        const img = wrap.querySelector("img");
+        wrap.style.visibility = (img && show) ? "visible" : "hidden";
+    }
+
+    function updatePreview() {
+        const text = formattedReceiptNumber();
+        numberPreviewEls.forEach((el) => { el.textContent = text; });
+
+        toggleMark(previewLogoWrap, printLogo ? printLogo.checked : true);
+        toggleMark(previewStampWrap, printStamp ? printStamp.checked : true);
+        toggleMark(previewSignatureWrap, printSignature ? printSignature.checked : true);
+
+        if (previewFooter) {
+            const footerText = (footerInput?.value || "").trim();
+            previewFooter.textContent = footerText || "Thank you for visiting!";
+        }
+
+        if (footerCharCount && footerInput) {
+            footerCharCount.textContent = footerInput.value.length;
+        }
+
+        if (previewCard && paperSizeSelect) {
+            previewCard.classList.toggle("receipt-preview-thermal", paperSizeSelect.value.startsWith("thermal"));
+        }
+    }
+
+    [prefixInput, startingNumberInput, printLogo, printStamp, printSignature, paperSizeSelect, footerInput]
+        .filter(Boolean)
+        .forEach((el) => el.addEventListener("input", updatePreview));
+
+    updatePreview();
+
+});
+
+// ------------------------------------------------------------------
+// Notification Settings - quiet hours enable/disable time inputs
+// ------------------------------------------------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const form = document.getElementById("notificationSettingsForm");
+    if (!form) return;
+
+    const quietHoursEnabled = document.getElementById("quiet_hours_enabled");
+    const quietHoursStart = document.getElementById("quiet_hours_start");
+    const quietHoursEnd = document.getElementById("quiet_hours_end");
+
+    function toggleQuietHoursInputs() {
+        const enabled = !!quietHoursEnabled?.checked;
+        [quietHoursStart, quietHoursEnd].forEach((input) => {
+            if (input) input.disabled = !enabled;
+        });
+    }
+
+    quietHoursEnabled?.addEventListener("change", toggleQuietHoursInputs);
+    toggleQuietHoursInputs();
+
+});
+
+// ------------------------------------------------------------------
+// Security Settings - new/confirm password match check
+// ------------------------------------------------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const form = document.getElementById("securityPasswordForm");
+    if (!form) return;
+
+    const newPasswordInput = document.getElementById("newPasswordInput");
+    const confirmPasswordInput = document.getElementById("confirmPasswordInput");
+    const mismatchError = document.getElementById("passwordMismatchError");
+
+    function validateMatch() {
+        const mismatch = !!confirmPasswordInput.value && newPasswordInput.value !== confirmPasswordInput.value;
+        confirmPasswordInput.classList.toggle("is-invalid", mismatch);
+        mismatchError?.classList.toggle("d-none", !mismatch);
+        return !mismatch;
+    }
+
+    newPasswordInput?.addEventListener("input", validateMatch);
+    confirmPasswordInput?.addEventListener("input", validateMatch);
+
+    form.addEventListener("submit", (event) => {
+        if (!validateMatch()) {
+            event.preventDefault();
+        }
+    });
+
+});

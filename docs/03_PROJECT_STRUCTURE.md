@@ -12,7 +12,7 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | `README.md` | **Empty (0 bytes)** — no project-level README exists | [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
 | `.claude/` | Claude Code local settings (`settings.local.json`) | |
 | `.agents/` | Empty directory, no files | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
-| `backups/` | Empty directory, no files | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
+| `backups/` | Previously empty; as of 2026-07-21 holds manual DB backups written by `routes/setting.py`'s `backup_create()` (Settings → Data & Backup), named `library_backup_<admin_id>_<timestamp>.db` | [10_FEATURE_MODULES.md](10_FEATURE_MODULES.md) |
 | `models/` | Empty directory, no files (no ORM model classes exist anywhere in the project) | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
 | `reports/` | Empty directory, no files | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
 | `services/` | Empty directory, no files (no service layer exists; business logic lives directly in `routes/*.py` and `database/*_queries.py`) | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
@@ -33,12 +33,20 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | `migrate_library_settings.py` | Creates `library_settings` table |
 | `migrate_settings_receipt_footer.py` | Adds `library_settings.receipt_footer` column |
 | `migrate_membership_setting.py` | Creates `membership_settings` table, with a schema-compatibility guard |
+| `migrate_receipt_settings.py` | Adds receipt numbering/branding/printing columns to `library_settings` |
+| `migrate_notification_settings.py` | Adds 19 reminder-rule/channel/quiet-hours/dashboard-display columns to `library_settings` |
+| `migrate_backup_log.py` | Creates `backup_log` table, with a schema-compatibility guard |
+| `migrate_security_settings.py` | Creates `security_settings` table, with a schema-compatibility guard |
 | `audit_queries.py` | Read/write access to `audit_log` |
 | `bi_queries.py` | Business-intelligence aggregates (health score, growth, top categories, action items, timeline) |
 | `cashbook_categories.py` | Static category/payment-method constant lists (no DB access) |
 | `cashbook_queries.py` | Core cashbook ledger data-access layer (largest query module, 20 functions) |
-| `membership_settings_queries.py` | Get/upsert per-admin membership plan pricing settings |
+| `membership_settings_queries.py` | Get/upsert per-admin membership plan pricing settings (no longer writes `reminder_days`/`send_reminders`, see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-23) |
 | `settings_queries.py` | Get/create/update per-admin library profile settings |
+| `receipt_settings_queries.py` | Get/update per-admin receipt numbering/branding/printing settings (same `library_settings` row) |
+| `notification_settings_queries.py` | Get/update per-admin reminder/channel/quiet-hours/dashboard-display settings (same `library_settings` row) |
+| `backup_queries.py` | Get/record per-admin manual backup info (`backup_log` table) |
+| `security_settings_queries.py` | Get/upsert per-admin session/security preferences (`security_settings` table) |
 | `library.db` | The actual SQLite database file |
 | `__pycache__/` | Compiled bytecode — **tracked in git** (see [11_FUTURE_WORK.md](11_FUTURE_WORK.md)) |
 
@@ -82,7 +90,7 @@ Full route-by-route detail: [05_ROUTES_REFERENCE.md](05_ROUTES_REFERENCE.md).
 | `cashbook/` | index, transactions, analytics |
 | `business_intelligence/index.html` | BI dashboard |
 | `notification/index.html` | Expiry notification buckets |
-| `settings/` | index, library_profile, membership_settings |
+| `settings/` | index (7 cards), library_profile, membership_settings, receipt_settings, notification_settings, staff_access, data_backup, security_settings — every Settings sub-page now has a real template |
 | `reports/index.html` | Unused leftover — `routes/report.py` never renders it (permanent redirect instead) |
 
 Full breakdown: [06_TEMPLATES_REFERENCE.md](06_TEMPLATES_REFERENCE.md).

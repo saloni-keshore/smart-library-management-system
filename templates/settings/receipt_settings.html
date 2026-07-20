@@ -1,0 +1,328 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Receipt Settings{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 settings-page">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Receipt Settings</h2>
+            <p class="text-muted mb-0">Configure receipt numbering, branding and printing.</p>
+        </div>
+        <a href="{{ url_for('setting.index') }}" class="btn btn-secondary rounded-3">
+            <i class="bi bi-arrow-left"></i> Back to Settings
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <form method="POST"
+          action="{{ url_for('setting.receipt_settings') }}"
+          id="receiptSettingsForm"
+          data-library-name="{{ settings.library_name if settings else '' }}"
+          data-logo-url="{{ url_for('static', filename=settings.logo_path) if settings and settings.logo_path else '' }}"
+          data-stamp-url="{{ url_for('static', filename=settings.stamp_path) if settings and settings.stamp_path else '' }}"
+          data-signature-url="{{ url_for('static', filename=settings.signature_path) if settings and settings.signature_path else '' }}">
+
+        <div class="row g-4">
+
+            <!-- LEFT: Numbering, Branding, Printing, Footer, Email -->
+            <div class="col-lg-8">
+
+                <!-- Section 1: Receipt Numbering -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Receipt Numbering</h5>
+                        <div class="row g-3">
+                            <div class="col-lg-4 col-md-6">
+                                <label class="form-label">Receipt Prefix</label>
+                                <input class="form-control" type="text" name="receipt_prefix"
+                                       id="receiptPrefixInput" maxlength="10" required
+                                       value="{{ settings.receipt_prefix if settings else 'LIB' }}">
+                            </div>
+                            <div class="col-lg-4 col-md-6">
+                                <label class="form-label">Starting Receipt Number</label>
+                                <input class="form-control" type="number" min="1" step="1"
+                                       name="next_receipt_number" id="startingReceiptNumberInput" required
+                                       value="{{ settings.next_receipt_number if settings else 1001 }}">
+                            </div>
+                            <div class="col-lg-4 col-md-6">
+                                <label class="form-label">Current Receipt Number</label>
+                                <input class="form-control" type="text" disabled
+                                       value="{{ settings.receipt_prefix if settings else 'LIB' }}-{{ '%05d'|format(settings.next_receipt_number if settings else 1001) }}">
+                            </div>
+                        </div>
+
+                        <div class="row mt-3">
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="auto_increment_receipt"
+                                           id="auto_increment_receipt"
+                                           {% if (settings and settings.auto_increment_receipt) or not settings %}checked{% endif %}>
+                                    <label class="form-check-label" for="auto_increment_receipt">Auto Increment Receipt Number</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-3 small text-muted">
+                            Next receipt will be numbered
+                            <span class="fw-semibold text-dark" id="receiptNumberPreview">
+                                {{ settings.receipt_prefix if settings else 'LIB' }}-{{ '%05d'|format(settings.next_receipt_number if settings else 1001) }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Receipt Branding -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Receipt Branding</h5>
+                        <p class="text-muted small mb-3">
+                            Logo, stamp and signature are managed in
+                            <a href="{{ url_for('setting.library_profile') }}">Library Profile</a>.
+                        </p>
+
+                        <div class="row g-3">
+                            <div class="col-md-4 text-center">
+                                {% if settings and settings.logo_path %}
+                                <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="Logo" class="settings-doc-preview-img mb-2">
+                                {% else %}
+                                <div class="text-muted small mb-2">No logo uploaded.</div>
+                                {% endif %}
+                                <div class="form-check form-switch justify-content-center d-flex gap-2">
+                                    <input class="form-check-input" type="checkbox" name="print_logo" id="print_logo"
+                                           {% if (settings and settings.print_logo) or not settings %}checked{% endif %}>
+                                    <label class="form-check-label" for="print_logo">Print Logo</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4 text-center">
+                                {% if settings and settings.stamp_path %}
+                                <img src="{{ url_for('static', filename=settings.stamp_path) }}" alt="Stamp" class="settings-doc-preview-img mb-2">
+                                {% else %}
+                                <div class="text-muted small mb-2">No stamp uploaded.</div>
+                                {% endif %}
+                                <div class="form-check form-switch justify-content-center d-flex gap-2">
+                                    <input class="form-check-input" type="checkbox" name="print_stamp" id="print_stamp"
+                                           {% if (settings and settings.print_stamp) or not settings %}checked{% endif %}>
+                                    <label class="form-check-label" for="print_stamp">Print Stamp</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4 text-center">
+                                {% if settings and settings.signature_path %}
+                                <img src="{{ url_for('static', filename=settings.signature_path) }}" alt="Signature" class="settings-doc-preview-img mb-2">
+                                {% else %}
+                                <div class="text-muted small mb-2">No signature uploaded.</div>
+                                {% endif %}
+                                <div class="form-check form-switch justify-content-center d-flex gap-2">
+                                    <input class="form-check-input" type="checkbox" name="print_signature" id="print_signature"
+                                           {% if (settings and settings.print_signature) or not settings %}checked{% endif %}>
+                                    <label class="form-check-label" for="print_signature">Print Signature</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Paper & Printing -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Paper &amp; Printing</h5>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Paper Size</label>
+                                <select class="form-select" name="paper_size" id="paperSizeSelect">
+                                    {% for value, label in paper_sizes.items() %}
+                                    <option value="{{ value }}" {% if (settings and settings.paper_size == value) or (not settings and value == 'A4') %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row mt-3">
+                            {% for name, label, default in [
+                                ('auto_print', 'Auto Print After Payment', 0),
+                                ('open_pdf_after_save', 'Open PDF After Save', 1),
+                                ('duplicate_copy', 'Print Duplicate Copy', 0)
+                            ] %}
+                            <div class="col-md-4 mb-2">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="{{ name }}" id="{{ name }}"
+                                           {% if (settings and settings[name]) or (not settings and default) %}checked{% endif %}>
+                                    <label class="form-check-label" for="{{ name }}">{{ label }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Receipt Footer -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Receipt Footer</h5>
+                        <textarea class="form-control" name="receipt_footer" id="receiptFooterInput" rows="3"
+                                  maxlength="500"
+                                  placeholder="e.g. Thank you for visiting! Fees once paid are non-refundable.">{{ settings.receipt_footer if settings else '' }}</textarea>
+                        <div class="form-text text-end">
+                            <span id="footerCharCount">{{ settings.receipt_footer|length if settings and settings.receipt_footer else 0 }}</span> / 500 characters
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 5: Email Options -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Email Options</h5>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="auto_email" id="auto_email"
+                                   {% if settings and settings.auto_email %}checked{% endif %}>
+                            <label class="form-check-label" for="auto_email">Auto Email Receipt</label>
+                        </div>
+                        <div class="form-text">Emailing receipts will be available in a future update. This only saves the preference.</div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary px-4" type="submit">
+                    <i class="bi bi-check-lg"></i> Save Receipt Settings
+                </button>
+
+            </div>
+
+            <!-- RIGHT: Receipt Preview -->
+            <div class="col-lg-4 library-sidebar">
+                <div class="card shadow-sm border-0 receipt-preview" id="receiptPreviewCard">
+                    <div class="card-body">
+                        <h5 class="text-primary mb-3">Receipt Preview</h5>
+
+                        <div class="receipt-preview-doc">
+                            <div class="text-center mb-2" id="previewLogoWrap">
+                                {% if settings and settings.logo_path %}
+                                <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="Logo" class="receipt-preview-logo">
+                                {% endif %}
+                            </div>
+
+                            <div class="text-center fw-bold mb-2" id="previewLibraryName">
+                                {{ settings.library_name if settings else 'Your Library' }}
+                            </div>
+
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span class="text-muted">Receipt No.</span>
+                                <span class="fw-semibold" id="previewReceiptNumber">
+                                    {{ settings.receipt_prefix if settings else 'LIB' }}-{{ '%05d'|format(settings.next_receipt_number if settings else 1001) }}
+                                </span>
+                            </div>
+
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span class="text-muted">Date</span>
+                                <span>20 Jul 2026</span>
+                            </div>
+
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span class="text-muted">Payment Mode</span>
+                                <span>Cash</span>
+                            </div>
+
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span class="text-muted">Student</span>
+                                <span>Rahul Sharma</span>
+                            </div>
+
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span class="text-muted">Membership</span>
+                                <span>Quarterly Plan</span>
+                            </div>
+
+                            <div class="d-flex justify-content-between small mb-2">
+                                <span class="text-muted">Amount</span>
+                                <span class="fw-semibold">&#8377;2,500</span>
+                            </div>
+
+                            <hr>
+
+                            <div class="text-center small text-muted mb-2" id="previewFooter">
+                                {{ settings.receipt_footer if settings and settings.receipt_footer else 'Thank you for visiting!' }}
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-end">
+                                <div id="previewStampWrap">
+                                    {% if settings and settings.stamp_path %}
+                                    <img src="{{ url_for('static', filename=settings.stamp_path) }}" alt="Stamp" class="receipt-preview-mark">
+                                    {% endif %}
+                                </div>
+                                <div id="previewSignatureWrap">
+                                    {% if settings and settings.signature_path %}
+                                    <img src="{{ url_for('static', filename=settings.signature_path) }}" alt="Signature" class="receipt-preview-mark">
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </form>
+
+    {% if changes is not none %}
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-body">
+            <h5 class="text-primary mb-3">
+                <i class="bi bi-clock-history me-2"></i>Configuration Changes
+            </h5>
+
+            {% if changes %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Setting</th>
+                            <th scope="col">Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for change in changes %}
+                        <tr>
+                            <td class="fw-semibold">{{ change.setting }}</td>
+                            <td>
+                                <span class="text-muted">{{ change.previous }}</span>
+                                <i class="bi bi-arrow-right mx-2 text-primary"></i>
+                                <span class="text-success fw-semibold">{{ change.new }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-light border mb-0" role="status">
+                No configuration changes were detected. All values were already up to date.
+            </div>
+            {% endif %}
+
+            <div class="d-flex flex-column flex-md-row gap-3 gap-md-5 mt-4 pt-3 border-top small">
+                <div>
+                    <span class="text-muted d-block">Updated By:</span>
+                    <span class="fw-semibold">{{ updated_by }}</span>
+                </div>
+                <div>
+                    <span class="text-muted d-block">Updated On:</span>
+                    <span class="fw-semibold">{{ updated_on }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}

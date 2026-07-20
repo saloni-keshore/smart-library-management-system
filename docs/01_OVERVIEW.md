@@ -53,6 +53,9 @@ python app.py                  # runs with debug=True on the Flask default port 
 | Notifications (expiry buckets) | Implemented |
 | Settings → Library Profile | Implemented |
 | Settings → Membership Settings | Implemented |
-| Settings → Receipt Settings | Stub ("coming soon") |
-| Settings → Notification Settings | Stub ("coming soon") |
+| Settings → Receipt Settings | Implemented (configuration only — no PDF/print/email yet) |
+| Settings → Notification Settings | Implemented (reminder-rule/channel/quiet-hours/dashboard-display preferences; `dash_show_pending_fees` and the navbar-bell toggles are wired, the rest are save-only — no SMS/Email/WhatsApp dispatch exists) |
+| Settings → Staff & User Access | Placeholder ("Coming Soon" — still single-admin) |
+| Settings → Data & Backup | Implemented (manual Export CSV / Create Backup only — no scheduled backups) |
+| Settings → Security Settings | Implemented (password change is fully enforced; session timeout / remember-me / login-notification preferences are persisted but not enforced) |
 | Reports (`/reports/`) | Deprecated redirect shim → Business Intelligence |

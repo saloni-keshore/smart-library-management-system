@@ -45,6 +45,16 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 **Cause:** uploaded files are saved to `static/uploads/settings/{field}_{admin_id}_{secure_filename}` and the DB stores the path *relative to `static/`* (e.g. `uploads/settings/logo_1_foo.png`). If the path in `library_settings.logo_path` doesn't start with `uploads/settings/`, `url_for('static', filename=...)` will build a broken URL.
 **Check:** inspect `library_settings.logo_path` for the affected admin directly, and confirm the file actually exists at `static/<that path>`.
 
+## Settings → Receipt Settings redirects straight back to Library Profile
+
+**Cause:** by design — `routes/setting.py`'s `receipt_settings()` reuses the same `library_settings` row as Library Profile and only supports `UPDATE`, not insert (ADR-7 in [DECISIONS.md](DECISIONS.md)). If that admin hasn't saved a Library Profile yet, there's no row for it to update, so it redirects to `library_profile` with a flash message instead of erroring.
+**Fix:** save Library Profile (name/owner/phone are required there) at least once, then Receipt Settings becomes reachable.
+
+## Settings → Notification Settings redirects me to Library Profile
+
+**Cause:** same reason as Receipt Settings above — `routes/setting.py`'s `notification_settings()` also reuses the `library_settings` row and only supports `UPDATE`, not insert (ADR-8 in [DECISIONS.md](DECISIONS.md)). If that admin hasn't saved a Library Profile yet, there's no row for it to update, so it redirects to `library_profile` with a flash message instead of erroring.
+**Fix:** save Library Profile (name/owner/phone are required there) at least once, then Notification Settings becomes reachable. Note this is unrelated to Data & Backup or Security Settings, which use their own `backup_log`/`security_settings` tables and have no such prerequisite (ADR-9).
+
 ## Sidebar badge counts (enquiries/students/memberships/payments) show blank or zero
 
 **Cause:** `templates/layouts/sidebar.html` references `enquiries_new_count`, `students_new_today_count`, `memberships_expiring_soon_count`, `payments_pending_count`, but no route or context processor currently supplies them (Known Technical Debt item TD-15) — this isn't a bug you introduced, it's a pre-existing gap.

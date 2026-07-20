@@ -32,6 +32,11 @@ Everything below was discovered by reading the actual code (verified 2026-07-20)
 | TD-19 | `if "admin_id" not in session: return redirect("/")` duplicated in nearly every route function instead of centralized | Medium (easy to forget on a new route, silently exposing it) | every `routes/*.py` except `report.py`/`membership_analytics.py` | 2026-07-20 | Open |
 | TD-20 | No automated tests exist at all (`tests/` empty) | High (highest-leverage gap — fee/receipt/health-score logic has no regression safety net) | `tests/` | 2026-07-20 | Open |
 | TD-21 | `database/migrate_*.py` scripts import via bare `from db import get_connection` instead of `from database.db import get_connection` — only works because they're always run standalone | Low (fragile if ever imported as a module instead of run as a script) | every `database/migrate_*.py` | 2026-07-20 | Open |
+| TD-22 | `library_settings`'s receipt columns (`receipt_prefix`, `next_receipt_number`, `paper_size`, `auto_print`, `auto_email`, etc.) are configured via Settings but not read by any receipt-generating code — same shape as TD-7 | Medium (feature gap, not a bug) | `routes/setting.py`'s `receipt_settings()`, `routes/membership.py`, `routes/payment.py` | 2026-07-20 (introduced alongside the 2026-07-20 Receipt Settings feature) | Open |
+| TD-23 | `membership_settings.reminder_days`/`send_reminders` columns are dead/unused — superseded by `library_settings`'s `reminder_*`/`notify_*` columns (Notification Settings), but kept in the table for backward compatibility rather than dropped | Low (unused columns, not a correctness bug) | `database/schema.sql`, `database/membership_settings_queries.py` | 2026-07-21 (introduced alongside the 2026-07-21 Notification Settings feature) | Open |
+| TD-24 | No SMS/Email/WhatsApp dispatch engine exists anywhere in the codebase — Notification Settings' channel toggles, all reminder-rule toggles, and quiet-hours are persisted preferences only; nothing currently sends anything | Medium (feature gap, not a bug — same shape as TD-22's `auto_email`) | `routes/setting.py`'s `notification_settings()`, `database/notification_settings_queries.py` | 2026-07-21 | Open |
+| TD-25 | `dash_show_new_admissions` has no corresponding dashboard widget/notification category to attach to yet — unlike `dash_show_pending_fees` (really does hide/show the dashboard's "Pending Fees" card) and the badge/today/tomorrow/overdue toggles (really do affect the navbar bell dropdown) | Low (inert toggle, not a bug) | `routes/dashboard.py`, `templates/dashboard/index.html` | 2026-07-21 | Open |
+| TD-26 | `security_settings.session_timeout_minutes`/`remember_me_enabled`/`login_notifications_enabled` are persisted but not enforced — no session-expiry middleware exists, no login-notification delivery mechanism exists | Medium (feature gap, not a bug; password change itself is fully functional) | `routes/setting.py`'s `security_settings()`, `database/security_settings_queries.py` | 2026-07-21 | Open |
 
 ## Stub Routes & Planned Features
 
@@ -39,13 +44,17 @@ Not defects — intentionally incomplete, called out so nobody mistakes "coming 
 
 | ID | What | Where |
 |---|---|---|
-| PF-1 | Receipt Settings and Notification Settings both just flash "coming soon" and redirect — no templates or query modules exist yet | `routes/setting.py`'s `receipt_settings()`, `notification_settings()` |
+| PF-1 | **Resolved** — Receipt Settings half resolved 2026-07-20; Notification Settings half resolved 2026-07-21 (full GET/POST handler, template, and query module now exist). See both entries in [CHANGELOG.md](CHANGELOG.md). | `routes/setting.py`'s `notification_settings()` |
 | PF-2 | Membership Analytics renders a template with zero query/context — likely superseded by the (fully implemented) Membership Distribution page | `routes/membership_analytics.py` |
 | PF-3 | Reports permanently redirects to Business Intelligence — kept only as a URL-compatibility shim | `routes/report.py` |
+| PF-4 | Staff & User Access is a professional "Coming Soon" placeholder only — still single-admin, no multi-user auth, no role-based permissions | `routes/setting.py`'s `staff_access()`, `templates/settings/staff_access.html` |
+| PF-5 | Data & Backup only supports manual Export CSV / Create Backup — automatic/scheduled backups are not implemented | `routes/setting.py`'s `data_backup()`/`backup_create()` |
 
 ## Next logical slices (recommendations, not commitments)
 
 1. Wire `membership_settings` (TD-7) into `routes/membership.py`'s `create()`/`renew()` — the most natural next step given how recently the settings side was built.
 2. Fix TD-8 (`requirements.txt`) — takes one line, unblocks every fresh install.
 3. Add a first test around `database/bi_queries.py`'s `get_business_health_score` and `database/cashbook_queries.py`'s aggregate functions (TD-20) — these are the highest-value, least-tested business logic in the app.
-4. Decide PF-1's scope (Receipt Settings / Notification Settings) or explicitly deprioritize and remove the nav entries so they stop looking unfinished to end users.
+4. Wire the new receipt settings (TD-22) into `routes/membership.py`/`routes/payment.py`'s receipt generation — the numbering/prefix config currently has no effect on the real `REC-YYYYMMDD-...` receipt numbers those routes generate inline.
+5. Build an actual reminder/notification dispatch job (TD-24) that reads `library_settings`'s `reminder_*`/`notify_*`/`quiet_hours_*` columns and sends something — currently every channel toggle and quiet-hours setting is a no-op preference.
+6. If session-timeout/login-notification enforcement (TD-26) is ever prioritized, this is also the natural point to introduce the centralized auth-check hook recommended for TD-19, since both need a `before_request`-style entry point.

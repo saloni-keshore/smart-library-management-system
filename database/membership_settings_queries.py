@@ -24,6 +24,14 @@ def get_membership_settings(admin_id):
 
 
 def save_membership_settings(admin_id, data):
+    """Insert/update this admin's plan pricing and renewal policy.
+
+    reminder_days/send_reminders are intentionally omitted here - reminder
+    ownership moved to Settings > Notification Settings
+    (library_settings.reminder_*/notify_* columns). Omitting them from the
+    INSERT/UPDATE leaves any existing values on this table untouched instead
+    of overwriting them with stale form data. See docs/11_FUTURE_WORK.md.
+    """
 
     conn = get_connection()
 
@@ -55,17 +63,13 @@ def save_membership_settings(admin_id, data):
 
             auto_expiry,
 
-            allow_early_renewal,
-
-            send_reminders,
-
-            reminder_days
+            allow_early_renewal
 
         )
 
         VALUES(
 
-            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+            ?,?,?,?,?,?,?,?,?,?,?,?,?
 
         )
 
@@ -94,10 +98,6 @@ def save_membership_settings(admin_id, data):
         auto_expiry=excluded.auto_expiry,
 
         allow_early_renewal=excluded.allow_early_renewal,
-
-        send_reminders=excluded.send_reminders,
-
-        reminder_days=excluded.reminder_days,
         updated_at=CURRENT_TIMESTAMP
         """,
 
@@ -125,11 +125,7 @@ def save_membership_settings(admin_id, data):
 
             data["auto_expiry"],
 
-            data["allow_early_renewal"],
-
-            data["send_reminders"],
-
-            data["reminder_days"]
+            data["allow_early_renewal"]
 
         )
 

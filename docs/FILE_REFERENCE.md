@@ -10,11 +10,11 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 
 ### `app.py`
 - **Purpose:** Flask application factory and process entry point.
-- **Responsibilities:** Create the Flask app, set `SECRET_KEY`, register all 13 blueprints, define the one global context processor that feeds the navbar notification bell on every page.
-- **Functions/Classes:** `create_app()`; module-level `app = create_app()`; no classes. Inline `inject_notification_summary()` registered via `@app.context_processor`.
-- **Depends on:** `routes.auth`, `routes.dashboard`, `routes.enquiries`, `routes.student`, `routes.membership`, `routes.payment`, `routes.cashbook`, `routes.report`, `routes.setting`, `routes.notification` (also imports `get_notification_summary`), `routes.membership_analytics`, `routes.membership_distribution`, `routes.business_intelligence`.
-- **Depended on by:** nothing imports `app.py` — it's the process entry point (`python app.py`).
-- **Future modification notes:** This is the right place to add a centralized auth-check decorator/`before_request` hook (currently duplicated in nearly every route — see [Known Technical Debt](11_FUTURE_WORK.md)), to wire in `config.py` (currently unused), to add 404/500 error handlers, and to make `debug=True` conditional on an environment variable before any real deployment.
+- **Responsibilities:** Create the Flask app, set `SECRET_KEY`, register all 13 blueprints, define the one global context processor that feeds both the navbar notification bell and the navbar's notification-display preferences on every page.
+- **Functions/Classes:** `create_app()`; module-level `app = create_app()`; module constant `DEFAULT_NAV_NOTIFICATION_PREFS` (all four flags `True`); no classes. Inline `inject_notification_summary()` registered via `@app.context_processor` — now also computes `nav_notification_prefs` (a dict of `dash_show_badge_count`/`dash_show_expiry_today`/`dash_show_expiry_tomorrow`/`dash_show_overdue`, read via `get_notification_settings(admin_id)` and defaulting to `DEFAULT_NAV_NOTIFICATION_PREFS` when there's no session or no `library_settings` row yet) alongside the existing `nav_notifications`.
+- **Depends on:** `routes.auth`, `routes.dashboard`, `routes.enquiries`, `routes.student`, `routes.membership`, `routes.payment`, `routes.cashbook`, `routes.report`, `routes.setting`, `routes.notification` (also imports `get_notification_summary`), `routes.membership_analytics`, `routes.membership_distribution`, `routes.business_intelligence`, `database.notification_settings_queries.get_notification_settings`.
+- **Depended on by:** nothing imports `app.py` — it's the process entry point (`python app.py`); `templates/components/notification_dropdown.html` consumes both `nav_notifications` and `nav_notification_prefs` from this context processor.
+- **Future modification notes:** This is the right place to add a centralized auth-check decorator/`before_request` hook (currently duplicated in nearly every route — see [Known Technical Debt](11_FUTURE_WORK.md)), to wire in `config.py` (currently unused), to add 404/500 error handlers, and to make `debug=True` conditional on an environment variable before any real deployment. If you add more dashboard-display toggles to Notification Settings that should also affect the navbar, extend `nav_notification_prefs`/`DEFAULT_NAV_NOTIFICATION_PREFS` here rather than reading `get_notification_settings` again from inside the template.
 
 ### `config.py`
 - **Purpose:** Intended centralized environment configuration. **Currently dead code** — not imported anywhere.
@@ -38,7 +38,7 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 
 ### `database/schema.sql`
 - **Purpose:** Full DDL — source of truth for creating every table from scratch.
-- **Responsibilities:** Define `admins`, `settings` (legacy/unused), `enquiries`, `students`, `memberships`, `payments`, `cashbook` (+ inline `ALTER TABLE` extensions), `expenses` (unused), `transactions` (⚠ conflicting second definition also exists in `migrate_transactions.py`), `audit_log`, `library_settings`, `membership_settings`. Sets `PRAGMA foreign_keys = ON;` at the top.
+- **Responsibilities:** Define `admins`, `settings` (legacy/unused), `enquiries`, `students`, `memberships`, `payments`, `cashbook` (+ inline `ALTER TABLE` extensions), `expenses` (unused), `transactions` (⚠ conflicting second definition also exists in `migrate_transactions.py`), `audit_log`, `library_settings` (now including the 19 Notification Settings columns — reminder rules, channels, quiet hours, dashboard-display flags), `membership_settings` (with a comment noting `reminder_days`/`send_reminders` are superseded/unused), `backup_log` (new, one row per admin), `security_settings` (new, one row per admin). Sets `PRAGMA foreign_keys = ON;` at the top.
 - **Functions/Classes:** N/A (pure SQL).
 - **Depends on:** nothing (plain SQL file).
 - **Depended on by:** `database/seed.py` (executed via `executescript()`).
@@ -101,6 +101,38 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 - **Depended on by:** nothing (run manually).
 - **Future modification notes:** The compatibility guard here is the most defensive of all the migration scripts — a good template to follow for future ones instead of a bare `CREATE TABLE IF NOT EXISTS`.
 
+### `database/migrate_receipt_settings.py`
+- **Purpose:** Adds receipt numbering/branding/printing columns to the existing `library_settings` table (no new table).
+- **Responsibilities:** `ALTER TABLE ADD COLUMN` for `receipt_prefix`, `next_receipt_number`, `auto_increment_receipt`, `print_logo`, `print_stamp`, `print_signature`, `paper_size`, `auto_print`, `auto_email`, `open_pdf_after_save`, `duplicate_copy` — one at a time, each checked against `PRAGMA table_info` first.
+- **Functions/Classes:** `run()`; module constant `NEW_COLUMNS` (name → SQL type/default).
+- **Depends on:** `db.get_connection` (bare import, standalone-only).
+- **Depended on by:** nothing (run manually).
+- **Future modification notes:** Follows the same idempotent single-column-ALTER pattern as `migrate_settings_receipt_footer.py` — reuse it if more `library_settings` columns are added later rather than introducing a new migration-runner convention.
+
+### `database/migrate_notification_settings.py`
+- **Purpose:** Adds the 19 reminder-rule/channel/quiet-hours/dashboard-display columns to the existing `library_settings` table (no new table).
+- **Responsibilities:** `ALTER TABLE ADD COLUMN` for `reminder_7_days`, `reminder_3_days`, `reminder_1_day`, `notify_on_expiry_day`, `notify_after_expiry`, `notify_in_app`, `notify_sms`, `notify_email`, `notify_whatsapp`, `quiet_hours_enabled`, `quiet_hours_start`, `quiet_hours_end`, `quiet_hours_allow_critical`, `dash_show_badge_count`, `dash_show_expiry_today`, `dash_show_expiry_tomorrow`, `dash_show_overdue`, `dash_show_pending_fees`, `dash_show_new_admissions` — one at a time, each checked against `PRAGMA table_info` first.
+- **Functions/Classes:** `run()`; module constant `NEW_COLUMNS` (name → SQL type/default).
+- **Depends on:** `db.get_connection` (bare import, standalone-only).
+- **Depended on by:** nothing (run manually).
+- **Future modification notes:** Same idempotent single-column-ALTER pattern as `migrate_receipt_settings.py` — reuse it for any further `library_settings` additions.
+
+### `database/migrate_backup_log.py`
+- **Purpose:** Creates the `backup_log` table.
+- **Responsibilities:** If the table already exists, validates its columns against an `EXPECTED_COLUMNS` set and raises `RuntimeError` if incompatible; otherwise `CREATE TABLE IF NOT EXISTS`.
+- **Functions/Classes:** `run()`; module constant `EXPECTED_COLUMNS`.
+- **Depends on:** `db.get_connection` (bare import, standalone-only).
+- **Depended on by:** nothing (run manually).
+- **Future modification notes:** Follows the same defensive compatibility-guard pattern as `migrate_membership_setting.py`.
+
+### `database/migrate_security_settings.py`
+- **Purpose:** Creates the `security_settings` table.
+- **Responsibilities:** Same compatibility-guard pattern as `migrate_backup_log.py`, then `CREATE TABLE IF NOT EXISTS security_settings (...)`.
+- **Functions/Classes:** `run()`; module constant `EXPECTED_COLUMNS`.
+- **Depends on:** `db.get_connection` (bare import, standalone-only).
+- **Depended on by:** nothing (run manually).
+- **Future modification notes:** Follows the same defensive compatibility-guard pattern as `migrate_membership_setting.py`/`migrate_backup_log.py`.
+
 ### `database/migrate_transactions.py`
 - **Purpose:** Creates a `transactions` table — ⚠ with a **different shape** than the one also defined in `schema.sql` (see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md) and Known Technical Debt item TD-2).
 - **Depends on:** `db.get_connection` (bare import, standalone-only).
@@ -142,10 +174,34 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 ### `database/membership_settings_queries.py`
 - **Purpose:** Get/upsert per-admin membership plan pricing and policy configuration.
 - **Responsibilities:** One row per `admin_id`.
-- **Functions/Classes:** `get_membership_settings(admin_id)`, `save_membership_settings(admin_id, data)` (upsert via `INSERT ... ON CONFLICT(admin_id) DO UPDATE`).
+- **Functions/Classes:** `get_membership_settings(admin_id)`, `save_membership_settings(admin_id, data)` (upsert via `INSERT ... ON CONFLICT(admin_id) DO UPDATE`). As of 2026-07-21, the INSERT/UPDATE column list no longer includes `reminder_days`/`send_reminders` — those fields are intentionally omitted so saving Membership Settings leaves any existing values on those (now-unused) columns untouched instead of overwriting them with stale form data (reminder ownership moved to Notification Settings, see ADR-8 in [DECISIONS.md](DECISIONS.md)).
 - **Depends on:** `database.db.get_connection`.
 - **Depended on by:** `routes/setting.py`.
-- **Future modification notes:** This is configured but **not yet consumed** by `routes/membership.py`'s create/renew flow (Known Technical Debt item TD-7) — if you wire that up, this is the function pair you'll call from `membership.py` instead of hardcoding fee defaults there.
+- **Future modification notes:** This is configured but **not yet consumed** by `routes/membership.py`'s create/renew flow (Known Technical Debt item TD-7) — if you wire that up, this is the function pair you'll call from `membership.py` instead of hardcoding fee defaults there. Don't re-add `reminder_days`/`send_reminders` to the INSERT/UPDATE column list (see TD-23) — that concept now lives exclusively in `database/notification_settings_queries.py`.
+
+### `database/notification_settings_queries.py`
+- **Purpose:** Reusable, admin-isolated data access for Settings → Notification Settings.
+- **Responsibilities:** Reads and writes the same `library_settings` row as `settings_queries.py`/`receipt_settings_queries.py` — there is no separate notification-settings table. Update-only (no insert path): the row must already exist from Library Profile. Single owner of reminder/channel/quiet-hours/dashboard-display behavior — see ADR-8 in [DECISIONS.md](DECISIONS.md).
+- **Functions/Classes:** `get_notification_settings(admin_id)` (`SELECT * FROM library_settings`, returns `None` if no row exists), `save_notification_settings(admin_id, data)` (plain `UPDATE` of the 19 reminder/channel/quiet-hours/dashboard columns, not upsert).
+- **Depends on:** `database.db.get_connection`.
+- **Depended on by:** `routes/setting.py` (`notification_settings()`, and also called from `membership_settings()` to feed the read-only reminder summary), `routes/dashboard.py` (`dashboard()`, for `dash_show_pending_fees`), `app.py` (`inject_notification_summary()`, for `nav_notification_prefs`).
+- **Future modification notes:** Deliberately has no insert/upsert path, matching `receipt_settings_queries.py`'s pattern — the route enforces that a `library_settings` row already exists first. Because this module is now called from `app.py`'s global context processor (every authenticated page render) in addition to its own route, keep `get_notification_settings` cheap — same caution as `routes/notification.py`'s `get_notification_summary`.
+
+### `database/backup_queries.py`
+- **Purpose:** Admin-isolated data access for Settings → Data & Backup.
+- **Responsibilities:** One row per `admin_id` in `backup_log`, tracking the most recent manual backup taken. Kept separate from `library_settings` so a backup can be recorded before a Library Profile row exists (see ADR-9 in [DECISIONS.md](DECISIONS.md)).
+- **Functions/Classes:** `get_backup_info(admin_id)` (`SELECT * FROM backup_log`, returns `None` if no backup has ever been taken), `record_backup(admin_id, backup_filename)` (upsert via `INSERT ... ON CONFLICT(admin_id) DO UPDATE`, stamps `last_backup_at = CURRENT_TIMESTAMP`).
+- **Depends on:** `database.db.get_connection`.
+- **Depended on by:** `routes/setting.py` (`data_backup()`, `backup_create()`).
+- **Future modification notes:** No automatic/scheduled backup job exists yet (PF-5) — `record_backup()` is only ever called from the manual `backup_create()` route handler. If a scheduled backup job is added later, this is the function it should call to keep `backup_log` consistent with manual backups.
+
+### `database/security_settings_queries.py`
+- **Purpose:** Admin-isolated data access for Settings → Security Settings.
+- **Responsibilities:** One row per `admin_id` in `security_settings`. Kept separate from `library_settings` for the same reason as `backup_queries.py` (see ADR-9).
+- **Functions/Classes:** `get_security_settings(admin_id)` (`SELECT * FROM security_settings`; returns the module-level `DEFAULTS` dict, not `None`, when no row exists yet), `save_security_settings(admin_id, data)` (upsert via `INSERT ... ON CONFLICT(admin_id) DO UPDATE`). Module constant `DEFAULTS`.
+- **Depends on:** `database.db.get_connection`.
+- **Depended on by:** `routes/setting.py` (`security_settings()`).
+- **Future modification notes:** Password change itself is handled inline in `routes/setting.py`'s `security_settings()` against the `admins` table, not through this module — this module only covers `session_timeout_minutes`/`remember_me_enabled`/`login_notifications_enabled`, none of which are currently enforced anywhere (TD-26). Returning `DEFAULTS` instead of `None` means callers don't need a "does a row exist" branch the way `get_notification_settings`/`get_receipt_settings` callers do — keep that contract if you add more security preferences.
 
 ### `database/settings_queries.py`
 - **Purpose:** Admin-isolated CRUD for the Library Profile settings page.
@@ -154,6 +210,14 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 - **Depends on:** `database.db.get_connection`.
 - **Depended on by:** `routes/setting.py`.
 - **Future modification notes:** File-path resolution (keep old / new upload / clear) is the *caller's* (`routes/setting.py`) responsibility, not this module's — keep that separation if you add new uploadable fields (e.g. a future receipt-footer image).
+
+### `database/receipt_settings_queries.py`
+- **Purpose:** Admin-isolated read/update access for the Receipt Settings page.
+- **Responsibilities:** Reads and writes the same `library_settings` row as `settings_queries.py` — there is no separate receipt-settings table. Update-only (no insert path): the row must already exist from Library Profile.
+- **Functions/Classes:** `get_receipt_settings(admin_id)` (`SELECT * FROM library_settings`, same query shape as `get_library_settings`), `save_receipt_settings(admin_id, data)` (plain `UPDATE`, not upsert).
+- **Depends on:** `database.db.get_connection`.
+- **Depended on by:** `routes/setting.py`.
+- **Future modification notes:** Deliberately has no insert/upsert path (ADR — see [DECISIONS.md](DECISIONS.md)); the route enforces that a `library_settings` row already exists before this module is ever called. If receipt settings ever need to exist independently of a library profile, this module (and the route's guard) is what to change.
 
 ---
 
@@ -169,11 +233,11 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 
 ### `routes/dashboard.py`
 - **Purpose:** Main authenticated landing page — KPIs, charts, recent activity.
-- **Responsibilities:** Aggregate counts/totals across students/memberships/payments/enquiries; trigger chart (re)generation.
-- **Functions/Classes:** `dashboard()`.
-- **Depends on:** `database.db.get_connection`, `utils.charts` (`generate_revenue_chart`, `generate_membership_chart`), `database.cashbook_categories` (constants for the quick-add modal).
+- **Responsibilities:** Aggregate counts/totals across students/memberships/payments/enquiries; trigger chart (re)generation; fetch this admin's notification settings to decide whether to show the "Pending Fees" stat card.
+- **Functions/Classes:** `dashboard()` — now also calls `get_notification_settings(admin_id)` and passes `dash_show_pending_fees` (bool, defaults `True` if no `library_settings` row exists yet) into the template context.
+- **Depends on:** `database.db.get_connection`, `utils.charts` (`generate_revenue_chart`, `generate_membership_chart`), `database.cashbook_categories` (constants for the quick-add modal), `database.notification_settings_queries.get_notification_settings`.
 - **Depended on by:** `app.py` (registers `dashboard_bp`); linked from `layouts/sidebar.html` and various "back to dashboard" redirects (e.g. `routes/cashbook.py`'s optional `redirect_to`).
-- **Future modification notes:** Regenerates both chart PNGs on every single page load (not cached) — if dashboard load time ever becomes a concern, this is the place to add a cache/staleness check.
+- **Future modification notes:** Regenerates both chart PNGs on every single page load (not cached) — if dashboard load time ever becomes a concern, this is the place to add a cache/staleness check. `dash_show_pending_fees` is the only Notification Settings dashboard toggle currently wired to a real widget — `dash_show_new_admissions` has no matching card yet (TD-25 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)); if you build one, follow this same pattern.
 
 ### `routes/enquiries.py`
 - **Purpose:** Enquiry CRUD — the entry point of the sales funnel before admission.
@@ -239,11 +303,11 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 - **Future modification notes:** Because `get_notification_summary` runs on every page load via the context processor, keep it cheap — it's not just this page's concern anymore.
 
 ### `routes/setting.py`
-- **Purpose:** All Settings sub-pages: Library Profile, Membership Settings, and the Receipt/Notification stubs.
-- **Functions/Classes:** `index()`, `membership_settings()`, `library_profile()`, `remove_library_logo()`, `receipt_settings()` (stub), `notification_settings()` (stub), plus helpers `_format_membership_setting`, `_build_membership_changes`, `_allowed_file`, `_save_upload`.
-- **Depends on:** `database.settings_queries`, `database.membership_settings_queries`, `werkzeug.utils.secure_filename`.
+- **Purpose:** All Settings sub-pages: Library Profile, Membership Settings, Receipt Settings, Notification Settings, Staff & User Access, Data & Backup, Security Settings — the Settings module is now fully built out (no stubs remaining).
+- **Functions/Classes:** `index()`, `membership_settings()`, `library_profile()`, `remove_library_logo()`, `receipt_settings()`, `notification_settings()` (full GET/POST handler), `staff_access()` (placeholder page, no form), `data_backup()`, `backup_export_csv()`, `backup_create()`, `security_settings()` (password-change + session-preferences forms), plus helpers `_format_membership_setting`, `_build_membership_changes`, `_format_receipt_setting`, `_build_receipt_changes`, `_format_notification_setting`, `_build_notification_changes`, `_format_file_size`, `_allowed_file`, `_save_upload`. Module constants `NOTIFICATION_SETTING_FIELDS`/`NOTIFICATION_SETTING_DEFAULTS`, `SESSION_TIMEOUT_OPTIONS`.
+- **Depends on:** `database.settings_queries`, `database.membership_settings_queries`, `database.receipt_settings_queries`, `database.notification_settings_queries`, `database.backup_queries`, `database.security_settings_queries`, `database.db` (`get_connection`, `DATABASE_PATH`), `routes.auth.validate_password`, `werkzeug.security` (`check_password_hash`, `generate_password_hash`), `werkzeug.utils.secure_filename`, `csv`, `io`, `shutil`.
 - **Depended on by:** `app.py` (registers `setting_bp`); linked from `layouts/navbar.html` (gear icon).
-- **Future modification notes:** `membership_settings()`'s one-shot "what changed" diff (`session["membership_change_summary"]`) is a nice pattern worth reusing for `library_profile()` too if that page ever wants the same UX.
+- **Future modification notes:** `membership_settings()`'s one-shot "what changed" diff (`session["membership_change_summary"]`) is a pattern now reused by `receipt_settings()` (`session["receipt_change_summary"]`) and `notification_settings()` (`session["notification_change_summary"]`) — follow the same `_build_*_changes`/`_format_*_setting` pair if another settings page needs it. `receipt_settings()`/`notification_settings()` both redirect to `library_profile` when no `library_settings` row exists yet, since neither supports insert, only `UPDATE`. `membership_settings()` no longer builds/validates `reminder_days`/`send_reminders` from the form — it fetches `get_notification_settings(admin_id)` and passes it through for the template's read-only summary instead (see ADR-8 in [DECISIONS.md](DECISIONS.md)). `notification_settings()` stores reminder/channel/quiet-hours/dashboard-display config only — nothing dispatches SMS/Email/WhatsApp or enforces quiet hours yet (TD-24 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)). `backup_create()` copies `DATABASE_PATH` into the project-root `backups/` folder (creating it if needed), records the copy via `record_backup()`, then serves it as a download — there is no scheduled/automatic backup (PF-5). `security_settings()`'s password-change branch (`form_type == "password"`) verifies the current password with `check_password_hash`, validates the new one with `routes.auth.validate_password`, and is the one part of Security Settings that's actually enforced; `session_timeout_minutes`/`remember_me_enabled`/`login_notifications_enabled` are saved via `save_security_settings()` but not read/enforced anywhere else yet (TD-26). `staff_access()` takes no form input — it's a static placeholder (PF-4).
 
 ### `routes/report.py`
 - **Purpose:** Deprecated URL-compatibility shim.
@@ -267,7 +331,7 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 - **Purpose:** ~45 shared partials — generic card primitives plus feature-specific widgets grouped by prefix (`bi_*`, `cashbook_*`, `membership_*`).
 - **Depends on:** the page-specific stylesheet of whatever page includes them, and (for chart components) either a static PNG path (`static/charts/*.png`) or a `window.*ChartData` JS global populated by the rendering route.
 - **Depended on by:** `templates/dashboard/index.html`, `templates/cashbook/index.html`, `templates/business_intelligence/index.html`, `templates/memberships/distribution.html` — see [09_DEPENDENCY_MAP.md](09_DEPENDENCY_MAP.md) for the full include graph.
-- **Future modification notes:** `alert.html` is a 0-byte empty file (Known Technical Debt item TD-12) — check whether anything still `{% include %}`s it before deleting. `activity_card.html` uses `{% block %}` (extend-only) while most others use `{% call %}`/`with`-include — keep new components consistent with whichever pattern the page around them already uses.
+- **Future modification notes:** `alert.html` is a 0-byte empty file (Known Technical Debt item TD-12) — check whether anything still `{% include %}`s it before deleting. `activity_card.html` uses `{% block %}` (extend-only) while most others use `{% call %}`/`with`-include — keep new components consistent with whichever pattern the page around them already uses. `notification_dropdown.html` now also reads `nav_notification_prefs` (from `app.py`'s context processor): it hides the badge-count pill when `dash_show_badge_count` is off, and skips rendering the `today`/`tomorrow`/`expired` categories in its loop when their matching toggle is off (`three_days` has no corresponding Notification Settings toggle and is always shown).
 
 ### `templates/auth/`
 - **Purpose:** `login.html`, `register.html`, `forgot_password.html`.
@@ -279,7 +343,7 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 - **Purpose:** `index.html` — the main KPI landing page.
 - **Depends on:** `layouts/base.html`; `components/{dashboard_header, quick_actions, revenue_chart, membership_chart, expiry_table, recent_admissions, add_transaction_modal, edit_transaction_modal}.html`; `static/js/dashboard-charts.js`, `static/js/transaction_modal.js`.
 - **Depended on by:** `routes/dashboard.py`.
-- **Future modification notes:** Any new dashboard tile should follow the existing `stat_card.html`/`chart_card.html` include pattern rather than hand-rolling new markup.
+- **Future modification notes:** Any new dashboard tile should follow the existing `stat_card.html`/`chart_card.html` include pattern rather than hand-rolling new markup. The "Pending Fees" stat card is now wrapped in `{% if dash_show_pending_fees %}`, driven by `routes/dashboard.py`'s Notification Settings lookup — follow the same pattern if `dash_show_new_admissions` (currently unwired, TD-25) ever gets a real widget.
 
 ### `templates/enquiries/`
 - **Purpose:** `index.html`, `add.html`, `edit.html`, `view.html`.
@@ -319,9 +383,10 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 - **Depended on by:** `routes/notification.py`.
 
 ### `templates/settings/`
-- **Purpose:** `index.html`, `library_profile.html`, `membership_settings.html`. No templates yet for the `receipt_settings`/`notification_settings` stubs.
-- **Depends on:** `layouts/base.html`; `static/css/settings.css`, `static/js/settings.js` (`library_profile.html` only).
+- **Purpose:** `index.html` (7 action cards, up from 4), `library_profile.html`, `membership_settings.html`, `receipt_settings.html`, `notification_settings.html` (new), `staff_access.html` (new), `data_backup.html` (new), `security_settings.html` (new). Every Settings sub-page now has a real template — no stubs remain.
+- **Depends on:** `layouts/base.html`; `static/css/settings.css`, `static/js/settings.js` (`library_profile.html`, `receipt_settings.html`, `notification_settings.html` — quiet-hours toggle script — and `security_settings.html` — password-match script).
 - **Depended on by:** `routes/setting.py`.
+- **Future modification notes:** `membership_settings.html`'s reminder-day/send-reminder inputs were replaced with a read-only "Reminders & Notifications" card fed by `notification_settings` (passed in from `routes/setting.py`'s `membership_settings()`) that links out to Notification Settings — don't reintroduce editable reminder inputs here (see ADR-8 in [DECISIONS.md](DECISIONS.md)). `notification_settings.html` reuses the same "Configuration Changes" diff-table component as `membership_settings.html`/`receipt_settings.html`. `staff_access.html` and the "Future Security Features" card in `security_settings.html` are intentionally static placeholders — no form inputs, nothing to wire up until multi-user auth / 2FA / device management actually exist.
 
 ### `templates/reports/`
 - **Purpose:** `index.html` — **dead**, never rendered (`routes/report.py` always redirects instead).

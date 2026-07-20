@@ -14,6 +14,14 @@ from routes.notification import notification_bp, get_notification_summary
 from routes.membership_analytics import membership_analytics_bp
 from routes.membership_distribution import membership_distribution_bp
 from routes.business_intelligence import business_intelligence_bp
+from database.notification_settings_queries import get_notification_settings
+
+DEFAULT_NAV_NOTIFICATION_PREFS = {
+    "dash_show_badge_count": True,
+    "dash_show_expiry_today": True,
+    "dash_show_expiry_tomorrow": True,
+    "dash_show_overdue": True,
+}
 
 def create_app():
     app = Flask(__name__)
@@ -36,9 +44,26 @@ def create_app():
     @app.context_processor
     def inject_notification_summary():
         if "admin_id" not in session:
-            return {"nav_notifications": None}
+            return {
+                "nav_notifications": None,
+                "nav_notification_prefs": DEFAULT_NAV_NOTIFICATION_PREFS,
+            }
 
-        return {"nav_notifications": get_notification_summary(session["admin_id"])}
+        settings = get_notification_settings(session["admin_id"])
+        prefs = (
+            {
+                "dash_show_badge_count": bool(settings["dash_show_badge_count"]),
+                "dash_show_expiry_today": bool(settings["dash_show_expiry_today"]),
+                "dash_show_expiry_tomorrow": bool(settings["dash_show_expiry_tomorrow"]),
+                "dash_show_overdue": bool(settings["dash_show_overdue"]),
+            }
+            if settings else DEFAULT_NAV_NOTIFICATION_PREFS
+        )
+
+        return {
+            "nav_notifications": get_notification_summary(session["admin_id"]),
+            "nav_notification_prefs": prefs,
+        }
 
     return app
 

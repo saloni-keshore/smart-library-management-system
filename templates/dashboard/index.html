@@ -73,6 +73,7 @@ Dashboard
     {% include "components/stat_card.html" %}
     {% endwith %}
 
+    {% if dash_show_pending_fees %}
     {% with
     title="Pending Fees",
     value="₹" ~ pending_amount,
@@ -83,6 +84,7 @@ Dashboard
     %}
     {% include "components/stat_card.html" %}
     {% endwith %}
+    {% endif %}
 
 </div>
 

@@ -77,7 +77,16 @@ Every feature page does `{% extends "layouts/base.html" %}` and overrides `title
 | `cashbook/` | `index.html`, `transactions.html`, `analytics.html` — only `index.html` is rendered by `routes/cashbook.py`; `transactions.html`/`analytics.html` appear to be leftover/unwired |
 | `business_intelligence/` | `index.html` |
 | `notification/` | `index.html` |
-| `settings/` | `index.html`, `library_profile.html`, `membership_settings.html` — note `routes/setting.py`'s `receipt_settings`/`notification_settings` have no corresponding templates yet |
+| `settings/` | `index.html`, `library_profile.html`, `membership_settings.html`, `receipt_settings.html`, `notification_settings.html`, `staff_access.html`, `data_backup.html`, `security_settings.html` — every Settings sub-page now has a template, no stubs remain |
 | `reports/` | `index.html` — unreferenced (see `routes/report.py`, a pure redirect shim) |
 
 See [11_FUTURE_WORK.md](11_FUTURE_WORK.md) for the unwired-template list.
+
+### Settings templates, in detail
+
+- **`notification_settings.html`** (new) — sectioned like `receipt_settings.html`: Reminder Rules (7/3/1-day toggles + notify-on-expiry-day/notify-after-expiry), Notification Channels (In-App plus SMS/Email/WhatsApp, the latter three each marked "Integration coming soon. This only saves the preference."), Quiet Hours (enable switch + start/end time inputs, disabled client-side via `static/js/settings.js` when the switch is off, + allow-critical-alerts switch), Dashboard Notifications (6 show/hide toggles), a static dummy "Notification Preview" card (Expiry Reminder / Payment Pending / New Admission examples, not real data), and the same "Configuration Changes" diff-table component used by Membership/Receipt Settings. Form id `notificationSettingsForm`.
+- **`staff_access.html`** (new) — pure placeholder, no form. Explains the single-admin limitation and previews 4 future roles (Owner, Front Desk, Accountant, Librarian) as static cards. See PF-4 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+- **`data_backup.html`** (new) — three stat cards (Current Database Size, Last Backup Date, Backup Location) fed by `routes/setting.py`'s `data_backup()`, plus two actions: `Export CSV` (`backup_export_csv`) and a `Create Backup` POST form (`backup_create`). A note calls out that automatic backups aren't implemented yet (PF-5).
+- **`security_settings.html`** (new) — two forms distinguished by a hidden `form_type` field: "Change Password" (`form_type=password`, id `securityPasswordForm`, client-side new/confirm match check via `static/js/settings.js`) and "Session Preferences" (timeout `<select>`, remember-me switch, login-notifications switch). A static "Future Security Features" card lists 2FA and Device Management as visual-only "Coming Soon" rows.
+- **`membership_settings.html`** (modified) — the `reminder_days`/`send_reminders` input+switch were removed; replaced with a read-only "Reminders & Notifications" card showing which reminder days are enabled (sourced from the `notification_settings` context variable, itself `get_notification_settings(admin_id)`) and a link to Notification Settings.
+- **`index.html`** (modified) — 3 more `action-card` tiles added (Staff & User Access, Data & Backup, Security Settings), same markup/style as the existing 4 — now 7 fully-clickable cards total.

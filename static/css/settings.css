@@ -194,3 +194,107 @@
     top: 25px;
     align-self: flex-start;
 }
+
+/* ==========================
+   Receipt Preview card
+========================== */
+
+.settings-page .receipt-preview-doc{
+
+    max-width:280px;
+
+    margin:0 auto;
+
+    transition:max-width .2s ease;
+
+}
+
+.settings-page .receipt-preview-thermal .receipt-preview-doc{
+
+    max-width:220px;
+
+}
+
+.settings-page .receipt-preview-logo{
+
+    height:48px;
+
+    width:auto;
+
+    max-width:100%;
+
+    object-fit:contain;
+
+}
+
+.settings-page .receipt-preview-mark{
+
+    height:44px;
+
+    width:auto;
+
+    max-width:100px;
+
+    object-fit:contain;
+
+}
+
+/* ==========================
+   Notification Preview card
+========================== */
+
+.settings-page .settings-notif-preview{
+
+    padding:12px 14px;
+
+    border:1px solid #eef2f7;
+
+    border-radius:10px;
+
+    background:#f8fafc;
+
+}
+
+/* ==========================
+   Coming Soon badge (Staff, Backup, Security placeholders)
+========================== */
+
+.settings-page .settings-coming-soon-badge{
+
+    background:#eef2f7;
+
+    color:#64748b;
+
+    font-weight:600;
+
+    padding:.4em .8em;
+
+}
+
+.settings-page .settings-coming-soon-icon{
+
+    font-size:56px;
+
+    color:#94a3b8;
+
+}
+
+.settings-page .settings-role-card{
+
+    padding:16px 12px;
+
+    border:1px solid #eef2f7;
+
+    border-radius:12px;
+
+    background:#f8fafc;
+
+}
+
+.settings-page .settings-role-card i{
+
+    font-size:24px;
+
+    color:#6366f1;
+
+}

@@ -59,8 +59,7 @@
                     {% for name, label, default in [
                         ('admission_fee', 'Admission fee', 0),
                         ('late_fee_per_day', 'Late fee per day', 0),
-                        ('renewal_grace_days', 'Renewal grace days', 7),
-                        ('reminder_days', 'Reminder days before expiry', 3)
+                        ('renewal_grace_days', 'Renewal grace days', 7)
                     ] %}
                     <div class="col-lg-3 col-md-6">
                         <label class="form-label">{{ label }}</label>
@@ -74,8 +73,7 @@
                 <div class="row mt-3">
                     {% for name, label, default in [
                         ('auto_expiry', 'Automatically expire memberships', 1),
-                        ('allow_early_renewal', 'Allow early renewal', 1),
-                        ('send_reminders', 'Send expiry reminders', 1)
+                        ('allow_early_renewal', 'Allow early renewal', 1)
                     ] %}
                     <div class="col-md-4 mb-2">
                         <div class="form-check form-switch">
@@ -86,6 +84,39 @@
                     </div>
                     {% endfor %}
                 </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h5 class="text-primary mb-3">Reminders &amp; Notifications</h5>
+                <p class="text-muted small mb-2">
+                    Reminder days, channels and quiet hours are now managed centrally in
+                    <a href="{{ url_for('setting.notification_settings') }}">Notification Settings</a>.
+                </p>
+
+                {% if notification_settings %}
+                <div class="d-flex flex-wrap gap-4 small">
+                    <div>
+                        <span class="text-muted d-block">Reminder Days</span>
+                        <span class="fw-semibold">
+                            {%- set reminder_days = [] -%}
+                            {%- if notification_settings.reminder_7_days %}{% set _ = reminder_days.append('7') %}{% endif -%}
+                            {%- if notification_settings.reminder_3_days %}{% set _ = reminder_days.append('3') %}{% endif -%}
+                            {%- if notification_settings.reminder_1_day %}{% set _ = reminder_days.append('1') %}{% endif -%}
+                            {{ reminder_days|join(', ') if reminder_days else 'None' }} day(s) before expiry
+                        </span>
+                    </div>
+                    <div>
+                        <span class="text-muted d-block">In-App Notifications</span>
+                        <span class="fw-semibold">{{ 'Enabled' if notification_settings.notify_in_app else 'Disabled' }}</span>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-muted small">
+                    Complete your <a href="{{ url_for('setting.library_profile') }}">Library Profile</a> to configure reminders.
+                </div>
+                {% endif %}
             </div>
         </div>
 

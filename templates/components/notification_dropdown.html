@@ -2,6 +2,13 @@
 {% set counts = summary.counts if summary else {} %}
 {% set buckets = summary.buckets if summary else {} %}
 {% set meta = summary.meta if summary else {} %}
+{% set prefs = nav_notification_prefs or {} %}
+{% set category_toggle = {
+    "today": prefs.get("dash_show_expiry_today", true),
+    "tomorrow": prefs.get("dash_show_expiry_tomorrow", true),
+    "three_days": true,
+    "expired": prefs.get("dash_show_overdue", true)
+} %}
 
 <div class="dropdown">
 
@@ -14,7 +21,7 @@
 
         <i class="bi bi-bell fs-5"></i>
 
-        {% if counts.get("total") %}
+        {% if counts.get("total") and prefs.get("dash_show_badge_count", true) %}
 
         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
 
@@ -39,6 +46,7 @@
         <div class="notification-scroll">
 
             {% for key in ["today", "tomorrow", "three_days", "expired"] %}
+            {% if category_toggle.get(key, true) %}
 
             {% set cat = meta[key] %}
             {% set items = buckets.get(key, []) %}
@@ -172,6 +180,7 @@
 
             </div>
 
+            {% endif %}
             {% endfor %}
 
         </div>

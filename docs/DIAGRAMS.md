@@ -21,8 +21,8 @@ graph TD
     Root --> Empty["models/ services/ reports/ tests/ backups/ .agents/ (all empty)"]
 
     Database --> DBCore["db.py, schema.sql, seed.py"]
-    Database --> DBMigrations["migrate_*.py (8 scripts, no version tracking)"]
-    Database --> DBQueries["*_queries.py + cashbook_categories.py (6 modules)"]
+    Database --> DBMigrations["migrate_*.py (11 scripts, no version tracking)"]
+    Database --> DBQueries["*_queries.py + cashbook_categories.py (10 modules)"]
     Database --> DBFile[("library.db")]
 
     Routes --> RouteFiles["13 blueprint modules, see FILE_REFERENCE.md"]
@@ -66,6 +66,10 @@ graph TD
         CashQ["cashbook_queries.py"]
         MemSettQ["membership_settings_queries.py"]
         SettQ["settings_queries.py"]
+        ReceiptSettQ["receipt_settings_queries.py"]
+        NotifSettQ["notification_settings_queries.py"]
+        BackupQ["backup_queries.py"]
+        SecSettQ["security_settings_queries.py"]
         CatConst["cashbook_categories.py (constants only)"]
     end
 
@@ -75,6 +79,7 @@ graph TD
     Dashboard --> DB
     Dashboard --> Charts
     Dashboard --> CatConst
+    Dashboard --> NotifSettQ
     Enquiries --> DB
     Student --> DB
     Membership --> DB
@@ -91,12 +96,21 @@ graph TD
     Notification --> DB
     Setting --> SettQ
     Setting --> MemSettQ
+    Setting --> ReceiptSettQ
+    Setting --> NotifSettQ
+    Setting --> BackupQ
+    Setting --> SecSettQ
+    app_ctx["app.py: inject_notification_summary()"] --> NotifSettQ
 
     CashQ --> AuditQ
     CashQ --> DB
     BiQ --> CashQ
     BiQ --> DB
     AuditQ --> DB
+    ReceiptSettQ --> DB
+    NotifSettQ --> DB
+    BackupQ --> DB
+    SecSettQ --> DB
     MemSettQ --> DB
     SettQ --> DB
     Charts --> DB
@@ -150,6 +164,8 @@ erDiagram
     ADMINS ||--o{ AUDIT_LOG : "admin_id"
     ADMINS ||--|| LIBRARY_SETTINGS : "admin_id (unique)"
     ADMINS ||--|| MEMBERSHIP_SETTINGS : "admin_id (unique)"
+    ADMINS ||--|| BACKUP_LOG : "admin_id (unique)"
+    ADMINS ||--|| SECURITY_SETTINGS : "admin_id (unique)"
     ADMINS ||--o{ CASHBOOK : "admin_id (no FK — added via ALTER)"
     ADMINS ||--o{ EXPENSES : "admin_id (no FK, unused table)"
     ENQUIRIES |o--o| STUDENTS : "enquiry_id (nullable)"
@@ -213,10 +229,29 @@ erDiagram
     LIBRARY_SETTINGS {
         int setting_id PK
         int admin_id FK "unique"
+        int reminder_7_days "Notification Settings"
+        int notify_in_app "Notification Settings"
+        int quiet_hours_enabled "Notification Settings"
+        int dash_show_pending_fees "Notification Settings"
     }
     MEMBERSHIP_SETTINGS {
         int setting_id PK
         int admin_id FK "unique"
+        int reminder_days "unused, superseded (TD-23)"
+        int send_reminders "unused, superseded (TD-23)"
+    }
+    BACKUP_LOG {
+        int log_id PK
+        int admin_id FK "unique"
+        timestamp last_backup_at
+        text backup_filename
+    }
+    SECURITY_SETTINGS {
+        int setting_id PK
+        int admin_id FK "unique"
+        int session_timeout_minutes
+        int remember_me_enabled
+        int login_notifications_enabled
     }
     EXPENSES {
         int expense_id PK
@@ -256,6 +291,10 @@ graph LR
         cashbook_categories_py["cashbook_categories.py"]
         membership_settings_queries_py["membership_settings_queries.py"]
         settings_queries_py["settings_queries.py"]
+        receipt_settings_queries_py["receipt_settings_queries.py"]
+        notification_settings_queries_py["notification_settings_queries.py"]
+        backup_queries_py["backup_queries.py"]
+        security_settings_queries_py["security_settings_queries.py"]
     end
 
     charts_py["utils/charts.py"]
@@ -294,6 +333,12 @@ graph LR
     notification_py --> db_py
     setting_py --> settings_queries_py
     setting_py --> membership_settings_queries_py
+    setting_py --> receipt_settings_queries_py
+    setting_py --> notification_settings_queries_py
+    setting_py --> backup_queries_py
+    setting_py --> security_settings_queries_py
+    app_py -.->|"inject_notification_summary()"| notification_settings_queries_py
+    dashboard_py --> notification_settings_queries_py
 
     cashbook_queries_py --> db_py
     cashbook_queries_py --> audit_queries_py
@@ -302,6 +347,10 @@ graph LR
     audit_queries_py --> db_py
     membership_settings_queries_py --> db_py
     settings_queries_py --> db_py
+    receipt_settings_queries_py --> db_py
+    notification_settings_queries_py --> db_py
+    backup_queries_py --> db_py
+    security_settings_queries_py --> db_py
     charts_py --> db_py
 ```
 
