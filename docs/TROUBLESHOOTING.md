@@ -4,9 +4,9 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 
 ## `ModuleNotFoundError: No module named 'matplotlib'` (or `numpy`)
 
-**Cause:** `requirements.txt` only lists `Flask` and `Werkzeug`, but `utils/charts.py` imports `matplotlib` and `numpy`. A fresh `pip install -r requirements.txt` doesn't install them.
-**Fix:** `pip install matplotlib numpy`, then add both to `requirements.txt` (see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-8).
-**Where it surfaces:** any request to `GET /dashboard` or `GET /membership-distribution/` — both call into `utils/charts.py` synchronously, so the request itself 500s.
+**Cause (historical — resolved, verified 2026-07-22):** `requirements.txt` used to list only `Flask`/`Werkzeug` while `utils/charts.py` imports `matplotlib`/`numpy`. `requirements.txt` now includes both (`matplotlib>=3.7.0`, `numpy>=1.26.0`) — TD-8 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) is Resolved.
+**If you still see this:** your virtualenv predates the fix — re-run `pip install -r requirements.txt`, don't hand-`pip install` just the two packages (the pinned versions matter).
+**Where it surfaces (if it recurs):** any request to `GET /dashboard` or `GET /membership-distribution/` — both call into `utils/charts.py` synchronously, so the request itself 500s.
 
 ## Dashboard/Distribution charts show stale or another admin's data
 
@@ -50,8 +50,8 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 
 ## `sqlite3.OperationalError: database is locked`
 
-**Cause:** `database/db.py`'s `get_connection()` opens a brand-new SQLite connection per request with no pooling. SQLite allows only one writer at a time; under concurrent write-heavy load (e.g. two admins submitting payments simultaneously, or a long-running read holding a transaction open), a writer can time out waiting for the lock.
-**Fix:** at current single-admin-at-a-time scale this is unlikely; if it starts happening, look for a connection that isn't being closed promptly (missing `conn.close()` after an early return) before assuming it's a concurrency ceiling that needs WAL mode or a connection pool.
+**Cause:** `database/db.py`'s `get_connection()` opens a brand-new SQLite connection per request with no pooling. SQLite allows only one writer at a time; under concurrent write-heavy load (e.g. two admins submitting payments simultaneously, or a long-running read holding a transaction open), a writer can time out waiting for the lock. **Concretely happened, not just theoretical:** `routes/student.py`'s `edit()` had no `try/except` around its `UPDATE` — an unhandled `sqlite3.IntegrityError` (from a duplicate-mobile edit) left that request's connection un-closed, and the *next* request from anyone, on any route, that needed a write hit "database is locked" until the leaked connection was garbage-collected. Fixed 2026-07-22 (QA & Validation Sprint) — see [CHANGELOG.md](CHANGELOG.md).
+**Fix:** at current single-admin-at-a-time scale a genuine concurrency ceiling is unlikely; look first for a connection that isn't being closed promptly — specifically, an unhandled exception between `get_connection()` and `conn.close()`/`conn.commit()` in any route (grep for `cursor.execute` calls with no surrounding `try/except` near a write) — before assuming it's a concurrency ceiling that needs WAL mode or a connection pool.
 
 ## A `migrate_*.py` script errors with "table already exists" or a column mismatch
 
@@ -97,6 +97,26 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 
 **Cause:** almost certainly a missing `admin_id` filter on a new query, or a new table created without an `admin_id` column at all.
 **Fix:** follow the `enquiries`/`students` pattern from day one (direct `admin_id` column + FK), not the `cashbook`/`expenses` pattern (retrofitted via `ALTER TABLE`, no FK possible) — see ADR-2 in [DECISIONS.md](DECISIONS.md).
+
+## Settings → Membership Settings won't save / 500s on submit
+
+**Cause (historical, fixed 2026-07-22):** `database/membership_settings_queries.py`'s `save_membership_settings()` `INSERT` statement declared 14 columns but its `VALUES(...)` clause had only 13 `?` placeholders — `sqlite3.OperationalError: 13 values for 14 columns` on every single save attempt, with no `try/except` anywhere to catch it. See [CHANGELOG.md](CHANGELOG.md).
+**If you still see this:** you're on a version of the code from before this fix — pull the latest `database/membership_settings_queries.py`.
+
+## `/membership-analytics/` crashes or shows a completely blank page
+
+**Cause (historical, fixed 2026-07-22):** `routes/membership_analytics.py` called `render_template("membership/analytics.html")` — that path doesn't exist (`templates/membership/`, singular, was never a real directory). The route now redirects to Membership Distribution instead of rendering anything (see PF-2 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)).
+**If you still see this:** you're on a version of the code from before this fix.
+
+## Editing a student's mobile number crashes
+
+**Cause (historical, fixed 2026-07-22):** `routes/student.py`'s `edit()` had no `try/except` around its `UPDATE` — setting a mobile number already used by another student of the same admin violates `students`' `UNIQUE(mobile, admin_id)` and raised an unhandled `sqlite3.IntegrityError`. See the "database is locked" entry above for the follow-on effect this had on unrelated requests, and [CHANGELOG.md](CHANGELOG.md) for the fix.
+**If you still see this:** you're on a version of the code from before this fix.
+
+## Downloading a backup gives you more data than expected
+
+**Cause — this is a live, unresolved issue, not a historical one (TD-32 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md), Critical, Open):** `POST /settings/backup/create` copies and serves the entire shared `database/library.db` file, not a per-admin export. Any admin who clicks "Create Backup" downloads every other admin's students/enquiries/memberships/payments/cashbook/audit-log rows, plus the full `admins` table (usernames, mobiles, bcrypt password hashes) for every account in the system — not just their own.
+**This is not a bug to "fix" by changing your usage** — it's a real defect in `routes/setting.py`'s `backup_create()`. Treat any existing downloaded backup file as containing every tenant's data, and restrict who can reach Settings → Data & Backup until this is addressed (a real per-admin export, or a role-gated permission system — see PF-4, which doesn't exist yet).
 
 ## A Jinja `BuildError: Could not build url for endpoint '...'`
 

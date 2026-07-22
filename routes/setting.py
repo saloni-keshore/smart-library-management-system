@@ -2,7 +2,8 @@ import csv
 import io
 import os
 import re
-import shutil
+import secrets
+import sqlite3
 from datetime import datetime
 
 from flask import (
@@ -428,8 +429,8 @@ def library_profile():
         signature_file = request.files.get("signature")
 
         for field_name, upload in (("logo", logo_file), ("stamp", stamp_file), ("signature", signature_file)):
-            if upload and upload.filename and not _allowed_file(upload.filename):
-                errors[field_name] = "Only PNG, JPG, JPEG or WEBP images are allowed."
+            if upload and upload.filename and not _allowed_upload(upload):
+                errors[field_name] = "Only valid PNG, JPG, JPEG or WEBP images are allowed."
 
         if errors:
             message = "Please fix the highlighted fields."
@@ -788,7 +789,15 @@ def backup_create():
     backup_filename = f"library_backup_{admin_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
     backup_path = os.path.join(backups_dir, backup_filename)
 
-    shutil.copy2(DATABASE_PATH, backup_path)
+    # SQLite's backup API produces a consistent snapshot even while WAL mode
+    # has uncheckpointed writes; copying the database file does not.
+    source = get_connection()
+    target = sqlite3.connect(backup_path)
+    try:
+        source.backup(target)
+    finally:
+        target.close()
+        source.close()
     record_backup(admin_id, backup_filename)
 
     return send_file(backup_path, as_attachment=True, download_name=backup_filename)
@@ -878,6 +887,18 @@ def _allowed_file(filename):
     return extension in ALLOWED_EXTENSIONS
 
 
+def _allowed_upload(file):
+    if not _allowed_file(file.filename):
+        return False
+    header = file.stream.read(512)
+    file.stream.seek(0)
+    return (
+        header.startswith(b"\x89PNG\r\n\x1a\n")
+        or header.startswith(b"\xff\xd8\xff")
+        or (header.startswith(b"RIFF") and header[8:12] == b"WEBP")
+    )
+
+
 def _save_upload(file, admin_id, field_name):
     """Save an uploaded file under static/uploads/settings/ and return the
     path to store in the database (relative to static/)."""
@@ -885,7 +906,8 @@ def _save_upload(file, admin_id, field_name):
     upload_dir = os.path.join(current_app.static_folder, "uploads", "settings")
     os.makedirs(upload_dir, exist_ok=True)
 
-    stored_name = f"{field_name}_{admin_id}_{secure_filename(file.filename)}"
+    original_name = secure_filename(file.filename)
+    stored_name = f"{field_name}_{admin_id}_{secrets.token_hex(8)}_{original_name}"
     file.save(os.path.join(upload_dir, stored_name))
 
     return f"uploads/settings/{stored_name}"

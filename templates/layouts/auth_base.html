@@ -9,6 +9,7 @@
           content="width=device-width, initial-scale=1.0">
 
     <title>{% block title %}Smart Library Pro{% endblock %}</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <!-- Google Font -->
 
@@ -45,6 +46,17 @@
 {% endblock %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.addEventListener("submit", function(event) {
+    const form = event.target;
+    if (form.method.toLowerCase() === "get" || form.querySelector('input[name="csrf_token"]')) return;
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "csrf_token";
+    input.value = document.querySelector('meta[name="csrf-token"]').content;
+    form.appendChild(input);
+}, true);
+</script>
 <script src="{{ url_for('static', filename='js/login.js') }}"></script>
 </body>
 

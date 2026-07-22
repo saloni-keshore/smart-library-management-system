@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
 
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     const form = document.getElementById("libraryProfileForm");
     if (!form) return;
 
@@ -161,7 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             fetch(url, {
                 method: "POST",
-                headers: { "X-Requested-With": "XMLHttpRequest" }
+                headers: { "X-Requested-With": "XMLHttpRequest", "X-CSRF-Token": csrfToken }
             })
                 .then((response) => response.json())
                 .then((data) => {
@@ -247,7 +248,7 @@ document.addEventListener("DOMContentLoaded", () => {
         fetch(form.action, {
             method: "POST",
             body: new FormData(form),
-            headers: { "X-Requested-With": "XMLHttpRequest" }
+            headers: { "X-Requested-With": "XMLHttpRequest", "X-CSRF-Token": csrfToken }
         })
             .then((response) => response.json().then((data) => ({ status: response.status, data })))
             .then(({ status, data }) => {

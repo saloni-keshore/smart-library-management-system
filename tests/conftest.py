@@ -1,0 +1,147 @@
+import sys
+import os
+import random
+import string
+
+import pytest
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from app import create_app  # noqa: E402
+from database.db import get_connection  # noqa: E402
+
+
+@pytest.fixture(scope="session")
+def app():
+    return create_app({
+        "TESTING": True,
+        "WTF_CSRF_ENABLED": False,
+        "ENABLE_SELF_SERVICE_PASSWORD_RESET": True,
+    })
+
+
+@pytest.fixture()
+def client(app):
+    return app.test_client()
+
+
+def _rand(n=6):
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=n))
+
+
+def _rand_mobile():
+    return "9" + "".join(random.choices(string.digits, k=9))
+
+
+@pytest.fixture()
+def new_admin(client):
+    """Registers a fresh, isolated admin account and returns its creds/id."""
+    suffix = _rand()
+    creds = {
+        "full_name": f"QA Tester {suffix}",
+        "username": f"qa_{suffix}",
+        "mobile": _rand_mobile(),
+        "email": f"qa_{suffix}@example.com",
+        "password": "TestPass123",
+        "confirm_password": "TestPass123",
+    }
+    resp = client.post("/register", data=creds, follow_redirects=True)
+    assert resp.status_code == 200
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT admin_id FROM admins WHERE username = ?", (creds["username"],))
+    row = cur.fetchone()
+    conn.close()
+    assert row is not None, "registration did not create an admin row"
+
+    creds["admin_id"] = row["admin_id"]
+    return creds
+
+
+@pytest.fixture()
+def logged_in_client(client, new_admin):
+    resp = client.post(
+        "/",
+        data={"username": new_admin["username"], "password": new_admin["password"]},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    return client, new_admin
+
+
+def make_enquiry(client, **overrides):
+    data = {
+        "full_name": "Test Enquirer",
+        "mobile": _rand_mobile(),
+        "purpose": "Study",
+        "preferred_shift": "Morning",
+        "followup_date": "2026-08-01",
+        "remarks": "auto-created by QA suite",
+    }
+    data.update(overrides)
+    resp = client.post("/enquiries/add", data=data, follow_redirects=True)
+    return resp, data
+
+
+def get_last_enquiry_id(admin_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT enquiry_id FROM enquiries WHERE admin_id=? ORDER BY enquiry_id DESC LIMIT 1",
+        (admin_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row["enquiry_id"] if row else None
+
+
+def admit_student(client, enquiry_id, **overrides):
+    data = {
+        "address": "123 Test Street",
+        "id_proof": "AADHAR-1234",
+        "join_date": "2026-07-22",
+    }
+    data.update(overrides)
+    resp = client.post(f"/students/admission/{enquiry_id}", data=data, follow_redirects=True)
+    return resp
+
+
+def get_last_student_id(admin_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT student_id FROM students WHERE admin_id=? ORDER BY student_id DESC LIMIT 1",
+        (admin_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row["student_id"] if row else None
+
+
+def create_membership(client, student_id, **overrides):
+    data = {
+        "plan_name": "Monthly",
+        "joining_date": "2026-07-22",
+        "duration": "30",
+        "end_date": "2026-08-21",
+        "remarks": "auto-created by QA suite",
+        "payment_mode": "Cash",
+        "paid_amount": "500",
+        "due_amount": "0",
+    }
+    data.update(overrides)
+    resp = client.post(f"/memberships/create/{student_id}", data=data, follow_redirects=True)
+    return resp
+
+
+def get_last_membership_id(student_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT membership_id FROM memberships WHERE student_id=? ORDER BY membership_id DESC LIMIT 1",
+        (student_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row["membership_id"] if row else None

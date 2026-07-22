@@ -1,3 +1,5 @@
+import sqlite3
+
 from flask import (
     Blueprint,
     render_template,
@@ -221,13 +223,23 @@ def edit(student_id):
         shift = request.form.get("shift")
         status = request.form.get("status")
 
-        cursor.execute("""
-            UPDATE students
-            SET full_name=?, mobile=?, address=?, purpose=?, shift=?, status=?
-            WHERE student_id=? AND admin_id=?
-        """, (full_name, mobile, address, purpose, shift, status, student_id, admin_id))
+        try:
+            cursor.execute("""
+                UPDATE students
+                SET full_name=?, mobile=?, address=?, purpose=?, shift=?, status=?
+                WHERE student_id=? AND admin_id=?
+            """, (full_name, mobile, address, purpose, shift, status, student_id, admin_id))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            conn.close()
+            flash(
+                "Another student already uses that mobile number. "
+                "Please use a different number.",
+                "danger"
+            )
+            return render_template("students/edit.html", student=student)
 
-        conn.commit()
         conn.close()
 
         flash("Student updated successfully.", "success")

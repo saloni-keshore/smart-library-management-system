@@ -30,7 +30,7 @@ routes/membership_distribution.py → database.db.get_connection (memberships, s
                                   an inline is_active boolean - see TD-6)
 routes/notification.py         → database.db.get_connection   (memberships, students)
                                 → database.membership_queries.DAYS_LEFT_SQL (added 2026-07-21)
-routes/membership_analytics.py → (no DB access at all)
+routes/membership_analytics.py → (no DB access at all - redirects to membership_distribution.index, fixed 2026-07-22)
 ```
 
 ## Routes that delegate to a `database/*_queries.py` module

@@ -8,6 +8,20 @@
 
 {% block content %}
 <div class="container-fluid py-3 settings-page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+
+                <div class="alert alert-{{ category }}">
+
+                    {{ message }}
+
+                </div>
+
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="fw-bold mb-1">Staff & User Access</h2>

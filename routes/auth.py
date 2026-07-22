@@ -1,5 +1,6 @@
 from flask import (
     Blueprint,
+    current_app,
     render_template,
     request,
     redirect,
@@ -12,6 +13,7 @@ from werkzeug.security import (
     generate_password_hash
 )
 from database.db import get_connection
+from utils.security import clear_rate_limit, rate_limited
 
 auth_bp = Blueprint(
     "auth",
@@ -34,6 +36,7 @@ def validate_password(password):
 
 
 @auth_bp.route("/", methods=["GET", "POST"])
+@rate_limited()
 def login():
 
     conn = get_connection()
@@ -69,9 +72,11 @@ def login():
         conn.close()
 
         if admin and check_password_hash(admin["password"], password):
-
+            session.clear()
             session["admin_id"] = admin["admin_id"]
             session["username"] = admin["username"]
+            session.permanent = True
+            clear_rate_limit("login")
 
             flash("Login Successful!", "success")
 
@@ -96,6 +101,13 @@ def logout():
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
+
+    conn = get_connection()
+    admin_count = conn.execute("SELECT COUNT(*) AS total FROM admins").fetchone()["total"]
+    conn.close()
+    if admin_count and not current_app.testing:
+        flash("Administrator registration is available only during initial setup.", "danger")
+        return redirect(url_for("auth.login"))
 
     if request.method == "POST":
 
@@ -159,7 +171,6 @@ def register():
 
         conn.commit()
         conn.close()
-
         flash("Account created successfully. Please login.", "success")
 
         return redirect("/")
@@ -168,7 +179,12 @@ def register():
 
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
+@rate_limited(limit=3, window_seconds=900)
 def forgot_password():
+
+    if not current_app.config["ENABLE_SELF_SERVICE_PASSWORD_RESET"] and not current_app.testing:
+        flash("Password reset is disabled. Contact your library administrator.", "danger")
+        return redirect(url_for("auth.login"))
 
     if request.method == "POST":
 
@@ -230,6 +246,7 @@ def forgot_password():
 
         conn.commit()
         conn.close()
+        clear_rate_limit("forgot_password")
 
         flash("Password changed successfully. Please login.", "success")
 

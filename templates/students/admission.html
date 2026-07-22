@@ -8,6 +8,20 @@ Student Admission
 
 <div class="container mt-4">
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+
+                <div class="alert alert-{{ category }}">
+
+                    {{ message }}
+
+                </div>
+
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
     <div class="card shadow">
 
         <div class="card-header d-flex justify-content-between align-items-center">

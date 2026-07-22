@@ -1,0 +1,9 @@
+{% extends "layouts/auth_base.html" %}
+{% block title %}{{ code }} | Smart Library Pro{% endblock %}
+{% block content %}
+<main class="container py-5 text-center">
+    <h1>{{ code }}</h1>
+    <p>{{ message }}</p>
+    <a class="btn btn-primary" href="{{ url_for('auth.login') }}">Return to login</a>
+</main>
+{% endblock %}

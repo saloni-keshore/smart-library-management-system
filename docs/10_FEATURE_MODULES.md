@@ -24,8 +24,8 @@ Templates involved: `memberships/{create,renew}.html`, `payments/collect.html`, 
 ## Membership Distribution (analytics, read-only)
 `routes/membership_distribution.py` → raw SQL + `utils/charts.py`'s `generate_membership_distribution_donut` → `templates/memberships/distribution.html` → `components/membership_{summary_cards, distribution_chart, distribution_table, filters, quick_insights, progress}.html`.
 
-## Membership Analytics (stub)
-`routes/membership_analytics.py` → `templates/memberships/analytics.html`, no data passed — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+## Membership Analytics (redirect shim)
+`routes/membership_analytics.py` → permanently redirects to `membership_distribution.index` (fixed 2026-07-22 — previously requested a nonexistent template path, `membership/analytics.html`, crashing every visit; see [CHANGELOG.md](CHANGELOG.md) and [11_FUTURE_WORK.md](11_FUTURE_WORK.md) PF-2).
 
 ## Cashbook (manual ledger + audit)
 `routes/cashbook.py` → `database/cashbook_queries.py` (nearly every function) + `database/audit_queries.py` (`get_recent_audit_log`) + `database/cashbook_categories.py` (allowed categories/methods) → `templates/cashbook/index.html` → `components/cashbook_{summary_cards, filters, charts, transactions, activity_log}.html` → `static/js/cashbook.js`, `static/js/transaction_modal.js`, `static/css/cashbook.css`.

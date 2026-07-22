@@ -52,15 +52,15 @@ Raw SQL only, no query module.
 | GET/POST | `/memberships/create/<int:student_id>` | `create` | `memberships/create.html` | Yes | Create the first/a new membership, optional initial payment |
 | GET/POST | `/memberships/renew/<int:student_id>` | `renew` | `memberships/renew.html` | Yes | Expire the prior active membership, create a new one + payment |
 
-Both `create` and `renew` validate `paid_amount`/`due_amount` as non-negative floats, require `total_fee > 0`, generate a `REC-YYYYMMDD-<membership_id>` receipt number, insert into `payments`, and call `database.cashbook_queries.insert_income_entry(conn, ...)` in the same transaction (category `"Admission Fee"` for create, `"Membership Renewal"` for renew). This create/renew logic is largely duplicated between the two functions rather than shared. `renew` also requires at least one prior membership to exist and marks all prior `Active` memberships `Expired`.
+Both `create` and `renew` validate `paid_amount`/`due_amount` as non-negative floats, require `total_fee > 0`, and call the shared `database.payment_queries.record_payment()` (globally-unique, admin-configured receipt numbering — see ADR-13) to insert into `payments` and post the matching Cashbook Income entry in the same transaction (category `"Admission Fee"` for create, `"Membership Renewal"` for renew) — fixed 2026-07-22, Payment Workflow Audit; this paragraph previously described the old, since-removed inline `REC-YYYYMMDD-<membership_id>` formula. `renew` also requires at least one prior membership to exist and marks all prior `Active` memberships `Expired`.
 
 ## `routes/membership_analytics.py` — blueprint `membership_analytics`, prefix `/membership-analytics`
 
 | Method | Path | Function | Template | Auth | Purpose |
 |---|---|---|---|---|---|
-| GET | `/membership-analytics/` | `index` | `membership/analytics.html` | Yes | Renders a page shell — **no data query, no context passed to the template at all** |
+| GET | `/membership-analytics/` | `index` | none — redirects | Yes | Permanently redirects to `membership_distribution.index` |
 
-Effectively a stub/placeholder despite having a real route; see [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+Fixed 2026-07-22 (QA & Validation Sprint): previously rendered `membership/analytics.html`, a path that doesn't exist (the real directory is `templates/memberships/`, plural) — every visit crashed with `jinja2.exceptions.TemplateNotFound`. The template that path was *meant* to reach (`templates/memberships/analytics.html`) turned out to be a 0-byte empty file, so even a corrected path would only have produced a blank, chrome-less page. Now redirects to Membership Distribution (the fully-implemented equivalent page), the same pattern `routes/report.py` already uses for its own superseded route. See [11_FUTURE_WORK.md](11_FUTURE_WORK.md) PF-2 and [CHANGELOG.md](CHANGELOG.md).
 
 ## `routes/membership_distribution.py` — blueprint `membership_distribution`, prefix `/membership-distribution`
 

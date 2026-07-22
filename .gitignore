@@ -16,8 +16,17 @@ env/
 # Environment variables / secrets
 .env
 
-# SQLite transient files (the main database itself is intentionally tracked)
+# SQLite data is operational data; keep it out of source control.
+database/*.db
+backups/*.db
 *.db-journal
+*.db-wal
+*.db-shm
+instance/
+
+# Runtime uploads can contain customer-provided documents.
+static/uploads/settings/*
+!static/uploads/settings/.gitkeep
 
 # OS cruft
 .DS_Store
