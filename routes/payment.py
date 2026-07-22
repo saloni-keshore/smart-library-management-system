@@ -1,3 +1,5 @@
+import sqlite3
+
 from flask import (
     Blueprint,
     render_template,
@@ -8,10 +10,8 @@ from flask import (
     session
 )
 
-from datetime import date
-
 from database.db import get_connection
-from database.cashbook_queries import insert_income_entry
+from database.payment_queries import record_payment
 
 
 payment_bp = Blueprint(
@@ -77,7 +77,14 @@ def collect(membership_id):
     )
     student = cursor.fetchone()
 
+    pending = float(membership["pending_amount"])
+
     if request.method == "POST":
+
+        if pending <= 0:
+            flash("This membership has no pending balance to collect.", "warning")
+            conn.close()
+            return redirect(url_for("student.view", student_id=student["student_id"]))
 
         amount_str = request.form.get("amount_paid", "0")
 
@@ -101,7 +108,6 @@ def collect(membership_id):
                 student=student
             )
 
-        pending = float(membership["pending_amount"])
         if amount > pending:
             flash(
                 f"Amount cannot exceed pending balance of ₹{pending:.0f}.",
@@ -120,44 +126,48 @@ def collect(membership_id):
         new_paid = float(membership["paid_amount"]) + amount
         new_pending = pending - amount
 
-        # Use timestamp-based receipt to avoid collisions
-        receipt_number = (
-            f"REC-{date.today().strftime('%Y%m%d')}-{membership_id:04d}"
-            f"-{int(new_paid):04d}"
-        )
+        try:
+            cursor.execute("""
+                UPDATE memberships
+                SET paid_amount=?, pending_amount=?
+                WHERE membership_id=?
+            """, (new_paid, new_pending, membership_id))
 
-        cursor.execute("""
-            INSERT INTO payments
-            (membership_id, student_id, receipt_number, payment_mode,
-             amount_paid, payment_date, remarks)
-            VALUES (?, ?, ?, ?, ?, DATE('now'), ?)
-        """, (
-            membership_id, student["student_id"],
-            receipt_number, payment_mode, amount, remarks
-        ))
+            receipt_number = record_payment(
+                conn,
+                admin_id,
+                membership_id=membership_id,
+                student_id=student["student_id"],
+                student_name=student["full_name"],
+                payment_mode=payment_mode,
+                amount=amount,
+                remarks=remarks,
+                category="Membership Fee",
+                description=remarks or f"Pending fee payment - {membership['plan_name']}",
+                source="Payments"
+            )
 
-        cursor.execute("""
-            UPDATE memberships
-            SET paid_amount=?, pending_amount=?
-            WHERE membership_id=?
-        """, (new_paid, new_pending, membership_id))
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            flash(
+                "Could not record this payment due to a database error. "
+                "Nothing was saved - please try again.",
+                "danger"
+            )
+            conn.close()
+            return render_template(
+                "payments/collect.html",
+                membership=membership,
+                student=student
+            )
 
-        insert_income_entry(
-            conn,
-            admin_id,
-            category="Membership Fee",
-            person=student["full_name"],
-            description=remarks or f"Pending fee payment - {membership['plan_name']}",
-            amount=amount,
-            payment_method=payment_mode,
-            entry_date=date.today().isoformat(),
-            source="Payments"
-        )
-
-        conn.commit()
         conn.close()
 
-        flash("Payment collected successfully.", "success")
+        flash(
+            f"Payment of ₹{amount:.0f} collected successfully. Receipt No: {receipt_number}",
+            "success"
+        )
         return redirect(url_for("student.view", student_id=student["student_id"]))
 
     conn.close()

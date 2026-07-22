@@ -142,11 +142,16 @@ sequenceDiagram
         Q->>D: SQL SELECT / INSERT / UPDATE
         D-->>Q: rows / rowcount
         Q-->>R: Python dict / list / sqlite3.Row
-        opt write flow (membership/payment)
-            R->>Q: insert_income_entry(conn, admin_id, ...)
-            Q->>D: INSERT INTO cashbook
+        opt write flow (membership/payment) — as of 2026-07-22, all three routes
+        (membership.create, membership.renew, payment.collect) go through the
+        same helper instead of each inlining this sequence
+            R->>Q: record_payment(conn, admin_id, ...) [database/payment_queries.py]
+            Q->>D: UPDATE library_settings SET next_receipt_number += 1
+            Q->>D: INSERT INTO payments (receipt_number, ...)
+            Q->>Q: insert_income_entry(conn, admin_id, ..., payment_id=payments.lastrowid)
+            Q->>D: INSERT INTO cashbook (..., payment_id)
             Q->>Q: log_entry(cursor, ...) — same transaction
-            D-->>Q: commit (all-or-nothing)
+            D-->>Q: commit (all-or-nothing) / rollback on sqlite3.Error
         end
         R->>T: render_template(name, **context)
         T->>T: extends layouts/base.html, includes components/*
@@ -172,7 +177,7 @@ erDiagram
     STUDENTS ||--o{ MEMBERSHIPS : "student_id"
     STUDENTS ||--o{ PAYMENTS : "student_id"
     MEMBERSHIPS ||--o{ PAYMENTS : "membership_id"
-    PAYMENTS |o--o| CASHBOOK : "payment_id (auto-generated entries only)"
+    PAYMENTS |o--o| CASHBOOK : "payment_id (auto-generated entries only — actually populated as of 2026-07-22, previously declared but always NULL, see TD-22 resolution)"
     CASHBOOK ||--o{ AUDIT_LOG : "entry_id"
 
     ADMINS {
@@ -261,7 +266,7 @@ erDiagram
 
 `settings` (legacy) and `transactions` (defined twice, see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md)) are omitted here since neither is used by any route today — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-2/TD-4.
 
-## 5. Module dependency graph (literal Python imports, verified by grep on 2026-07-20)
+## 5. Module dependency graph (literal Python imports, verified by grep on 2026-07-20, updated 2026-07-21 for `database/membership_queries.py`, updated 2026-07-22 for `database/payment_queries.py`)
 
 ```mermaid
 graph LR
@@ -289,7 +294,9 @@ graph LR
         bi_queries_py["bi_queries.py"]
         cashbook_queries_py["cashbook_queries.py"]
         cashbook_categories_py["cashbook_categories.py"]
+        payment_queries_py["payment_queries.py"]
         membership_settings_queries_py["membership_settings_queries.py"]
+        membership_queries_py["membership_queries.py"]
         settings_queries_py["settings_queries.py"]
         receipt_settings_queries_py["receipt_settings_queries.py"]
         notification_settings_queries_py["notification_settings_queries.py"]
@@ -317,20 +324,29 @@ graph LR
     dashboard_py --> db_py
     dashboard_py --> charts_py
     dashboard_py --> cashbook_categories_py
+    dashboard_py --> cashbook_queries_py
+    dashboard_py --> membership_queries_py
     enquiries_py --> db_py
     student_py --> db_py
+    student_py --> membership_queries_py
     membership_py --> db_py
-    membership_py --> cashbook_queries_py
+    membership_py --> payment_queries_py
+    membership_py --> membership_settings_queries_py
+    membership_py --> membership_queries_py
     membership_distribution_py --> db_py
     membership_distribution_py --> charts_py
+    membership_distribution_py --> cashbook_queries_py
+    membership_distribution_py --> membership_queries_py
     payment_py --> db_py
-    payment_py --> cashbook_queries_py
+    payment_py --> payment_queries_py
+    payment_queries_py --> cashbook_queries_py
     cashbook_py --> cashbook_queries_py
     cashbook_py --> audit_queries_py
     cashbook_py --> cashbook_categories_py
     business_intelligence_py --> cashbook_queries_py
     business_intelligence_py --> bi_queries_py
     notification_py --> db_py
+    notification_py --> membership_queries_py
     setting_py --> settings_queries_py
     setting_py --> membership_settings_queries_py
     setting_py --> receipt_settings_queries_py
@@ -346,6 +362,7 @@ graph LR
     bi_queries_py --> cashbook_queries_py
     audit_queries_py --> db_py
     membership_settings_queries_py --> db_py
+    membership_queries_py --> db_py
     settings_queries_py --> db_py
     receipt_settings_queries_py --> db_py
     notification_settings_queries_py --> db_py

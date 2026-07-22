@@ -2,6 +2,10 @@ from datetime import date, timedelta
 
 from flask import Blueprint, render_template, session, redirect
 from database.db import get_connection
+from database.cashbook_queries import get_pending_fees, get_total_fee_revenue
+from database.membership_queries import (
+    get_membership_counts, get_effective_status, DAYS_LEFT_SQL
+)
 from utils.charts import generate_membership_distribution_donut
 
 membership_distribution_bp = Blueprint(
@@ -54,30 +58,14 @@ def index():
         for plan, count in plan_counts.items()
     }
 
-    # Active memberships (not yet past end_date)
-    cursor.execute("""
-        SELECT COUNT(DISTINCT m.student_id) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE m.membership_status = 'Active'
-        AND m.end_date >= DATE('now')
-        AND s.admin_id = ?
-    """, (admin_id,))
-    active_memberships = cursor.fetchone()["total"]
-
-    # Expired memberships (end_date passed, status still Active)
-    cursor.execute("""
-        SELECT COUNT(DISTINCT m.student_id) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE m.end_date < DATE('now')
-        AND m.membership_status = 'Active'
-        AND s.admin_id = ?
-    """, (admin_id,))
-    expired_memberships = cursor.fetchone()["total"]
+    # Active/Expired memberships - shared with Dashboard's identical counts
+    # (see database/membership_queries.py).
+    membership_counts = get_membership_counts(admin_id)
+    active_memberships = membership_counts["active"]
+    expired_memberships = membership_counts["expired"]
 
     # Full membership listing, with each row's most recent payment/receipt
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             m.membership_id,
             s.student_id,
@@ -90,7 +78,7 @@ def index():
             m.paid_amount,
             m.pending_amount,
             m.membership_status,
-            CAST(julianday(m.end_date) - julianday(DATE('now')) AS INTEGER) AS days_left,
+            {DAYS_LEFT_SQL} AS days_left,
             (SELECT p.receipt_number FROM payments p
                 WHERE p.membership_id = m.membership_id
                 ORDER BY p.payment_id DESC LIMIT 1) AS receipt_number,
@@ -115,10 +103,7 @@ def index():
     memberships = []
     for row in rows:
 
-        is_active = (
-            row["membership_status"] == "Active"
-            and row["days_left"] >= 0
-        )
+        status = get_effective_status(row["membership_status"], row["end_date"])
 
         memberships.append({
             "membership_id": row["membership_id"],
@@ -132,7 +117,7 @@ def index():
             "total_fee": row["total_fee"],
             "paid_amount": row["paid_amount"],
             "pending_amount": row["pending_amount"],
-            "status": "Active" if is_active else "Expired",
+            "status": status,
             "receipt_number": row["receipt_number"],
             "payment_mode": row["payment_mode"],
             "payment_date": row["payment_date"],
@@ -151,8 +136,11 @@ def index():
         if m["status"] == "Active" and m["end_date"] and today_str <= m["end_date"] <= renewal_cutoff_str
     )
 
-    total_revenue = sum((m["paid_amount"] or 0) for m in memberships)
-    total_pending = sum((m["pending_amount"] or 0) for m in memberships)
+    # Same source of truth as Dashboard's "Total Revenue"/"Pending Fees" and
+    # Cashbook's "Pending Fees" (see database/cashbook_queries.py) rather
+    # than re-summing the page's already-fetched rows in Python.
+    total_revenue = get_total_fee_revenue(admin_id)
+    total_pending = get_pending_fees(admin_id)
 
     return render_template(
         "memberships/distribution.html",

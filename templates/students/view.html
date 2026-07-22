@@ -8,6 +8,20 @@ Student Profile
 
 <div class="container mt-4">
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+
+                <div class="alert alert-{{ category }}">
+
+                    {{ message }}
+
+                </div>
+
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
     <!-- Header -->
 
     <div class="card shadow mb-4">
@@ -250,9 +264,9 @@ Student Profile
 
         </a>
 
-        {% if membership %}
+        {% if membership and membership.pending_amount and membership.pending_amount > 0 %}
         <a href="{{ url_for('payment.collect', membership_id=membership.membership_id) }}" class="btn btn-success">
-            
+
             <i class="bi bi-cash-coin"></i>
 
             Collect Payment

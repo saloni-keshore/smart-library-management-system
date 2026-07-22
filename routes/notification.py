@@ -6,6 +6,7 @@ from flask import (
 )
 
 from database.db import get_connection
+from database.membership_queries import DAYS_LEFT_SQL
 
 
 notification_bp = Blueprint(
@@ -54,7 +55,7 @@ def get_notification_summary(admin_id):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             s.student_id,
             s.full_name,
@@ -71,10 +72,7 @@ def get_notification_summary(admin_id):
             m.pending_amount,
             m.membership_status,
 
-            CAST(
-                julianday(m.end_date) -
-                julianday(DATE('now'))
-            AS INTEGER) AS days_left
+            {DAYS_LEFT_SQL} AS days_left
 
         FROM memberships m
 

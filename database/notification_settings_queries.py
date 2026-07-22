@@ -9,6 +9,8 @@ membership_settings.reminder_days/send_reminders are superseded by the
 columns here (see docs/11_FUTURE_WORK.md).
 """
 
+from flask import g
+
 from database.db import get_connection
 
 
@@ -23,6 +25,24 @@ def get_notification_settings(admin_id):
     conn.close()
 
     return row
+
+
+def get_notification_settings_cached(admin_id):
+    """Same result as get_notification_settings(), memoized on flask.g.
+
+    app.py's global inject_notification_summary() context processor and
+    routes/dashboard.py's dashboard() both need this admin's settings row
+    on the same request (every authenticated page load, in the context
+    processor's case) - without this, that's two identical SELECTs per
+    request instead of one.
+    """
+
+    cache_attr = f"_notification_settings_{admin_id}"
+
+    if not hasattr(g, cache_attr):
+        setattr(g, cache_attr, get_notification_settings(admin_id))
+
+    return getattr(g, cache_attr)
 
 
 def save_notification_settings(admin_id, data):

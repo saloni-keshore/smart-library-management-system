@@ -28,9 +28,9 @@ Every feature page does `{% extends "layouts/base.html" %}` and overrides `title
 | `table_card.html` | Same caller-based wrapper, styled for tables |
 | `activity_card.html` | Card meant to be `{% extends %}`-ed (has a `{% block activity %}`), not included |
 | `alert.html` | **Empty file (0 bytes)** — unused placeholder |
-| `dashboard_header.html`, `insights_card.html`, `quick_actions.html` | Dashboard-specific: header banner, shortcut action row |
+| `dashboard_header.html`, `insights_card.html`, `quick_actions.html` | Dashboard-specific: header banner, shortcut action row. `dashboard_header.html`'s "Today's Date" block has been commented out since before this doc existed; the inline `<script>` that wrote into it (`getElementById("dashboardDate")` against a non-existent element, throwing on every Dashboard load) was dead code removed 2026-07-21 — see [CHANGELOG.md](CHANGELOG.md) |
 | `notification_dropdown.html` | Navbar bell — expects `nav_notifications` (from `app.py`'s context processor) with `.counts`/`.buckets`/`.meta` |
-| `revenue_chart.html`, `payment_chart.html`, `membership_chart.html`, `membership_distribution_chart.html` | Dashboard cards displaying **pre-rendered PNGs** from `static/charts/`, wrapped in a skeleton loader (`data-chart-stage`, revealed by `dashboard-charts.js`) |
+| `revenue_chart.html`, `payment_chart.html`, `membership_chart.html`, `membership_distribution_chart.html` | Dashboard cards displaying **pre-rendered PNGs** from `static/charts/`, wrapped in a skeleton loader (`data-chart-stage`, revealed by `dashboard-charts.js`). `revenue_chart.html`'s `chart-content` div carried a stray Bootstrap `d-none` class that no sibling chart card had — harmless only because a second, now-removed JS mechanism happened to strip it; removed 2026-07-21 so all chart cards reveal through the one CSS-class-based mechanism (see `dashboard-charts.js` in [07_STATIC_ASSETS.md](07_STATIC_ASSETS.md)) |
 | `expiry_table.html`, `upcoming_expiry.html`, `recent_admissions.html` | Dashboard mini-tables |
 | `add_transaction_modal.html`, `edit_transaction_modal.html`, `transaction_details_modal.html` | Bootstrap modals shared by Cashbook + Dashboard quick actions, driven by `static/js/transaction_modal.js` |
 

@@ -25,6 +25,20 @@ Create Membership
 
     </div>
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+
+                <div class="alert alert-{{ category }}">
+
+                    {{ message }}
+
+                </div>
+
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
     <div class="card shadow">
 
         <div class="card-header">
@@ -284,15 +298,13 @@ const plan = document.getElementById("plan_name");
 const joiningDate = document.getElementById("joining_date");
 const duration = document.getElementById("duration");
 const endDate = document.getElementById("end_date");
+const paidAmount = document.querySelector("input[name='paid_amount']");
 
-const planDuration = {
-
-    "Monthly":30,
-    "Quarterly":90,
-    "Half-Yearly":180,
-    "Yearly":365
-
-};
+// Sourced from Settings > Membership Settings (database/membership_settings_queries.py)
+// instead of hardcoded here, so an admin's configured plan days/fees are what
+// actually get applied when creating a membership.
+const planPricing = {{ plan_pricing | tojson }};
+const admissionFee = {{ admission_fee | tojson }};
 
 function calculateEndDate(){
 
@@ -313,9 +325,10 @@ function calculateEndDate(){
 
 plan.addEventListener("change", function(){
 
-    if(plan.value !== "Custom"){
+    if(plan.value !== "Custom" && planPricing[plan.value]){
 
-        duration.value = planDuration[plan.value];
+        duration.value = planPricing[plan.value].days;
+        paidAmount.value = planPricing[plan.value].fee + admissionFee;
 
     }else{
 

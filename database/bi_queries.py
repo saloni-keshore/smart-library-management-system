@@ -18,8 +18,8 @@ from database.db import get_connection
 from database.cashbook_queries import (
     get_monthly_income,
     get_monthly_expense,
-    get_total_income,
     get_pending_fees,
+    get_total_fee_revenue,
     get_income_category_totals,
     get_expense_category_totals,
     get_recent_transactions,
@@ -198,7 +198,7 @@ def classify_expense_health(admin_id):
 # Weighted blend of four signals, each normalized to 0-1:
 #   30% revenue growth      (-20% growth -> 0, +20% growth -> 1)
 #   30% expense discipline  (0% of revenue spent -> 1, 100%+ -> 0)
-#   20% fee collection      (share of income not left pending)
+#   20% fee collection      (share of billed fee revenue not left pending)
 #   20% membership renewal  (active memberships / total memberships)
 # A library with no data yet gets neutral 0.5 on components it has no
 # signal for, rather than being punished with a 0.
@@ -210,12 +210,17 @@ def get_business_health_score(admin_id):
     expense = classify_expense_health(admin_id)
     retention = get_membership_retention(admin_id)
     pending = get_pending_fees(admin_id)
-    total_income = get_total_income(admin_id)
+    total_fee_revenue = get_total_fee_revenue(admin_id)
 
     growth_component = max(0.0, min(1.0, (growth["growth_pct"] + 20) / 40))
     expense_component = max(0.0, min(1.0, 1 - (expense["ratio_pct"] / 100)))
 
-    billable = pending + total_income
+    # Billable = fees actually collected + fees still pending. Deliberately
+    # uses fee revenue (Payments/Memberships), not get_total_income()'s
+    # all-Cashbook total - non-fee income (donations, library fines, book
+    # sales) isn't billed against a membership, so blending it in would
+    # dilute the pending share and overstate collection health.
+    billable = pending + total_fee_revenue
     collection_component = (
         max(0.0, min(1.0, 1 - pending / billable)) if billable > 0 else 0.5
     )

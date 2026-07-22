@@ -131,7 +131,8 @@ def insert_income_entry(
     payment_method,
     entry_date,
     source,
-    reference_prefix="PAY"
+    reference_prefix="PAY",
+    payment_id=None
 ):
     """Record an automatic Income entry using an already-open connection.
 
@@ -139,6 +140,12 @@ def insert_income_entry(
     after they insert into `payments`, using their own connection/cursor so
     the Cashbook entry commits as part of the very same transaction as the
     payment it represents - no second connection, no duplicated SQL.
+
+    `payment_id`, when given, links this ledger row back to the exact
+    `payments` row that produced it (the FK the `cashbook` table already
+    declares) - without it, reconciling "did this payment produce a ledger
+    entry" only worked by fuzzy person/amount/date matching, which is
+    ambiguous whenever two payments share all three.
     """
 
     cursor = conn.cursor()
@@ -147,11 +154,11 @@ def insert_income_entry(
     cursor.execute("""
         INSERT INTO cashbook
         (admin_id, type, category, person, description, amount,
-         payment_method, entry_date, reference_id, source)
-        VALUES (?, 'Income', ?, ?, ?, ?, ?, ?, ?, ?)
+         payment_method, entry_date, reference_id, source, payment_id)
+        VALUES (?, 'Income', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         admin_id, category, person, description, amount,
-        payment_method, entry_date, reference_id, source
+        payment_method, entry_date, reference_id, source, payment_id
     ))
 
     log_entry(
@@ -300,6 +307,61 @@ def get_pending_fees(admin_id):
         SELECT IFNULL(SUM(m.pending_amount), 0) AS total
         FROM memberships m
         JOIN students s ON m.student_id = s.student_id
+        WHERE s.admin_id = ?
+    """, (admin_id,))
+
+    total = cursor.fetchone()["total"]
+    conn.close()
+
+    return total
+
+
+def get_today_fee_collection(admin_id):
+    """
+    Fee revenue collected today specifically - same "Payments, not all of
+    Cashbook" scope as get_total_fee_revenue() below, just narrowed to
+    today's date. Distinct from get_today_income() (all of today's
+    Cashbook income, including non-fee manual entries) for the same reason
+    get_total_fee_revenue() is distinct from get_total_income() - see
+    ADR-11 in docs/DECISIONS.md.
+    """
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT IFNULL(SUM(p.amount_paid), 0) AS total
+        FROM payments p
+        JOIN students s ON p.student_id = s.student_id
+        WHERE s.admin_id = ? AND p.payment_date = DATE('now')
+    """, (admin_id,))
+
+    total = cursor.fetchone()["total"]
+    conn.close()
+
+    return total
+
+
+def get_total_fee_revenue(admin_id):
+    """
+    Total fee revenue actually collected from students (Admission/Membership
+    Fee/Renewal payments), summed straight from Payments - the source of
+    truth for "how much has this library billed and collected", same as
+    get_pending_fees() above is the source of truth for what's still owed.
+
+    Deliberately narrower than get_total_income(): Cashbook's Income total
+    also includes non-fee categories (Donation, Library Fine, Book Sale,
+    Other Income), which aren't billable/collectible against a membership
+    and must not be blended into fee-collection metrics.
+    """
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT IFNULL(SUM(p.amount_paid), 0) AS total
+        FROM payments p
+        JOIN students s ON p.student_id = s.student_id
         WHERE s.admin_id = ?
     """, (admin_id,))
 
@@ -500,7 +562,11 @@ def get_cashbook_ledger(
     if source == "Manual":
         conditions.append("c.source = 'Cashbook Manual Entry'")
     elif source == "Automatic":
-        conditions.append("c.source != 'Cashbook Manual Entry'")
+        # IS NULL check matters: pre-migration rows (created before the
+        # `source` column existed) are NULL, and `NULL != 'x'` is NULL (not
+        # true) in SQL, so without it these legacy automatic entries would
+        # silently vanish from both the "Automatic" and "Manual" filters.
+        conditions.append("(c.source != 'Cashbook Manual Entry' OR c.source IS NULL)")
 
     where_clause = " AND ".join(conditions)
 

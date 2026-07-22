@@ -13,11 +13,23 @@ routes/auth.py                 → database.db.get_connection   (admins table)
 routes/dashboard.py            → database.db.get_connection   (students, memberships, payments, enquiries)
                                 → utils.charts (generate_revenue_chart, generate_membership_chart)
                                 → database.cashbook_categories (constants only)
+                                → database.cashbook_queries (get_pending_fees, get_total_fee_revenue - added
+                                  2026-07-21, replacing two inline SUM() queries that duplicated Cashbook's own)
+                                → database.membership_queries (get_membership_counts, DAYS_LEFT_SQL - added
+                                  2026-07-21, replacing an inline COUNT(DISTINCT CASE...) query and a raw
+                                  julianday() expression - see TD-6)
 routes/enquiries.py            → database.db.get_connection   (enquiries, students)
 routes/student.py              → database.db.get_connection   (students, enquiries, memberships, payments)
+                                → database.membership_queries.EFFECTIVE_STATUS_SQL (added 2026-07-21 - TD-6)
 routes/membership_distribution.py → database.db.get_connection (memberships, students, payments)
                                 → utils.charts.generate_membership_distribution_donut
+                                → database.cashbook_queries (get_pending_fees, get_total_fee_revenue - added
+                                  2026-07-21, replacing a Python-side sum() over the page's fetched rows)
+                                → database.membership_queries (get_membership_counts, get_effective_status,
+                                  DAYS_LEFT_SQL - added 2026-07-21, replacing two standalone COUNT queries plus
+                                  an inline is_active boolean - see TD-6)
 routes/notification.py         → database.db.get_connection   (memberships, students)
+                                → database.membership_queries.DAYS_LEFT_SQL (added 2026-07-21)
 routes/membership_analytics.py → (no DB access at all)
 ```
 
@@ -25,9 +37,15 @@ routes/membership_analytics.py → (no DB access at all)
 
 ```
 routes/membership.py           → database.db.get_connection (own SQL for memberships/payments/students)
-                                → database.cashbook_queries.insert_income_entry
+                                → database.payment_queries.record_payment (added 2026-07-22, replacing a direct
+                                  database.cashbook_queries.insert_income_entry call + an inline receipt-number
+                                  formula duplicated across create()/renew()/payment.collect() - TD-22, ADR-13)
+                                → database.membership_settings_queries.get_membership_settings (added 2026-07-21 - TD-7)
+                                → database.membership_queries (EFFECTIVE_STATUS_SQL, get_active_membership,
+                                  get_plan_pricing, get_admission_fee - added 2026-07-21 - TD-6/TD-7)
 routes/payment.py              → database.db.get_connection (own SQL for payments/memberships/students)
-                                → database.cashbook_queries.insert_income_entry
+                                → database.payment_queries.record_payment (added 2026-07-22 - see routes/membership.py
+                                  note above, same fix)
 routes/cashbook.py              → database.cashbook_queries (insert_transaction, get_total_income/expense,
                                    get_today_income/expense, get_pending_fees, get_monthly_income/expense,
                                    get_income_category_totals, get_expense_category_totals,
@@ -54,9 +72,13 @@ database/cashbook_queries.py   → database.audit_queries.log_entry   (writes an
                                                                        update_manual_transaction)
 database/bi_queries.py         → database.cashbook_queries (get_monthly_income, get_monthly_expense,
                                    get_income_category_totals, get_expense_category_totals,
-                                   get_pending_fees, get_total_income)
+                                   get_pending_fees, get_total_fee_revenue)
 database/audit_queries.py      → (no internal dependencies — takes a cursor, doesn't open its own connection)
 database/membership_settings_queries.py → database.db.get_connection only
+database/membership_queries.py → database.db.get_connection only (added 2026-07-21 - see TD-6/TD-7)
+database/payment_queries.py    → database.cashbook_queries.insert_income_entry (added 2026-07-22 - see TD-22, ADR-13;
+                                   generate_receipt_number() reads/writes library_settings directly via the caller's
+                                   conn, no separate connection)
 database/settings_queries.py   → database.db.get_connection only
 database/cashbook_categories.py → (no DB access — static constants module)
 ```

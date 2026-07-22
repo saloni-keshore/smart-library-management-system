@@ -9,6 +9,7 @@ from flask import (
 )
 
 from database.db import get_connection
+from database.membership_queries import EFFECTIVE_STATUS_SQL
 
 
 student_bp = Blueprint(
@@ -29,7 +30,7 @@ def index():
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             s.student_id,
             s.full_name,
@@ -42,10 +43,7 @@ def index():
             m.plan_name,
             m.paid_amount,
             m.pending_amount,
-            CASE
-                WHEN m.end_date IS NOT NULL AND m.end_date < DATE('now') THEN 'Expired'
-                ELSE m.membership_status
-            END AS membership_status
+            {EFFECTIVE_STATUS_SQL} AS membership_status
 
         FROM students s
 

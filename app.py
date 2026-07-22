@@ -14,7 +14,7 @@ from routes.notification import notification_bp, get_notification_summary
 from routes.membership_analytics import membership_analytics_bp
 from routes.membership_distribution import membership_distribution_bp
 from routes.business_intelligence import business_intelligence_bp
-from database.notification_settings_queries import get_notification_settings
+from database.notification_settings_queries import get_notification_settings_cached
 
 DEFAULT_NAV_NOTIFICATION_PREFS = {
     "dash_show_badge_count": True,
@@ -49,7 +49,7 @@ def create_app():
                 "nav_notification_prefs": DEFAULT_NAV_NOTIFICATION_PREFS,
             }
 
-        settings = get_notification_settings(session["admin_id"])
+        settings = get_notification_settings_cached(session["admin_id"])
         prefs = (
             {
                 "dash_show_badge_count": bool(settings["dash_show_badge_count"]),

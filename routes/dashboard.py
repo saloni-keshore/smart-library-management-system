@@ -13,7 +13,13 @@ from database.cashbook_categories import (
     MANUAL_EXPENSE_CATEGORIES,
     PAYMENT_METHODS
 )
-from database.notification_settings_queries import get_notification_settings
+from database.cashbook_queries import (
+    get_pending_fees,
+    get_total_fee_revenue,
+    get_today_fee_collection
+)
+from database.notification_settings_queries import get_notification_settings_cached
+from database.membership_queries import get_membership_counts, DAYS_LEFT_SQL
 
 
 dashboard_bp = Blueprint(
@@ -51,63 +57,31 @@ def dashboard():
     """, (admin_id,))
     total_enquiries = cursor.fetchone()["total"]
 
-    # Active Memberships (not yet past end_date)
-    cursor.execute("""
-        SELECT COUNT(DISTINCT m.student_id) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE m.membership_status = 'Active'
-        AND m.end_date >= DATE('now')
-        AND s.admin_id = ?
-    """, (admin_id,))
-    active_memberships = cursor.fetchone()["total"]
+    # Active/Expired Memberships - shared with Membership Distribution's
+    # identical counts (see database/membership_queries.py).
+    membership_counts = get_membership_counts(admin_id)
+    active_memberships = membership_counts["active"]
+    expired_memberships = membership_counts["expired"]
 
-    # Expired Memberships (end_date passed, status still Active)
-    cursor.execute("""
-        SELECT COUNT(DISTINCT m.student_id) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE m.end_date < DATE('now')
-        AND m.membership_status = 'Active'
-        AND s.admin_id = ?
-    """, (admin_id,))
-    expired_memberships = cursor.fetchone()["total"]
+    # Total Revenue (same source of truth as Membership Distribution's
+    # "Revenue Collected" - see database/cashbook_queries.py)
+    total_revenue = get_total_fee_revenue(admin_id)
 
-    # Total Revenue
-    cursor.execute("""
-        SELECT IFNULL(SUM(p.amount_paid), 0) AS revenue
-        FROM payments p
-        JOIN students s ON p.student_id = s.student_id
-        WHERE s.admin_id = ?
-    """, (admin_id,))
-    total_revenue = cursor.fetchone()["revenue"]
+    # Pending Amount (same source of truth as Cashbook's "Pending Fees" and
+    # Membership Distribution's "Pending Payments")
+    pending_amount = get_pending_fees(admin_id)
 
-    # Pending Amount
-    cursor.execute("""
-        SELECT IFNULL(SUM(m.pending_amount), 0) AS pending
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-    """, (admin_id,))
-    pending_amount = cursor.fetchone()["pending"]
-
-    # Today's Collection
-    cursor.execute("""
-        SELECT IFNULL(SUM(p.amount_paid), 0) AS today
-        FROM payments p
-        JOIN students s ON p.student_id = s.student_id
-        WHERE p.payment_date = DATE('now')
-        AND s.admin_id = ?
-    """, (admin_id,))
-    today_collection = cursor.fetchone()["today"]
+    # Today's Collection (same fee-revenue family as Total Revenue/Pending
+    # Fees above - see database/cashbook_queries.py)
+    today_collection = get_today_fee_collection(admin_id)
 
     # Upcoming Expiries (next 7 days, nearest first)
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             s.student_id,
             s.full_name,
             m.end_date,
-            CAST(julianday(m.end_date) - julianday(DATE('now')) AS INTEGER) AS days_left
+            {DAYS_LEFT_SQL} AS days_left
         FROM memberships m
         JOIN students s ON m.student_id = s.student_id
         WHERE s.admin_id = ?
@@ -162,7 +136,7 @@ def dashboard():
 
     conn.close()
 
-    notification_settings = get_notification_settings(admin_id)
+    notification_settings = get_notification_settings_cached(admin_id)
     dash_show_pending_fees = (
         bool(notification_settings["dash_show_pending_fees"])
         if notification_settings else True

@@ -80,6 +80,8 @@ def generate_revenue_chart(admin_id):
 
         WHERE s.admin_id = ?
 
+            AND strftime('%Y', p.payment_date) = strftime('%Y', 'now')
+
         GROUP BY month
 
         ORDER BY month
@@ -236,6 +238,34 @@ def generate_membership_chart(admin_id):
 
     fig, ax = plt.subplots(figsize=(3.6, 3.6), dpi=180)
 
+    if not sizes:
+
+        # See generate_membership_distribution_donut()'s identical fix for
+        # why explicit symmetric limits are needed before placing (0, 0)
+        # text with bbox_inches="tight" - otherwise it crops to the
+        # bottom-left corner instead of centering.
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.text(
+            0, 0, "No membership\ndata yet",
+            ha="center", va="center",
+            fontsize=11, color="#94a3b8"
+        )
+        ax.axis("off")
+
+        chart_path = os.path.join("static", "charts", "membership.png")
+
+        fig.savefig(
+            chart_path,
+            dpi=180,
+            bbox_inches="tight",
+            pad_inches=0.15,
+            facecolor="#ffffff"
+        )
+
+        plt.close(fig)
+        return
+
     wedges, _texts, autotexts = ax.pie(
         sizes,
         autopct="%1.0f%%",
@@ -382,6 +412,13 @@ def generate_membership_distribution_donut(admin_id):
     fig, ax = plt.subplots(figsize=(5.4, 5.4), dpi=170)
 
     if not sizes:
+        # Explicit symmetric limits so (0, 0) is the actual center of the
+        # cropped image - without this, bbox_inches="tight" crops to the
+        # text's own bounding box against matplotlib's default (0, 1) axes
+        # extent, leaving the text pinned in the bottom-left corner instead
+        # of centered.
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
         ax.text(
             0, 0, "No membership\ndata yet",
             ha="center", va="center",

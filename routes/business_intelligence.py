@@ -31,10 +31,17 @@ def _month_label(month_key):
 
 
 def _build_revenue_trend_chart(admin_id, months):
-    """Chart.js-ready {labels, datasets} for the Revenue Trend line chart."""
+    """Chart.js-ready {labels, datasets} for the Revenue Trend line chart.
+
+    Profit is derived locally from the same income/expense totals already
+    fetched here, same pattern as Cashbook's _build_income_expense_chart -
+    not a second call to get_monthly_profit(), which would re-run both
+    queries again.
+    """
 
     income = get_monthly_income(admin_id)
     expense = get_monthly_expense(admin_id)
+    profit = {m: income.get(m, 0) - expense.get(m, 0) for m in months}
 
     return {
         "labels": [_month_label(m) for m in months],
@@ -52,6 +59,14 @@ def _build_revenue_trend_chart(admin_id, months):
                 "data": [expense.get(m, 0) for m in months],
                 "borderColor": "#ef4444",
                 "backgroundColor": "rgba(239, 68, 68, 0.08)",
+                "tension": 0.4,
+                "fill": True
+            },
+            {
+                "label": "Profit",
+                "data": [profit[m] for m in months],
+                "borderColor": "#7c3aed",
+                "backgroundColor": "rgba(124, 58, 237, 0.08)",
                 "tension": 0.4,
                 "fill": True
             }

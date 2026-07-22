@@ -14,6 +14,29 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 **Fix (short-term):** reload the page again as the affected admin — it self-corrects the moment their own dashboard route runs.
 **Fix (real):** namespace the output filename by `admin_id` (`revenue_{admin_id}.png`) in `utils/charts.py`, and update the three template components that reference the static path. Tracked as [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-1.
 
+## Dashboard/Membership Distribution/Cashbook/BI show different "revenue" or "collection rate" numbers
+
+**Cause (historical, fixed 2026-07-21):** before this date, "Total Revenue" (Dashboard), "Revenue Collected" (Membership Distribution), and "Pending Fees" (Dashboard/Cashbook) were each computed by a separate copy of the same SQL/Python logic, and the Business Health Score's fee-collection component was accidentally dividing fee-specific pending amounts by *all* Cashbook income (including non-fee categories like Donation/Library Fine/Book Sale) instead of fee revenue only — see the 2026-07-21 "Financial system audit" entry in [CHANGELOG.md](CHANGELOG.md) and ADR-11 in [DECISIONS.md](DECISIONS.md).
+**If you see a mismatch now:** it's not this bug reappearing by coincidence — check whether someone reintroduced a local copy of the revenue/pending-fee query instead of calling `database/cashbook_queries.py`'s `get_total_fee_revenue()`/`get_pending_fees()`. A genuine, *expected* difference is Cashbook's "Total Income (All Time)" reading higher than "Total Revenue"/"Revenue Collected" elsewhere — that's non-fee manual income (donations, fines, book sales) correctly included in Cashbook's broader total and correctly excluded from fee-specific figures.
+**Where it surfaces:** `routes/dashboard.py`, `routes/membership_distribution.py`, `database/bi_queries.py`'s `get_business_health_score`.
+
+## A membership shows "Active" on one page and "Expired" on another
+
+**Cause (historical, fixed 2026-07-21):** `memberships.membership_status` never auto-flips to `'Expired'` when `end_date` passes — it only changes when a renewal explicitly marks the old row Expired. Every page that shows membership status has to combine the raw column with a date check itself, and before this date `routes/membership.py`'s `/memberships` list did not — it showed the raw column with no date comparison at all, while Dashboard/Student profile/Membership Distribution/Notifications all correctly recomputed it. See TD-6 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) and ADR-12 in [DECISIONS.md](DECISIONS.md).
+**If you see a mismatch now:** check whether a new call site reads `m.membership_status` directly instead of `database/membership_queries.py`'s `EFFECTIVE_STATUS_SQL`/`get_effective_status()`. All five current call sites (`routes/membership.py`, `routes/dashboard.py`, `routes/student.py`, `routes/membership_distribution.py`, `routes/notification.py`) go through that module now — don't reintroduce a raw `m.membership_status` read for anything user-facing.
+**Where it surfaces:** anywhere a membership's status is displayed or counted.
+
+## Changing Settings → Membership Settings' plan fee/days has no effect on a new membership
+
+**Cause (historical, fixed 2026-07-21):** `routes/membership.py`'s `create()`/`renew()` never read `membership_settings` — the Create/Renew forms' plan-duration/fee auto-fill was hardcoded in each template's inline `<script>`. See TD-7 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) and the 2026-07-21 "Membership workflow audit" entry in [CHANGELOG.md](CHANGELOG.md).
+**If it still has no effect now:** confirm the admin has actually saved Settings → Membership Settings at least once for their account (`get_membership_settings(admin_id)` returns `None` until then, in which case Create/Renew fall back to the same 30/90/180/365-day, ₹0-fee defaults shown on the settings form itself — not a bug, just an unconfigured account). Also remember the auto-filled amount is editable, not enforced — a manually-changed `paid_amount`/`due_amount` is expected to stick even if it doesn't match the configured plan fee (e.g. a discount).
+**Where it surfaces:** `templates/memberships/create.html`, `templates/memberships/renew.html`.
+
+## Disabling a Notification Settings reminder toggle doesn't stop that reminder from appearing
+
+**Cause:** `routes/notification.py`'s `get_notification_summary()` always computes the same fixed today/tomorrow/3-day/expired buckets for the navbar bell and Notifications page — it does not read `reminder_7_days`/`reminder_3_days`/`reminder_1_day`/`notify_on_expiry_day`/`notify_after_expiry` from Settings → Notification Settings. This is TD-28 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md), still open — not something to "fix" by checking your config, the toggles genuinely have no effect on this yet.
+**Where it surfaces:** `components/notification_dropdown.html`, `templates/notification/index.html`.
+
 ## Logged out unexpectedly / "please log in again" loops
 
 **Cause:** Flask's session cookie is signed with `SECRET_KEY` (set in `app.py` from the `SECRET_KEY` env var, defaulting to a fixed literal string). If the env var changes between process restarts, every existing session cookie fails to validate and is treated as empty.
@@ -49,6 +72,16 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 
 **Cause:** by design — `routes/setting.py`'s `receipt_settings()` reuses the same `library_settings` row as Library Profile and only supports `UPDATE`, not insert (ADR-7 in [DECISIONS.md](DECISIONS.md)). If that admin hasn't saved a Library Profile yet, there's no row for it to update, so it redirects to `library_profile` with a flash message instead of erroring.
 **Fix:** save Library Profile (name/owner/phone are required there) at least once, then Receipt Settings becomes reachable.
+
+## Receipt numbers don't match what I configured in Settings → Receipt Settings
+
+**Cause (pre-2026-07-22):** `routes/membership.py`/`routes/payment.py` generated receipt numbers with their own inline `REC-YYYYMMDD-...` formula and never read `library_settings.receipt_prefix`/`next_receipt_number` at all (TD-22). Fixed 2026-07-22 (ADR-13) — every payment-creating route now calls `database/payment_queries.py`'s `generate_receipt_number()`, which does read them.
+**If you still see this after 2026-07-22:** confirm a `library_settings` row exists for that admin (Library Profile must be saved at least once — see the Receipt Settings entry above); with no row, receipt numbers fall back to a `LIB-01001`-style count-based sequence instead of the configured prefix/number.
+
+## A payment/membership save fails with a red "database error" flash message and nothing was saved
+
+**Cause:** as of 2026-07-22 (ADR-13), `routes/payment.py`'s `collect()` and `routes/membership.py`'s `create()`/`renew()` wrap their payment-recording sequence in `try/except sqlite3.Error: conn.rollback()`. This is the intended, safe failure mode — previously the same underlying error (most likely a `receipt_number` `UNIQUE` collision) would raise an uncaught `sqlite3.IntegrityError` and produce Flask's default error page instead of a usable message.
+**Fix:** retry the submission — `conn.rollback()` guarantees the membership/payment/cashbook rows from the failed attempt were not partially written, so retrying is safe. If it fails repeatedly for the same admin, inspect `library_settings.next_receipt_number` for that admin directly; a manually edited/duplicated value could be colliding with an existing `payments.receipt_number`.
 
 ## Settings → Notification Settings redirects me to Library Profile
 

@@ -1,3 +1,5 @@
+import sqlite3
+
 from flask import (
     Blueprint,
     render_template,
@@ -8,10 +10,15 @@ from flask import (
     session
 )
 
-from datetime import date
-
 from database.db import get_connection
-from database.cashbook_queries import insert_income_entry
+from database.payment_queries import record_payment
+from database.membership_settings_queries import get_membership_settings
+from database.membership_queries import (
+    EFFECTIVE_STATUS_SQL,
+    get_active_membership,
+    get_plan_pricing,
+    get_admission_fee,
+)
 
 membership_bp = Blueprint(
     "membership",
@@ -31,8 +38,13 @@ def index():
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT m.*, s.full_name, s.mobile
+    # Effective-status column listed before `m.*` deliberately - sqlite3.Row
+    # resolves duplicate column names (both called membership_status) to
+    # whichever appears first in the SELECT list, so this order is what
+    # makes the computed value win over the raw, possibly-stale column.
+    cursor.execute(f"""
+        SELECT {EFFECTIVE_STATUS_SQL} AS membership_status,
+               m.*, s.full_name, s.mobile
         FROM memberships m
         INNER JOIN students s ON m.student_id = s.student_id
         WHERE s.admin_id = ?
@@ -67,6 +79,24 @@ def create(student_id):
         flash("Student not found.", "danger")
         return redirect(url_for("student.index"))
 
+    # A student can only have one live membership at a time - Renewal is the
+    # supported path once one exists (it explicitly expires the old row
+    # before inserting the new one). Without this guard, navigating back to
+    # this URL for a student who already has an active membership would
+    # insert a second 'Active' row alongside it.
+    existing_active = get_active_membership(student_id)
+    if existing_active is not None:
+        conn.close()
+        flash(
+            "This student already has an active membership. Use Renew instead.",
+            "warning"
+        )
+        return redirect(url_for("membership.renew", student_id=student_id))
+
+    settings = get_membership_settings(admin_id)
+    plan_pricing = get_plan_pricing(settings)
+    admission_fee = get_admission_fee(settings)
+
     if request.method == "POST":
 
         plan_name = request.form.get("plan_name")
@@ -82,61 +112,88 @@ def create(student_id):
         except ValueError:
             flash("Invalid amount entered.", "danger")
             conn.close()
-            return render_template("memberships/create.html", student=student)
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
+
+        if paid_amount < 0 or due_amount < 0:
+            flash("Paid and due amounts cannot be negative.", "danger")
+            conn.close()
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
 
         total_fee = paid_amount + due_amount
 
         if total_fee <= 0:
             flash("Total fee must be greater than zero.", "danger")
             conn.close()
-            return render_template("memberships/create.html", student=student)
-
-        cursor.execute("""
-            INSERT INTO memberships
-            (student_id, plan_name, joining_date, duration_days, end_date,
-             total_fee, paid_amount, pending_amount, remarks, membership_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            student_id, plan_name, joining_date, duration_days, end_date,
-            total_fee, paid_amount, due_amount, remarks, "Active"
-        ))
-
-        membership_id = cursor.lastrowid
-
-        if paid_amount > 0:
-            receipt_number = (
-                f"REC-{date.today().strftime('%Y%m%d')}-{membership_id:04d}"
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
             )
+
+        try:
             cursor.execute("""
-                INSERT INTO payments
-                (membership_id, student_id, receipt_number, payment_mode,
-                 amount_paid, payment_date, remarks)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO memberships
+                (student_id, plan_name, joining_date, duration_days, end_date,
+                 total_fee, paid_amount, pending_amount, remarks, membership_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                membership_id, student_id, receipt_number,
-                payment_mode, paid_amount, date.today(), remarks
+                student_id, plan_name, joining_date, duration_days, end_date,
+                total_fee, paid_amount, due_amount, remarks, "Active"
             ))
 
-            insert_income_entry(
-                conn,
-                admin_id,
-                category="Admission Fee",
-                person=student["full_name"],
-                description=remarks or f"Admission payment - {plan_name}",
-                amount=paid_amount,
-                payment_method=payment_mode,
-                entry_date=date.today().isoformat(),
-                source="Admission"
+            membership_id = cursor.lastrowid
+            receipt_number = None
+
+            if paid_amount > 0:
+                receipt_number = record_payment(
+                    conn,
+                    admin_id,
+                    membership_id=membership_id,
+                    student_id=student_id,
+                    student_name=student["full_name"],
+                    payment_mode=payment_mode,
+                    amount=paid_amount,
+                    remarks=remarks,
+                    category="Admission Fee",
+                    description=remarks or f"Admission payment - {plan_name}",
+                    source="Admission"
+                )
+
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            flash(
+                "Could not create this membership due to a database error. "
+                "Nothing was saved - please try again.",
+                "danger"
+            )
+            conn.close()
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
             )
 
-        conn.commit()
         conn.close()
 
-        flash("Membership created successfully.", "success")
+        if receipt_number:
+            flash(
+                f"Membership created successfully. Receipt No: {receipt_number}",
+                "success"
+            )
+        else:
+            flash("Membership created successfully.", "success")
         return redirect(url_for("student.view", student_id=student_id))
 
     conn.close()
-    return render_template("memberships/create.html", student=student)
+    return render_template(
+        "memberships/create.html", student=student,
+        plan_pricing=plan_pricing, admission_fee=admission_fee
+    )
 
 
 @membership_bp.route("/renew/<int:student_id>", methods=["GET", "POST"])
@@ -171,6 +228,9 @@ def renew(student_id):
         flash("No existing membership found. Please create a membership first.", "warning")
         return redirect(url_for("membership.create", student_id=student_id))
 
+    settings = get_membership_settings(admin_id)
+    plan_pricing = get_plan_pricing(settings)
+
     if request.method == "POST":
 
         plan_name = request.form.get("plan_name")
@@ -186,65 +246,87 @@ def renew(student_id):
         except ValueError:
             flash("Invalid amount entered.", "danger")
             conn.close()
-            return render_template("memberships/renew.html", student=student)
+            return render_template(
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+            )
+
+        if paid_amount < 0 or due_amount < 0:
+            flash("Paid and due amounts cannot be negative.", "danger")
+            conn.close()
+            return render_template(
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+            )
 
         total_fee = paid_amount + due_amount
 
         if total_fee <= 0:
             flash("Total fee must be greater than zero.", "danger")
             conn.close()
-            return render_template("memberships/renew.html", student=student)
-
-        # Mark previous active membership as Expired
-        cursor.execute("""
-            UPDATE memberships
-            SET membership_status = 'Expired'
-            WHERE student_id=? AND membership_status = 'Active'
-        """, (student_id,))
-
-        cursor.execute("""
-            INSERT INTO memberships
-            (student_id, plan_name, joining_date, duration_days, end_date,
-             total_fee, paid_amount, pending_amount, remarks, membership_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            student_id, plan_name, joining_date, duration_days, end_date,
-            total_fee, paid_amount, due_amount, remarks, "Active"
-        ))
-
-        membership_id = cursor.lastrowid
-
-        if paid_amount > 0:
-            receipt_number = (
-                f"REC-{date.today().strftime('%Y%m%d')}-{membership_id:04d}"
+            return render_template(
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing
             )
+
+        try:
+            # Mark previous active membership as Expired
             cursor.execute("""
-                INSERT INTO payments
-                (membership_id, student_id, receipt_number, payment_mode,
-                 amount_paid, payment_date, remarks)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                UPDATE memberships
+                SET membership_status = 'Expired'
+                WHERE student_id=? AND membership_status = 'Active'
+            """, (student_id,))
+
+            cursor.execute("""
+                INSERT INTO memberships
+                (student_id, plan_name, joining_date, duration_days, end_date,
+                 total_fee, paid_amount, pending_amount, remarks, membership_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                membership_id, student_id, receipt_number,
-                payment_mode, paid_amount, date.today(), remarks
+                student_id, plan_name, joining_date, duration_days, end_date,
+                total_fee, paid_amount, due_amount, remarks, "Active"
             ))
 
-            insert_income_entry(
-                conn,
-                admin_id,
-                category="Membership Renewal",
-                person=student["full_name"],
-                description=remarks or f"Membership renewal - {plan_name}",
-                amount=paid_amount,
-                payment_method=payment_mode,
-                entry_date=date.today().isoformat(),
-                source="Renewal"
+            membership_id = cursor.lastrowid
+            receipt_number = None
+
+            if paid_amount > 0:
+                receipt_number = record_payment(
+                    conn,
+                    admin_id,
+                    membership_id=membership_id,
+                    student_id=student_id,
+                    student_name=student["full_name"],
+                    payment_mode=payment_mode,
+                    amount=paid_amount,
+                    remarks=remarks,
+                    category="Membership Renewal",
+                    description=remarks or f"Membership renewal - {plan_name}",
+                    source="Renewal"
+                )
+
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            flash(
+                "Could not renew this membership due to a database error. "
+                "Nothing was saved - please try again.",
+                "danger"
+            )
+            conn.close()
+            return render_template(
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing
             )
 
-        conn.commit()
         conn.close()
 
-        flash("Membership renewed successfully.", "success")
+        if receipt_number:
+            flash(
+                f"Membership renewed successfully. Receipt No: {receipt_number}",
+                "success"
+            )
+        else:
+            flash("Membership renewed successfully.", "success")
         return redirect(url_for("student.view", student_id=student_id))
 
     conn.close()
-    return render_template("memberships/renew.html", student=student)
+    return render_template(
+        "memberships/renew.html", student=student, plan_pricing=plan_pricing
+    )
