@@ -17,6 +17,42 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-22 — Fixed Supabase migration crash when a schema.sql table doesn't exist in library.db
+
+- **Feature:** `database/migrate_to_supabase.py` now checks each table's existence in SQLite via `sqlite_master` before running `SELECT *` against it, and skips (doesn't error on) any that aren't there.
+- **Files changed:** `database/migrate_to_supabase.py`. Docs: `docs/FILE_REFERENCE.md`.
+- **Why:** running the migration against the real `library.db` reached `expenses` and crashed with `sqlite3.OperationalError: no such table: expenses`. `schema.sql` defines `expenses` (TD-3: known to be unused dead schema), but this particular `library.db` was apparently never re-initialized after that table was added, so it genuinely doesn't exist there even though the destination Postgres schema does.
+- **Database changes:** None — read-only check, no schema or data changes on either side.
+- **UI changes:** None — CLI-only tooling change.
+- **Future impact:** A missing table now logs `Table '<name>' does not exist in SQLite — skipping.`, counts as a verified/skipped table in the report (0 rows, no sequence reset needed), and the migration continues to the remaining tables in `TABLES_IN_ORDER` instead of aborting.
+
+## 2026-07-22 — Fixed Supabase migration crash on invalid date/timestamp values in `enquiries`
+
+- **Feature:** Data-sanitization pass in `database/migrate_to_supabase.py` (see previous changelog entry) for every DATE/TIMESTAMP column, so a real-data quirk in SQLite (e.g. a `followup_date` stored as the literal text `"not-a-date"`) no longer crashes the migration.
+- **Files changed:** `database/migrate_to_supabase.py`. Docs: `docs/FILE_REFERENCE.md`.
+- **Why:** running the migration against the real `library.db` failed on `enquiries` with PostgreSQL's `invalid input syntax for type date: "not-a-date"` — SQLite's `DATE`/`TIMESTAMP` columns have no real type enforcement (TEXT affinity, anything can be stored), unlike PostgreSQL's actual `DATE`/`TIMESTAMP` columns in `supabase_migration.sql`, which reject anything that doesn't parse.
+- **Database changes:** None to `schema.sql`/`supabase_migration.sql`, and `library.db` is still never written to — sanitization happens only on the in-memory copy of each row immediately before it's sent to Supabase, verified by directly comparing the sanitized output against the original row dicts (unmodified). `TEMPORAL_COLUMNS` lists exactly the columns typed DATE/TIMESTAMP in `supabase_migration.sql` per table (e.g. `enquiries.followup_date`/`created_at`, `memberships.joining_date`/`end_date`/`created_at`) — `transactions.transaction_date`, which is plain TEXT in the schema, is deliberately left alone.
+- **UI changes:** None — CLI-only tooling change.
+- **Future impact:** A value becomes `NULL` if it's empty, the case-insensitive literal `"none"`/`"null"`, or fails both `date.fromisoformat`/`datetime.fromisoformat`; every correction is printed inline during the run, in the final report's row/column counts, and in a consolidated sanitization log at the end — so a real bad SQLite value is never silently dropped without a trace. Any future table added to `TABLES_IN_ORDER` that has its own DATE/TIMESTAMP columns should get a matching `TEMPORAL_COLUMNS` entry.
+
+## 2026-07-22 — Added one-time SQLite-to-Supabase data migration script
+
+- **Feature:** `database/migrate_to_supabase.py` — copies every row from `database/library.db` into the PostgreSQL tables created by `database/supabase_migration.sql`, preserving primary keys, verifying row counts per table, and resetting (or reporting how to reset) identity sequences afterward. A data-migration companion to the schema-translation work in the previous entry — it is a one-time utility, not part of the running app.
+- **Files changed:** `database/migrate_to_supabase.py` (new). Docs: `docs/FILE_REFERENCE.md`, `docs/DECISIONS.md` (ADR-15).
+- **Why:** `supabase_migration.sql` only creates an empty schema on Supabase; the existing `library.db` data still needed a safe, verifiable, repeatable way to move across without duplicating rows or silently dropping any.
+- **Database changes:** None to `schema.sql`/`supabase_migration.sql`, and no writes to `library.db` (SQLite is read-only from this script's perspective). Running the script against Supabase inserts rows into the (previously empty) tables created by `supabase_migration.sql` and, where possible, resets their identity sequences — this only affects the Supabase side, and only once, since the script refuses to run again against tables that already have data.
+- **UI changes:** None — this is a CLI utility run manually from the project root; the Flask app is untouched and still reads/writes SQLite.
+- **Future impact:** See ADR-15 for why sequence resets go through an optional RPC with a printed-SQL fallback rather than a direct Postgres connection. `TABLES_IN_ORDER` in the script must be kept in sync (and FK-ordered) with any future table added to `schema.sql`/`supabase_migration.sql`.
+
+## 2026-07-22 — Added PostgreSQL/Supabase migration script, hand-translated from `schema.sql`
+
+- **Feature:** Database portability — a `database/supabase_migration.sql` script that recreates the existing SQLite schema (`database/schema.sql`) in PostgreSQL, runnable directly in the Supabase SQL Editor. Pure translation: no tables, columns, or constraints added, removed, or redesigned.
+- **Files changed:** `database/supabase_migration.sql` (new). Docs: `docs/FILE_REFERENCE.md`, `docs/DECISIONS.md` (ADR-14), `docs/11_FUTURE_WORK.md` (TD-34).
+- **Why:** `requirements.txt` already lists the `supabase` client library and a `test_supabase.py` connectivity smoke test exists, indicating a Supabase migration is in progress; a faithful PostgreSQL DDL translation was needed before any app code can point at it.
+- **Database changes:** New file only — no change to `database/schema.sql` or the live `library.db`. Type mapping: `INTEGER PRIMARY KEY AUTOINCREMENT` → `INTEGER PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY`; `REAL` → `DOUBLE PRECISION` (preserves SQLite `REAL`'s 8-byte precision, since PostgreSQL's own `REAL` is only 4-byte); `PRAGMA foreign_keys = ON` dropped (no PostgreSQL equivalent); `cashbook`'s 6 `ALTER TABLE ... ADD COLUMN` statements folded into its `CREATE TABLE`. All foreign keys, unique constraints, defaults, and `CHECK` constraints preserved as-is.
+- **UI changes:** None — the app still runs against SQLite; this script isn't wired into any route or connection code yet.
+- **Future impact:** Opened TD-34 — until the app's connection layer actually cuts over to Supabase, `schema.sql` and `supabase_migration.sql` are two hand-maintained copies of the same design and will drift if only one is edited. See ADR-14 for the full list of translation decisions and the PostgreSQL-native alternatives (e.g. `NUMERIC` for money, `BOOLEAN` for the many 0/1 flag columns) deliberately left for a future redesign ADR rather than applied here.
+
 ## 2026-07-22 — QA & Validation Sprint: full-application test suite, fixed 5 crash/data-integrity bugs across Settings, Membership Analytics, Students, and Payments
 
 - **Feature:** Cross-cutting QA pass covering every module not already fully audited by the four completed Phase 1–4 audits (Financial, Dashboard, Membership Workflow, Payment Workflow) — Auth, Enquiries, Students/Admission, Cashbook, Business Intelligence, Membership Analytics/Distribution, Notifications, and all 7 Settings sub-pages — plus cross-tenant IDOR isolation and full end-to-end workflow-chain/DB-consistency verification across all of them together. Scoped to correctness/reliability/validation/consistency/stability, no new business features, no UI redesign.
