@@ -22,7 +22,13 @@ routes/dashboard.py            → database.db.get_connection   (students, membe
                                 → database.membership_queries (get_membership_counts, DAYS_LEFT_SQL - added
                                   2026-07-21, replacing an inline COUNT(DISTINCT CASE...) query and a raw
                                   julianday() expression - see TD-6)
-routes/enquiries.py            → database.db.get_connection   (enquiries, students)
+routes/enquiries.py            → database.supabase_client.get_supabase_client   (enquiries table, Supabase/
+                                  PostgreSQL — as of 2026-07-23, ADR-18; was database.db.get_connection until
+                                  this cutover; source of truth for index()/edit()/view())
+                                → database.db.get_connection   (SQLite mirror-write in add()/edit()/delete() —
+                                  TD-36, temporary bridge since routes/student.py's admission() still reads/
+                                  writes the enquiry row via SQLite directly; also used read-only in index()/
+                                  view() to look up students, which isn't on Supabase yet)
 routes/student.py              → database.db.get_connection   (students, enquiries, memberships, payments)
                                 → database.membership_queries.EFFECTIVE_STATUS_SQL (added 2026-07-21 - TD-6)
 routes/membership_distribution.py → database.db.get_connection (memberships, students, payments)

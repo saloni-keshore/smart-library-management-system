@@ -82,7 +82,8 @@ graph TD
     Dashboard --> Charts
     Dashboard --> CatConst
     Dashboard --> NotifSettQ
-    Enquiries --> DB
+    Enquiries --> SupabaseClient
+    Enquiries -.->|"SQLite mirror (add/edit/delete) + students lookup, TD-36"| DB
     Student --> DB
     Membership --> DB
     Membership --> CashQ
@@ -119,7 +120,7 @@ graph TD
     Charts --> DB
 
     DB --> SQLite[("library.db (SQLite)")]
-    SupabaseClient --> SupabaseDB[("Supabase (PostgreSQL) — admins")]
+    SupabaseClient --> SupabaseDB[("Supabase (PostgreSQL) — admins, enquiries")]
 
     Auth -.->|render_template| Templates["Jinja templates → static PNGs / Chart.js JSON"]
     Dashboard -.->|render_template| Templates
@@ -127,7 +128,7 @@ graph TD
     BI -.->|render_template| Templates
 ```
 
-As of 2026-07-23 (ADR-16), `routes/auth.py` is the first module cut over off SQLite — `admins` reads/writes for login/register/forgot-password go through `database/supabase_client.py` to Supabase (PostgreSQL) instead of `database/db.py`'s SQLite connection. `register()` is the one exception: it also mirror-inserts the same new admin row into SQLite (dashed edge above), because 7 tables — `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` — still enforce real SQLite foreign keys back to `admins.admin_id` — this bridge is temporary scaffolding, not permanent design (TD-35). As of the same day (ADR-17), `routes/setting.py`'s `security_settings()` password-change branch also uses `SupabaseClient` for `admins.password` (dashed edge above, scoped to that one branch) — `admins.password` now has a single writer again across `forgot_password()` and `security_settings()`, closing TD-35's password split-brain (now `Resolved`). Every other function in `routes/setting.py`, and every other route/table shown above, is still 100% SQLite.
+As of 2026-07-23 (ADR-16), `routes/auth.py` is the first module cut over off SQLite — `admins` reads/writes for login/register/forgot-password go through `database/supabase_client.py` to Supabase (PostgreSQL) instead of `database/db.py`'s SQLite connection. `register()` is the one exception: it also mirror-inserts the same new admin row into SQLite (dashed edge above), because 7 tables — `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` — still enforce real SQLite foreign keys back to `admins.admin_id` — this bridge is temporary scaffolding, not permanent design (TD-35). As of the same day (ADR-17), `routes/setting.py`'s `security_settings()` password-change branch also uses `SupabaseClient` for `admins.password` (dashed edge above, scoped to that one branch) — `admins.password` now has a single writer again across `forgot_password()` and `security_settings()`, closing TD-35's password split-brain (now `Resolved`). Every other function in `routes/setting.py` is still 100% SQLite. Also as of 2026-07-23 (ADR-18), `routes/enquiries.py` became the second full-table cutover — `enquiries` reads/writes go through `SupabaseClient`, Supabase is the source of truth for the Enquiries pages, and `DB` (dashed edge above) is now only a write-synced mirror that `add()`/`edit()`/`delete()` keep current so `routes/student.py`'s `admission()` (unmigrated) can keep reading/writing the same row — that route's own `status='Admitted'` write stays SQLite-only and never reaches Supabase (TD-36). Every other route/table shown above is still 100% SQLite.
 
 ## 3. Request flow (Browser → Route → Database → Template)
 
@@ -334,7 +335,8 @@ graph LR
     dashboard_py --> cashbook_categories_py
     dashboard_py --> cashbook_queries_py
     dashboard_py --> membership_queries_py
-    enquiries_py --> db_py
+    enquiries_py --> supabase_client_py
+    enquiries_py -.->|"SQLite mirror (add/edit/delete) + students lookup, TD-36"| db_py
     student_py --> db_py
     student_py --> membership_queries_py
     membership_py --> db_py

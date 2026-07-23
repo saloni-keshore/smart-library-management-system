@@ -43,8 +43,10 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `purpose`, `preferred_shift`, `remarks` | TEXT | |
 | `demo_done` | INTEGER DEFAULT 0 | |
 | `followup_date` | DATE | |
-| `status` | TEXT DEFAULT `'Interested'` | Set to `'Admitted'` by `routes/student.py`'s `admission()` |
+| `status` | TEXT DEFAULT `'Interested'` | Set to `'Admitted'` by `routes/student.py`'s `admission()` — **as of 2026-07-23 (ADR-18), this write only reaches the SQLite mirror, not Supabase; see the note below and TD-36** |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
+
+**As of 2026-07-23 (ADR-18), `enquiries` is read/written in two places**, the same pattern as `admins` above: `routes/enquiries.py` (`index()`/`add()`/`edit()`/`delete()`/`view()`) reads/writes the copy in **Supabase** (schema defined by `database/supabase_migration.sql`) via `database/supabase_client.py`, and is the source of truth for every read. SQLite is kept as a write-synced **mirror** — `add()`/`edit()` write the identical row to both, `delete()` deletes from Supabase then best-effort deletes the SQLite mirror — purely because `routes/student.py`'s `admission()` (unmigrated, out of scope for this slice) reads the enquiry row and inserts `students` against a real SQLite FK to `enquiry_id`. That route's own write, `UPDATE enquiries SET status='Admitted' ...`, only ever touches the SQLite mirror — Supabase's `status` column is never told, so it goes stale the moment a student is admitted (TD-36; same shape as TD-35's `admins.password` split, on a different column). Every other column mirror-syncs correctly (`full_name`/`mobile`/`purpose`/`preferred_shift`/`followup_date`/`remarks`), since `routes/enquiries.py` itself writes both copies for those.
 
 ### `students` (admin-scoped)
 | Column | Type | Notes |

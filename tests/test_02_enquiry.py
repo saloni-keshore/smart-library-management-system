@@ -1,6 +1,6 @@
 """Enquiries: CRUD, validation, edge cases."""
-from database.db import get_connection
-from tests.conftest import make_enquiry, get_last_enquiry_id
+from database.supabase_client import get_supabase_client
+from tests.conftest import make_enquiry, get_last_enquiry_id, get_enquiry_by_id
 
 
 def test_enquiry_requires_login(client):
@@ -22,11 +22,7 @@ def test_add_enquiry_empty_full_name(logged_in_client):
     resp, data = make_enquiry(client, full_name="")
     assert resp.status_code == 200
     eid = get_last_enquiry_id(admin["admin_id"])
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name FROM enquiries WHERE enquiry_id=?", (eid,))
-    row = cur.fetchone()
-    conn.close()
+    row = get_enquiry_by_id(eid)
     # Gap: no server-side validation rejects empty name (NOT NULL allows "")
     assert row["full_name"] == ""
 
@@ -42,11 +38,7 @@ def test_add_enquiry_invalid_mobile_letters(logged_in_client):
     resp, data = make_enquiry(client, mobile="abcdefghij")
     assert resp.status_code == 200
     eid = get_last_enquiry_id(admin["admin_id"])
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT mobile FROM enquiries WHERE enquiry_id=?", (eid,))
-    row = cur.fetchone()
-    conn.close()
+    row = get_enquiry_by_id(eid)
     # Gap: mobile format is not validated at all on enquiry add
     assert row["mobile"] == "abcdefghij"
 
@@ -64,11 +56,7 @@ def test_add_enquiry_very_long_remarks(logged_in_client):
     resp, data = make_enquiry(client, remarks=long_remark)
     assert resp.status_code == 200
     eid = get_last_enquiry_id(admin["admin_id"])
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT remarks FROM enquiries WHERE enquiry_id=?", (eid,))
-    row = cur.fetchone()
-    conn.close()
+    row = get_enquiry_by_id(eid)
     assert len(row["remarks"]) == 10000
 
 
@@ -77,11 +65,7 @@ def test_add_enquiry_unicode_emoji(logged_in_client):
     resp, data = make_enquiry(client, full_name="राज कुमार 😀", remarks="备注 🎉")
     assert resp.status_code == 200
     eid = get_last_enquiry_id(admin["admin_id"])
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name, remarks FROM enquiries WHERE enquiry_id=?", (eid,))
-    row = cur.fetchone()
-    conn.close()
+    row = get_enquiry_by_id(eid)
     assert row["full_name"] == "राज कुमार 😀"
 
 
@@ -89,17 +73,21 @@ def test_add_enquiry_sql_injection_remarks(logged_in_client):
     client, admin = logged_in_client
     resp, data = make_enquiry(client, remarks="'; DROP TABLE enquiries;--")
     assert resp.status_code == 200
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM enquiries")
-    assert cur.fetchone()["c"] > 0
-    conn.close()
+    supabase = get_supabase_client()
+    count = supabase.table("enquiries").select("enquiry_id", count="exact", head=True).execute().count
+    assert count > 0
 
 
 def test_add_enquiry_bad_date_format(logged_in_client):
     client, admin = logged_in_client
     resp, data = make_enquiry(client, followup_date="not-a-date")
-    assert resp.status_code == 200  # stored as-is, SQLite has no strict date type
+    assert resp.status_code == 200
+    # Supabase's followup_date is a strictly-typed PostgreSQL DATE, unlike
+    # SQLite's -- unparsable input is sanitized to NULL rather than crashing
+    # or being stored verbatim (see routes/enquiries.py's _sanitize_date).
+    eid = get_last_enquiry_id(admin["admin_id"])
+    row = get_enquiry_by_id(eid)
+    assert row["followup_date"] is None
 
 
 def test_add_enquiry_missing_fields(logged_in_client):
@@ -158,11 +146,8 @@ def test_edit_enquiry_success(logged_in_client):
         follow_redirects=True,
     )
     assert b"Enquiry updated successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name FROM enquiries WHERE enquiry_id=?", (eid,))
-    assert cur.fetchone()["full_name"] == "Updated Name"
-    conn.close()
+    row = get_enquiry_by_id(eid)
+    assert row["full_name"] == "Updated Name"
 
 
 def test_edit_enquiry_nonexistent(logged_in_client):
@@ -181,11 +166,7 @@ def test_delete_enquiry_success(logged_in_client):
     eid = get_last_enquiry_id(admin["admin_id"])
     resp = client.get(f"/enquiries/delete/{eid}", follow_redirects=True)
     assert b"Enquiry deleted successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM enquiries WHERE enquiry_id=?", (eid,))
-    assert cur.fetchone() is None
-    conn.close()
+    assert get_enquiry_by_id(eid) is None
 
 
 def test_delete_enquiry_twice_is_idempotent_no_crash(logged_in_client):

@@ -89,6 +89,8 @@ def make_enquiry(client, **overrides):
 
 
 def get_last_enquiry_id(admin_id):
+    """enquiries.add() mirror-inserts into SQLite under the same enquiry_id
+    (TD-36), so this SQLite lookup still returns the right id post-migration."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
@@ -98,6 +100,14 @@ def get_last_enquiry_id(admin_id):
     row = cur.fetchone()
     conn.close()
     return row["enquiry_id"] if row else None
+
+
+def get_enquiry_by_id(enquiry_id):
+    """enquiries now lives in Supabase (routes/enquiries.py) — replaces a
+    SQLite lookup for asserting the result of an add/edit/delete."""
+    supabase = get_supabase_client()
+    response = supabase.table("enquiries").select("*").eq("enquiry_id", enquiry_id).execute()
+    return response.data[0] if response.data else None
 
 
 def admit_student(client, enquiry_id, **overrides):

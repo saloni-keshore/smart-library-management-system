@@ -25,13 +25,13 @@ Calls `utils.charts.generate_revenue_chart(admin_id)` and `generate_membership_c
 
 | Method | Path | Function | Template | Auth | Purpose |
 |---|---|---|---|---|---|
-| GET | `/enquiries/` | `index` | `enquiries/index.html` | Yes | List all enquiries, left-joined to `students` to flag already-admitted ones |
+| GET | `/enquiries/` | `index` | `enquiries/index.html` | Yes | List all enquiries (from Supabase), merged in Python with a SQLite `students` lookup to flag already-admitted ones |
 | GET/POST | `/enquiries/add` | `add` | `enquiries/add.html` | Yes | Create enquiry |
 | GET/POST | `/enquiries/edit/<int:enquiry_id>` | `edit` | `enquiries/edit.html` | Yes | Edit enquiry |
 | GET | `/enquiries/delete/<int:enquiry_id>` | `delete` | redirect | Yes | **Deletes on a plain GET request, no confirmation step** — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
 | GET | `/enquiries/view/<int:enquiry_id>` | `view` | `enquiries/view.html` | Yes | Enquiry detail |
 
-Raw SQL only, no query module.
+As of 2026-07-23 (ADR-18), `enquiries` reads/writes go through `database.supabase_client.get_supabase_client()` (Supabase is the source of truth), no query module — was raw SQL via `database.db.get_connection()` until this cutover. `add()`/`edit()`/`delete()` also write a SQLite mirror (`database.db.get_connection()`) so `routes/student.py`'s `admission()` — unmigrated, reads/writes the enquiry row via SQLite directly — keeps working; `index()`/`view()` additionally use `get_connection()` read-only to look up `students` (also unmigrated). `_sanitize_date()` normalizes `followup_date` to `None` on blank/unparsable input before any Supabase call, since Postgres's `DATE` column is strictly typed unlike SQLite's. See TD-36: `admission()`'s `status='Admitted'` write stays SQLite-only and doesn't reach Supabase, so the Enquiries pages don't reflect a just-completed admission's status until `routes/student.py` is migrated too.
 
 ## `routes/student.py` — blueprint `student`, prefix `/students`
 
