@@ -79,7 +79,7 @@ Calls `utils.charts.generate_membership_distribution_donut(admin_id)`. `PLAN_ORD
 | GET | `/payments/` | `index` | `payments/index.html` | Yes | List all payments, newest first |
 | GET/POST | `/payments/collect/<int:membership_id>` | `collect` | `payments/collect.html` | Yes | Collect a payment against a membership's pending balance |
 
-`collect` validates `amount_paid` is numeric, `>0`, and `<= pending_amount`; generates receipt number `REC-YYYYMMDD-<membership_id>-<new_paid>`; updates `memberships.paid_amount`/`pending_amount`; logs an income entry (category `"Membership Fee"`) via `insert_income_entry`.
+`collect` reads the target membership from Supabase (source of truth, ADR-21) and verifies it belongs to the logged-in admin via a `students` ownership check (also Supabase, ADR-19); validates `amount_paid` is numeric, `>0`, and `<= pending_amount`; updates `memberships.paid_amount`/`pending_amount` in Supabase first, then mirrors the same update into the SQLite `memberships` row (still needed by Dashboard/Membership Distribution/Notifications/Student view/Cashbook's pending-fees total/BI); generates the receipt number and logs the matching income entry via `database/payment_queries.py`'s `record_payment()` (`receipt_prefix`/`next_receipt_number` from Settings → Receipt Settings, ADR-13), category `"Membership Fee"`.
 
 ## `routes/cashbook.py` — blueprint `cashbook`, prefix `/cashbook`
 

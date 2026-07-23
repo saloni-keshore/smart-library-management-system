@@ -41,6 +41,7 @@ This `docs/` folder documents the **actual, current implementation** of the Smar
 | [11_FUTURE_WORK.md](11_FUTURE_WORK.md) | Known Technical Debt log (`TD-1`…`TD-21`, with severity/location/status), Stub Routes & Planned Features (`PF-1`…), and recommended next slices |
 | [CHANGELOG.md](CHANGELOG.md) | Dated entries — Feature / Files changed / Why / Database changes / UI changes / Future impact |
 | [DECISIONS.md](DECISIONS.md) | Architecture decisions (ADR-1…ADR-6) and the reasoning behind them |
+| [MIRROR_TRACKER.md](MIRROR_TRACKER.md) | Per-table tracker for the incremental Supabase migration — source of truth, current SQLite mirror readers/writers, exact removal conditions, and status for `admins`/`enquiries`/`students`/`memberships`; update after every migration slice until the final SQLite removal |
 
 ## Maintenance policy (mandatory, not optional)
 

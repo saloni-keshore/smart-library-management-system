@@ -415,6 +415,14 @@ def test_collect_payment_success(logged_in_client):
     assert row["paid_amount"] == 500
     assert row["pending_amount"] == 500
 
+    # TD-37 (resolved): routes/payment.py's collect() now writes
+    # memberships.paid_amount/pending_amount to Supabase directly (the
+    # source of truth routes/membership.py's index() reads), not just the
+    # SQLite mirror checked above.
+    m = get_membership_by_id(mid)
+    assert m["paid_amount"] == 500
+    assert m["pending_amount"] == 500
+
 
 def test_collect_payment_exceeding_pending_rejected(logged_in_client):
     client, admin = logged_in_client
@@ -447,6 +455,35 @@ def test_collect_payment_exact_pending_clears_balance(logged_in_client):
     cur.execute("SELECT pending_amount FROM memberships WHERE membership_id=?", (mid,))
     assert cur.fetchone()["pending_amount"] == 0
     conn.close()
+
+    assert get_membership_by_id(mid)["pending_amount"] == 0
+
+
+def test_collect_payment_reflected_on_memberships_index_page(logged_in_client):
+    """TD-37 regression: before this migration, routes/membership.py's
+    index() (Supabase-read) kept showing the pre-payment balance after a
+    payment was collected, because collect() only updated the SQLite
+    mirror. The "Collect" action only renders while pending_amount > 0
+    (templates/memberships/index.html), so its disappearance after a
+    full payment proves the page is reading the post-payment balance."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="200", due_amount="800")
+    mid = get_last_membership_id(sid)
+
+    collect_url = f"/payments/collect/{mid}"
+    resp = client.get("/memberships/")
+    assert collect_url.encode() in resp.data
+
+    client.post(
+        collect_url,
+        data={"amount_paid": "800", "payment_mode": "Cash", "remarks": "final"},
+        follow_redirects=True,
+    )
+
+    resp = client.get("/memberships/")
+    assert resp.status_code == 200
+    assert collect_url.encode() not in resp.data
 
 
 def test_collect_payment_zero_amount_rejected(logged_in_client):

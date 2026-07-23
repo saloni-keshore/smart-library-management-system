@@ -76,6 +76,13 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     assert m["paid_amount"] == 1000
     assert m["pending_amount"] == 0
 
+    # TD-37 (resolved): the Supabase copy - the source of truth
+    # routes/membership.py's index() reads - must agree with the SQLite
+    # mirror checked above, not just the mirror alone.
+    m_supabase = get_membership_by_id(mid)
+    assert m_supabase["paid_amount"] == 1000
+    assert m_supabase["pending_amount"] == 0
+
     cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
     assert cur.fetchone()["c"] == 2
 
