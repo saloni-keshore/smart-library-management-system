@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date
 
 from flask import (
     Blueprint,
@@ -9,9 +10,11 @@ from flask import (
     request,
     session
 )
+from postgrest.exceptions import APIError
 
 from database.db import get_connection
 from database.membership_queries import EFFECTIVE_STATUS_SQL
+from database.supabase_client import get_supabase_client
 
 
 student_bp = Blueprint(
@@ -19,6 +22,24 @@ student_bp = Blueprint(
     __name__,
     url_prefix="/students"
 )
+
+
+def _sanitize_date(value):
+    """Return an ISO ('YYYY-MM-DD') date string or None. Supabase's
+    join_date column is a strictly-typed PostgreSQL DATE, unlike SQLite's,
+    which silently accepted any string -- blank/unparsable input must
+    become NULL instead of raising an APIError on insert (same helper
+    shape as routes/enquiries.py's _sanitize_date, ADR-18)."""
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        return None
+    return text
 
 
 @student_bp.route("/")
@@ -29,18 +50,28 @@ def index():
 
     admin_id = session["admin_id"]
 
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("students")
+            .select("*")
+            .eq("admin_id", admin_id)
+            .order("student_id", desc=True)
+            .execute()
+        )
+        students = response.data
+    except APIError:
+        students = []
+
+    # memberships stays SQLite (out of this session's scope) -- attach each
+    # student's latest membership + effective status the same way the old
+    # correlated-subquery LEFT JOIN did, merged in Python against the
+    # Supabase students list instead of a database-level join.
     conn = get_connection()
     cursor = conn.cursor()
-
     cursor.execute(f"""
         SELECT
             s.student_id,
-            s.full_name,
-            s.mobile,
-            s.purpose,
-            s.shift,
-            s.status,
-
             m.membership_id,
             m.plan_name,
             m.paid_amount,
@@ -59,11 +90,17 @@ def index():
             )
 
         WHERE s.admin_id = ?
-        ORDER BY s.student_id DESC
     """, (admin_id,))
-
-    students = cursor.fetchall()
+    membership_by_student = {row["student_id"]: dict(row) for row in cursor.fetchall()}
     conn.close()
+
+    for student in students:
+        m = membership_by_student.get(student["student_id"], {})
+        student["membership_id"] = m.get("membership_id")
+        student["plan_name"] = m.get("plan_name")
+        student["paid_amount"] = m.get("paid_amount")
+        student["pending_amount"] = m.get("pending_amount")
+        student["membership_status"] = m.get("membership_status")
 
     return render_template("students/index.html", students=students)
 
@@ -75,18 +112,21 @@ def admission(enquiry_id):
         return redirect("/")
 
     admin_id = session["admin_id"]
+    supabase = get_supabase_client()
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT * FROM enquiries WHERE enquiry_id=? AND admin_id=?",
-        (enquiry_id, admin_id)
-    )
-    enquiry = cursor.fetchone()
+    try:
+        response = (
+            supabase.table("enquiries")
+            .select("*")
+            .eq("enquiry_id", enquiry_id)
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        enquiry = response.data[0] if response.data else None
+    except APIError:
+        enquiry = None
 
     if enquiry is None:
-        conn.close()
         flash("Enquiry not found.", "danger")
         return redirect(url_for("enquiry.index"))
 
@@ -94,52 +134,112 @@ def admission(enquiry_id):
 
         address = request.form.get("address", "").strip()
         id_proof = request.form.get("id_proof", "").strip()
-        join_date = request.form.get("join_date")
+        join_date = _sanitize_date(request.form.get("join_date"))
 
         # Check if this mobile already admitted under THIS admin
-        cursor.execute(
-            "SELECT student_id FROM students WHERE mobile=? AND admin_id=?",
-            (enquiry["mobile"], admin_id)
-        )
-        existing = cursor.fetchone()
+        try:
+            existing_response = (
+                supabase.table("students")
+                .select("student_id")
+                .eq("mobile", enquiry["mobile"])
+                .eq("admin_id", admin_id)
+                .execute()
+            )
+            existing = existing_response.data[0] if existing_response.data else None
+        except APIError:
+            existing = None
 
         if existing is not None:
-            conn.close()
             flash("This student has already been admitted.", "warning")
             return redirect(url_for("student.view", student_id=existing["student_id"]))
 
-        cursor.execute("""
-            INSERT INTO students
-            (admin_id, enquiry_id, full_name, mobile, address, id_proof,
-             purpose, shift, join_date, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            admin_id,
-            enquiry["enquiry_id"],
-            enquiry["full_name"],
-            enquiry["mobile"],
-            address,
-            id_proof,
-            enquiry["purpose"],
-            enquiry["preferred_shift"],
-            join_date,
-            "Active"
-        ))
+        # student_id is assigned explicitly, not left to Supabase's
+        # auto-assigned identity value -- same reasoning as
+        # routes/enquiries.py's add() (ADR-18): Supabase's identity
+        # sequence was seeded once from a one-time data copy (ADR-15) and
+        # trails SQLite's autoincrement counter, which has kept climbing
+        # from ordinary (and test-suite) usage in every session since.
+        # Assign one past SQLite's current max and insert that same value
+        # into both.
+        sqlite_conn = get_connection()
+        next_id_row = sqlite_conn.execute(
+            "SELECT MAX(student_id) AS m FROM students"
+        ).fetchone()
+        new_student_id = (next_id_row["m"] or 0) + 1
 
-        student_id = cursor.lastrowid
+        student_row = {
+            "student_id": new_student_id,
+            "admin_id": admin_id,
+            "enquiry_id": enquiry["enquiry_id"],
+            "full_name": enquiry["full_name"],
+            "mobile": enquiry["mobile"],
+            "address": address,
+            "id_proof": id_proof,
+            "purpose": enquiry["purpose"],
+            "shift": enquiry["preferred_shift"],
+            "join_date": join_date,
+            "status": "Active",
+        }
 
-        cursor.execute(
-            "UPDATE enquiries SET status='Admitted' WHERE enquiry_id=? AND admin_id=?",
-            (enquiry["enquiry_id"], admin_id)
-        )
+        try:
+            supabase.table("students").insert(student_row).execute()
+        except APIError:
+            sqlite_conn.close()
+            flash("Something went wrong. Please try again.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
 
-        conn.commit()
-        conn.close()
+        # Bridge: routes/membership.py, routes/payment.py, and several
+        # dashboard/report/notification queries still enforce a real
+        # SQLite foreign key to students.student_id and JOIN it directly
+        # (out of this session's scope). Mirror the new row into SQLite
+        # too, under the same explicit student_id, until those modules are
+        # migrated to Supabase.
+        try:
+            sqlite_conn.execute(
+                """
+                INSERT INTO students
+                (student_id, admin_id, enquiry_id, full_name, mobile, address,
+                 id_proof, purpose, shift, join_date, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_student_id,
+                    admin_id,
+                    enquiry["enquiry_id"],
+                    enquiry["full_name"],
+                    enquiry["mobile"],
+                    address,
+                    id_proof,
+                    enquiry["purpose"],
+                    enquiry["preferred_shift"],
+                    join_date,
+                    "Active"
+                )
+            )
+            sqlite_conn.commit()
+            sqlite_conn.close()
+        except sqlite3.Error:
+            supabase.table("students").delete().eq("student_id", new_student_id).execute()
+            flash("Something went wrong. Please try again.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
+
+        # Closes TD-36: this now flips enquiries.status in Supabase, the
+        # copy routes/enquiries.py's index()/edit()/view() actually read --
+        # previously this UPDATE only ever reached the SQLite mirror, so
+        # the Enquiries pages never saw a just-admitted enquiry's status
+        # change. Best-effort: the student is already admitted either way,
+        # so a failure here shouldn't block the redirect to membership
+        # creation.
+        try:
+            supabase.table("enquiries").update(
+                {"status": "Admitted"}
+            ).eq("enquiry_id", enquiry["enquiry_id"]).eq("admin_id", admin_id).execute()
+        except APIError:
+            pass
 
         flash("Student admitted successfully. Please create membership.", "success")
-        return redirect(url_for("membership.create", student_id=student_id))
+        return redirect(url_for("membership.create", student_id=new_student_id))
 
-    conn.close()
     return render_template("students/admission.html", enquiry=enquiry)
 
 
@@ -151,19 +251,26 @@ def view(student_id):
 
     admin_id = session["admin_id"]
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT * FROM students WHERE student_id=? AND admin_id=?",
-        (student_id, admin_id)
-    )
-    student = cursor.fetchone()
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("students")
+            .select("*")
+            .eq("student_id", student_id)
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        student = response.data[0] if response.data else None
+    except APIError:
+        student = None
 
     if student is None:
-        conn.close()
         flash("Student not found.", "danger")
         return redirect(url_for("student.index"))
+
+    # memberships/payments stay SQLite (out of this session's scope)
+    conn = get_connection()
+    cursor = conn.cursor()
 
     cursor.execute("""
         SELECT * FROM memberships
@@ -199,18 +306,21 @@ def edit(student_id):
         return redirect("/")
 
     admin_id = session["admin_id"]
+    supabase = get_supabase_client()
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT * FROM students WHERE student_id=? AND admin_id=?",
-        (student_id, admin_id)
-    )
-    student = cursor.fetchone()
+    try:
+        response = (
+            supabase.table("students")
+            .select("*")
+            .eq("student_id", student_id)
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        student = response.data[0] if response.data else None
+    except APIError:
+        student = None
 
     if student is None:
-        conn.close()
         flash("Student not found.", "danger")
         return redirect(url_for("student.index"))
 
@@ -223,16 +333,26 @@ def edit(student_id):
         shift = request.form.get("shift")
         status = request.form.get("status")
 
+        # UNIQUE(mobile, admin_id) exists on both databases -- check for a
+        # collision with another student of this admin before writing,
+        # same check-first shape as routes/auth.py's register() existence
+        # checks, since a Supabase unique-violation can't be told apart
+        # from any other postgrest.exceptions.APIError without parsing
+        # its error code.
         try:
-            cursor.execute("""
-                UPDATE students
-                SET full_name=?, mobile=?, address=?, purpose=?, shift=?, status=?
-                WHERE student_id=? AND admin_id=?
-            """, (full_name, mobile, address, purpose, shift, status, student_id, admin_id))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            conn.rollback()
-            conn.close()
+            collision_response = (
+                supabase.table("students")
+                .select("student_id")
+                .eq("mobile", mobile)
+                .eq("admin_id", admin_id)
+                .neq("student_id", student_id)
+                .execute()
+            )
+            collision = collision_response.data[0] if collision_response.data else None
+        except APIError:
+            collision = None
+
+        if collision is not None:
             flash(
                 "Another student already uses that mobile number. "
                 "Please use a different number.",
@@ -240,10 +360,34 @@ def edit(student_id):
             )
             return render_template("students/edit.html", student=student)
 
-        conn.close()
+        try:
+            supabase.table("students").update({
+                "full_name": full_name,
+                "mobile": mobile,
+                "address": address,
+                "purpose": purpose,
+                "shift": shift,
+                "status": status,
+            }).eq("student_id", student_id).eq("admin_id", admin_id).execute()
+        except APIError:
+            flash("Something went wrong. Please try again.", "danger")
+            return render_template("students/edit.html", student=student)
+
+        # Bridge: routes/membership.py, routes/payment.py, and several
+        # dashboard/report/notification queries still read this student's
+        # full_name/mobile/purpose/shift/status straight from the SQLite
+        # mirror (out of this session's scope) -- keep it in sync the same
+        # way routes/enquiries.py's edit() does.
+        sqlite_conn = get_connection()
+        sqlite_conn.execute("""
+            UPDATE students
+            SET full_name=?, mobile=?, address=?, purpose=?, shift=?, status=?
+            WHERE student_id=? AND admin_id=?
+        """, (full_name, mobile, address, purpose, shift, status, student_id, admin_id))
+        sqlite_conn.commit()
+        sqlite_conn.close()
 
         flash("Student updated successfully.", "success")
         return redirect(url_for("student.view", student_id=student_id))
 
-    conn.close()
     return render_template("students/edit.html", student=student)

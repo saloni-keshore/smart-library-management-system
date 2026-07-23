@@ -1,10 +1,13 @@
 """Students/Admission -> Membership -> Payment: the core money workflow."""
 from database.db import get_connection
+from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry,
     get_last_enquiry_id,
+    get_enquiry_by_id,
     admit_student,
     get_last_student_id,
+    get_student_by_id,
     create_membership,
     get_last_membership_id,
 )
@@ -34,14 +37,16 @@ def test_admission_success_creates_student_and_sets_enquiry_admitted(logged_in_c
     resp = admit_student(client, eid)
     assert b"Student admitted successfully" in resp.data
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT status FROM enquiries WHERE enquiry_id=?", (eid,))
-    assert cur.fetchone()["status"] == "Admitted"
-    cur.execute("SELECT * FROM students WHERE enquiry_id=?", (eid,))
-    student = cur.fetchone()
-    conn.close()
+    # enquiries.status now lives in Supabase (routes/enquiries.py reads it
+    # from there); admission() writes the 'Admitted' flip there too (TD-36
+    # resolved by this migration) instead of the SQLite mirror only.
+    enquiry = get_enquiry_by_id(eid)
+    assert enquiry["status"] == "Admitted"
+
+    sid = get_last_student_id(admin["admin_id"])
+    student = get_student_by_id(sid)
     assert student is not None
+    assert student["enquiry_id"] == eid
     assert student["status"] == "Active"
 
 
@@ -66,11 +71,16 @@ def test_admission_duplicate_mobile_blocked(logged_in_client):
     resp = admit_student(client, eid2)
     assert b"already been admitted" in resp.data
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM students WHERE mobile=? AND admin_id=?", (mobile, admin["admin_id"]))
-    assert cur.fetchone()["c"] == 1
-    conn.close()
+    supabase = get_supabase_client()
+    count = (
+        supabase.table("students")
+        .select("student_id", count="exact", head=True)
+        .eq("mobile", mobile)
+        .eq("admin_id", admin["admin_id"])
+        .execute()
+        .count
+    )
+    assert count == 1
 
 
 def test_admission_empty_join_date(logged_in_client):
@@ -177,11 +187,8 @@ def test_edit_student_invalid_status_value_accepted(logged_in_client):
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT status FROM students WHERE student_id=?", (sid,))
-    assert cur.fetchone()["status"] == "NotARealStatus"
-    conn.close()
+    student = get_student_by_id(sid)
+    assert student["status"] == "NotARealStatus"
 
 
 # ---------------------------------------------------------------------------

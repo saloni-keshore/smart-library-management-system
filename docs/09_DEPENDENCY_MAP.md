@@ -26,10 +26,19 @@ routes/enquiries.py            → database.supabase_client.get_supabase_client 
                                   PostgreSQL — as of 2026-07-23, ADR-18; was database.db.get_connection until
                                   this cutover; source of truth for index()/edit()/view())
                                 → database.db.get_connection   (SQLite mirror-write in add()/edit()/delete() —
-                                  TD-36, temporary bridge since routes/student.py's admission() still reads/
-                                  writes the enquiry row via SQLite directly; also used read-only in index()/
-                                  view() to look up students, which isn't on Supabase yet)
-routes/student.py              → database.db.get_connection   (students, enquiries, memberships, payments)
+                                  temporary bridge since routes/membership.py/routes/payment.py/routes/
+                                  dashboard.py/etc. still JOIN students directly against SQLite; also used
+                                  read-only in index()/view() to look up students' enquiry_id → student_id map)
+routes/student.py              → database.supabase_client.get_supabase_client   (students table, Supabase/
+                                  PostgreSQL — as of 2026-07-23, ADR-19; was database.db.get_connection until
+                                  this cutover; source of truth for index()/admission()/view()/edit(); also
+                                  reads/writes enquiries there directly in admission(), closing TD-36)
+                                → database.db.get_connection   (SQLite mirror-write in admission()/edit() —
+                                  temporary bridge since routes/membership.py/routes/payment.py/routes/
+                                  dashboard.py/routes/membership_distribution.py/routes/notification.py/
+                                  routes/setting.py's backup functions/database.bi_queries/cashbook_queries/
+                                  membership_queries all still JOIN students directly against SQLite; also
+                                  used read-only in index()/view() for memberships/payments, which stay SQLite)
                                 → database.membership_queries.EFFECTIVE_STATUS_SQL (added 2026-07-21 - TD-6)
 routes/membership_distribution.py → database.db.get_connection (memberships, students, payments)
                                 → utils.charts.generate_membership_distribution_donut

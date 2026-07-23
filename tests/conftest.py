@@ -122,6 +122,9 @@ def admit_student(client, enquiry_id, **overrides):
 
 
 def get_last_student_id(admin_id):
+    """students.admission() mirror-inserts into SQLite under the same
+    student_id, so this SQLite lookup still returns the right id post-
+    migration."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
@@ -131,6 +134,14 @@ def get_last_student_id(admin_id):
     row = cur.fetchone()
     conn.close()
     return row["student_id"] if row else None
+
+
+def get_student_by_id(student_id):
+    """students now lives in Supabase (routes/student.py) — replaces a
+    SQLite lookup for asserting the result of an admission/edit."""
+    supabase = get_supabase_client()
+    response = supabase.table("students").select("*").eq("student_id", student_id).execute()
+    return response.data[0] if response.data else None
 
 
 def create_membership(client, student_id, **overrides):

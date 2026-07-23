@@ -3,7 +3,7 @@ Cashbook -> Dashboard -> BI -> Notifications -> Audit Log, verifying every
 downstream module updates exactly once and stays numerically consistent."""
 from database.db import get_connection
 from tests.conftest import (
-    make_enquiry, get_last_enquiry_id, admit_student, get_last_student_id,
+    make_enquiry, get_last_enquiry_id, get_enquiry_by_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id,
 )
 
@@ -20,11 +20,10 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     admit_student(client, eid)
     sid = get_last_student_id(admin_id)
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT status FROM enquiries WHERE enquiry_id=?", (eid,))
-    assert cur.fetchone()["status"] == "Admitted"
-    conn.close()
+    # enquiries.status now lives in Supabase (routes/enquiries.py reads it
+    # from there); admission() flips it there directly (TD-36 resolved).
+    enquiry = get_enquiry_by_id(eid)
+    assert enquiry["status"] == "Admitted"
 
     # 3. Membership + Payment + Receipt (admission payment)
     create_membership(client, sid, paid_amount="600", due_amount="400")
