@@ -12,7 +12,10 @@ routes/dashboard.py, routes/membership.py and routes/membership_distribution.py
 docs/11_FUTURE_WORK.md). Everything here is that one definition, reused.
 """
 
+from postgrest.exceptions import APIError
+
 from database.db import get_connection
+from database.supabase_client import get_supabase_client
 
 
 # ---------------------------------------------------------------------------
@@ -54,23 +57,30 @@ def get_active_membership(student_id):
     """This student's currently-active membership (effective status), or
     None. Used to stop a second membership being created for a student who
     already has one live - renewal is the only supported way to replace an
-    active membership."""
+    active membership.
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    As of ADR-20, `routes/membership.py` is migrated to Supabase (the
+    source of truth for `memberships`) and is this function's only caller,
+    so it reads Supabase directly instead of the SQLite mirror the rest of
+    this module still reads for the other, unmigrated modules below.
+    """
 
-    cursor.execute(f"""
-        SELECT *, {EFFECTIVE_STATUS_SQL} AS effective_status
-        FROM memberships m
-        WHERE m.student_id = ?
-        ORDER BY m.membership_id DESC
-        LIMIT 1
-    """, (student_id,))
+    supabase = get_supabase_client()
 
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        response = (
+            supabase.table("memberships")
+            .select("*")
+            .eq("student_id", student_id)
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        row = response.data[0] if response.data else None
+    except APIError:
+        row = None
 
-    if row is not None and row["effective_status"] == "Active":
+    if row is not None and get_effective_status(row["membership_status"], row["end_date"]) == "Active":
         return row
     return None
 

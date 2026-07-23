@@ -86,7 +86,8 @@ graph TD
     Enquiries -.->|"SQLite mirror (add/edit/delete) + students lookup"| DB
     Student --> SupabaseClient
     Student -.->|"SQLite mirror (admission/edit) + memberships/payments reads"| DB
-    Membership --> DB
+    Membership --> SupabaseClient
+    Membership -.->|"SQLite mirror (create/renew), ADR-20"| DB
     Membership --> CashQ
     MembershipDistribution --> DB
     MembershipDistribution --> Charts
@@ -121,7 +122,7 @@ graph TD
     Charts --> DB
 
     DB --> SQLite[("library.db (SQLite)")]
-    SupabaseClient --> SupabaseDB[("Supabase (PostgreSQL) — admins, enquiries, students")]
+    SupabaseClient --> SupabaseDB[("Supabase (PostgreSQL) — admins, enquiries, students, memberships")]
 
     Auth -.->|render_template| Templates["Jinja templates → static PNGs / Chart.js JSON"]
     Dashboard -.->|render_template| Templates
@@ -129,7 +130,7 @@ graph TD
     BI -.->|render_template| Templates
 ```
 
-As of 2026-07-23 (ADR-16), `routes/auth.py` is the first module cut over off SQLite — `admins` reads/writes for login/register/forgot-password go through `database/supabase_client.py` to Supabase (PostgreSQL) instead of `database/db.py`'s SQLite connection. `register()` is the one exception: it also mirror-inserts the same new admin row into SQLite (dashed edge above), because 7 tables — `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` — still enforce real SQLite foreign keys back to `admins.admin_id` — this bridge is temporary scaffolding, not permanent design (TD-35). As of the same day (ADR-17), `routes/setting.py`'s `security_settings()` password-change branch also uses `SupabaseClient` for `admins.password` (dashed edge above, scoped to that one branch) — `admins.password` now has a single writer again across `forgot_password()` and `security_settings()`, closing TD-35's password split-brain (now `Resolved`). Every other function in `routes/setting.py` is still 100% SQLite. Also as of 2026-07-23 (ADR-18), `routes/enquiries.py` became the second full-table cutover — `enquiries` reads/writes go through `SupabaseClient`, Supabase is the source of truth for the Enquiries pages, and `DB` (dashed edge above) is now only a write-synced mirror that `add()`/`edit()`/`delete()` keep current so `routes/student.py`'s `admission()` can keep working against a real SQLite FK. Immediately after (ADR-19), `routes/student.py` became the third full-table cutover — `students` reads/writes go through `SupabaseClient` too, Supabase is the source of truth for the Students pages, and `admission()`'s `enquiries.status = 'Admitted'` write now targets Supabase directly (closing TD-36, `Resolved`) instead of the SQLite mirror only. `DB` remains a write-synced mirror for `students` (kept current by `admission()`/`edit()`) purely because `routes/membership.py`/`routes/payment.py`/`routes/dashboard.py`/`routes/membership_distribution.py`/`routes/notification.py`/`routes/setting.py`'s backup functions, and `database/bi_queries.py`/`cashbook_queries.py`/`membership_queries.py` (all still unmigrated) run raw `JOIN students` queries directly against SQLite. Every other route/table shown above is still 100% SQLite.
+As of 2026-07-23 (ADR-16), `routes/auth.py` is the first module cut over off SQLite — `admins` reads/writes for login/register/forgot-password go through `database/supabase_client.py` to Supabase (PostgreSQL) instead of `database/db.py`'s SQLite connection. `register()` is the one exception: it also mirror-inserts the same new admin row into SQLite (dashed edge above), because 7 tables — `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` — still enforce real SQLite foreign keys back to `admins.admin_id` — this bridge is temporary scaffolding, not permanent design (TD-35). As of the same day (ADR-17), `routes/setting.py`'s `security_settings()` password-change branch also uses `SupabaseClient` for `admins.password` (dashed edge above, scoped to that one branch) — `admins.password` now has a single writer again across `forgot_password()` and `security_settings()`, closing TD-35's password split-brain (now `Resolved`). Every other function in `routes/setting.py` is still 100% SQLite. Also as of 2026-07-23 (ADR-18), `routes/enquiries.py` became the second full-table cutover — `enquiries` reads/writes go through `SupabaseClient`, Supabase is the source of truth for the Enquiries pages, and `DB` (dashed edge above) is now only a write-synced mirror that `add()`/`edit()`/`delete()` keep current so `routes/student.py`'s `admission()` can keep working against a real SQLite FK. Immediately after (ADR-19), `routes/student.py` became the third full-table cutover — `students` reads/writes go through `SupabaseClient` too, Supabase is the source of truth for the Students pages, and `admission()`'s `enquiries.status = 'Admitted'` write now targets Supabase directly (closing TD-36, `Resolved`) instead of the SQLite mirror only. `DB` remains a write-synced mirror for `students` (kept current by `admission()`/`edit()`) purely because `routes/membership.py`/`routes/payment.py`/`routes/dashboard.py`/`routes/membership_distribution.py`/`routes/notification.py`/`routes/setting.py`'s backup functions, and `database/bi_queries.py`/`cashbook_queries.py`/`membership_queries.py` (all still unmigrated) run raw `JOIN students` queries directly against SQLite. As of the same day (ADR-20), `routes/membership.py` became the fourth full-table cutover — `memberships` reads/writes for `index()`/`create()`/`renew()` go through `SupabaseClient`, Supabase is the source of truth, and `database/membership_queries.py`'s `get_active_membership()` (membership.py's own duplicate-active-membership guard, its only caller) reads Supabase too. `DB` remains a write-synced mirror for `memberships` (kept current by `create()`/`renew()`) purely because `routes/payment.py`'s `collect()`, `routes/dashboard.py`, `routes/membership_distribution.py`, and `routes/notification.py` (all still unmigrated) run raw `JOIN memberships` queries directly against SQLite — `database/membership_queries.py`'s other exports (`EFFECTIVE_STATUS_SQL`/`DAYS_LEFT_SQL`/`get_membership_counts`/`get_effective_status`), still SQL/SQLite-backed, are what those modules (plus `routes/student.py`) keep calling. Every other route/table shown above is still 100% SQLite.
 
 ## 3. Request flow (Browser → Route → Database → Template)
 
@@ -274,7 +275,7 @@ erDiagram
 
 `settings` (legacy) and `transactions` (defined twice, see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md)) are omitted here since neither is used by any route today — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-2/TD-4.
 
-## 5. Module dependency graph (literal Python imports, verified by grep on 2026-07-20, updated 2026-07-21 for `database/membership_queries.py`, updated 2026-07-22 for `database/payment_queries.py`, updated 2026-07-23 for `database/supabase_client.py`)
+## 5. Module dependency graph (literal Python imports, verified by grep on 2026-07-20, updated 2026-07-21 for `database/membership_queries.py`, updated 2026-07-22 for `database/payment_queries.py`, updated 2026-07-23 for `database/supabase_client.py` and its `routes/membership.py` cutover, ADR-20)
 
 ```mermaid
 graph LR
@@ -341,7 +342,8 @@ graph LR
     student_py --> supabase_client_py
     student_py -.->|"SQLite mirror (admission/edit) + memberships/payments reads"| db_py
     student_py --> membership_queries_py
-    membership_py --> db_py
+    membership_py --> supabase_client_py
+    membership_py -.->|"SQLite mirror (create/renew), ADR-20"| db_py
     membership_py --> payment_queries_py
     membership_py --> membership_settings_queries_py
     membership_py --> membership_queries_py
@@ -376,6 +378,7 @@ graph LR
     audit_queries_py --> db_py
     membership_settings_queries_py --> db_py
     membership_queries_py --> db_py
+    membership_queries_py -.->|"get_active_membership(), ADR-20"| supabase_client_py
     settings_queries_py --> db_py
     receipt_settings_queries_py --> db_py
     notification_settings_queries_py --> db_py

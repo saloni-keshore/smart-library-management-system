@@ -10,6 +10,7 @@ from tests.conftest import (
     get_student_by_id,
     create_membership,
     get_last_membership_id,
+    get_membership_by_id,
 )
 
 
@@ -203,14 +204,13 @@ def test_membership_create_success_with_payment(logged_in_client):
     assert b"Receipt No:" in resp.data
 
     mid = get_last_membership_id(sid)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM memberships WHERE membership_id=?", (mid,))
-    m = cur.fetchone()
+    m = get_membership_by_id(mid)
     assert m["paid_amount"] == 1000
     assert m["pending_amount"] == 0
     assert m["total_fee"] == 1000
 
+    conn = get_connection()
+    cur = conn.cursor()
     cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
     assert cur.fetchone()["c"] == 1
 
@@ -225,11 +225,7 @@ def test_membership_create_with_partial_due(logged_in_client):
     resp = create_membership(client, sid, paid_amount="300", due_amount="700")
     assert b"Membership created successfully" in resp.data
     mid = get_last_membership_id(sid)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT paid_amount, pending_amount, total_fee FROM memberships WHERE membership_id=?", (mid,))
-    row = cur.fetchone()
-    conn.close()
+    row = get_membership_by_id(mid)
     assert row["paid_amount"] == 300
     assert row["pending_amount"] == 700
     assert row["total_fee"] == 1000
@@ -297,11 +293,16 @@ def test_membership_create_second_time_blocked_use_renew(logged_in_client):
     create_membership(client, sid, paid_amount="500", due_amount="0")
     resp = create_membership(client, sid, paid_amount="500", due_amount="0")
     assert b"already has an active membership" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM memberships WHERE student_id=?", (sid,))
-    assert cur.fetchone()["c"] == 1  # second attempt did NOT create a row
-    conn.close()
+
+    supabase = get_supabase_client()
+    count = (
+        supabase.table("memberships")
+        .select("membership_id", count="exact", head=True)
+        .eq("student_id", sid)
+        .execute()
+        .count
+    )
+    assert count == 1  # second attempt did NOT create a row
 
 
 def test_membership_create_huge_amount(logged_in_client):
@@ -317,11 +318,7 @@ def test_membership_create_decimal_amount(logged_in_client):
     resp = create_membership(client, sid, paid_amount="499.99", due_amount="0.01")
     assert b"Membership created successfully" in resp.data
     mid = get_last_membership_id(sid)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT total_fee FROM memberships WHERE membership_id=?", (mid,))
-    total = cur.fetchone()["total_fee"]
-    conn.close()
+    total = get_membership_by_id(mid)["total_fee"]
     assert abs(total - 500.00) < 0.001
 
 
@@ -358,14 +355,19 @@ def test_renew_success_expires_old_creates_new(logged_in_client):
     )
     assert b"Membership renewed successfully" in resp.data
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT membership_status FROM memberships WHERE membership_id=?", (old_mid,))
-    assert cur.fetchone()["membership_status"] == "Expired"
+    old_membership = get_membership_by_id(old_mid)
+    assert old_membership["membership_status"] == "Expired"
 
-    cur.execute("SELECT COUNT(*) AS c FROM memberships WHERE student_id=? AND membership_status='Active'", (sid,))
-    assert cur.fetchone()["c"] == 1
-    conn.close()
+    supabase = get_supabase_client()
+    active_count = (
+        supabase.table("memberships")
+        .select("membership_id", count="exact", head=True)
+        .eq("student_id", sid)
+        .eq("membership_status", "Active")
+        .execute()
+        .count
+    )
+    assert active_count == 1
 
 
 def test_renew_zero_total_fee_rejected(logged_in_client):

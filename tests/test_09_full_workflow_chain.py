@@ -2,9 +2,10 @@
 Cashbook -> Dashboard -> BI -> Notifications -> Audit Log, verifying every
 downstream module updates exactly once and stays numerically consistent."""
 from database.db import get_connection
+from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, get_enquiry_by_id, admit_student, get_last_student_id,
-    create_membership, get_last_membership_id,
+    create_membership, get_last_membership_id, get_membership_by_id,
 )
 
 
@@ -134,17 +135,31 @@ def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in
         follow_redirects=True,
     )
 
+    old_membership = get_membership_by_id(old_mid)
+    assert old_membership["membership_status"] == "Expired"
+
+    supabase = get_supabase_client()
+    total_count = (
+        supabase.table("memberships")
+        .select("membership_id", count="exact", head=True)
+        .eq("student_id", sid)
+        .execute()
+        .count
+    )
+    assert total_count == 2  # exactly one old (expired) + one new (active)
+
+    active_count = (
+        supabase.table("memberships")
+        .select("membership_id", count="exact", head=True)
+        .eq("student_id", sid)
+        .eq("membership_status", "Active")
+        .execute()
+        .count
+    )
+    assert active_count == 1
+
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT membership_status FROM memberships WHERE membership_id=?", (old_mid,))
-    assert cur.fetchone()["membership_status"] == "Expired"
-
-    cur.execute("SELECT COUNT(*) AS c FROM memberships WHERE student_id=?", (sid,))
-    assert cur.fetchone()["c"] == 2  # exactly one old (expired) + one new (active)
-
-    cur.execute("SELECT COUNT(*) AS c FROM memberships WHERE student_id=? AND membership_status='Active'", (sid,))
-    assert cur.fetchone()["c"] == 1
-
     cur.execute("SELECT COUNT(*) AS c FROM payments p JOIN memberships m ON p.membership_id=m.membership_id WHERE m.student_id=?", (sid,))
     assert cur.fetchone()["c"] == 2  # one payment per membership, none lost/duplicated
 

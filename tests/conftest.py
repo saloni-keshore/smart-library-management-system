@@ -161,6 +161,9 @@ def create_membership(client, student_id, **overrides):
 
 
 def get_last_membership_id(student_id):
+    """memberships.create()/renew() mirror-insert into SQLite under the same
+    membership_id, so this SQLite lookup still returns the right id post-
+    migration."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
@@ -170,3 +173,11 @@ def get_last_membership_id(student_id):
     row = cur.fetchone()
     conn.close()
     return row["membership_id"] if row else None
+
+
+def get_membership_by_id(membership_id):
+    """memberships now lives in Supabase (routes/membership.py) — replaces a
+    SQLite lookup for asserting the result of a create/renew."""
+    supabase = get_supabase_client()
+    response = supabase.table("memberships").select("*").eq("membership_id", membership_id).execute()
+    return response.data[0] if response.data else None
