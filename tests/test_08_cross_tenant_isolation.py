@@ -7,6 +7,7 @@ from database.db import get_connection
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id,
+    get_last_cashbook_entry, get_cashbook_entry_by_id,
 )
 
 
@@ -227,11 +228,7 @@ def test_admin_b_cannot_edit_admin_a_cashbook_entry(app):
               "person": "Donor A", "description": "x", "redirect_to": "cashbook"},
         follow_redirects=True,
     )
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT entry_id, amount FROM cashbook WHERE admin_id=? ORDER BY entry_id DESC LIMIT 1", (a["admin_id"],))
-    entry = cur.fetchone()
-    conn.close()
+    entry = get_last_cashbook_entry(a["admin_id"])
 
     resp = client_b.post(
         f"/cashbook/edit/{entry['entry_id']}",
@@ -240,11 +237,8 @@ def test_admin_b_cannot_edit_admin_a_cashbook_entry(app):
         follow_redirects=True,
     )
     assert b"Transaction not found" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT amount FROM cashbook WHERE entry_id=?", (entry["entry_id"],))
-    assert cur.fetchone()["amount"] == entry["amount"]
-    conn.close()
+    row = get_cashbook_entry_by_id(entry["entry_id"])
+    assert row["amount"] == entry["amount"]
 
 
 def test_admin_b_notifications_dont_include_admin_a_memberships(app):

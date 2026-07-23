@@ -214,6 +214,10 @@ def test_membership_create_success_with_payment(logged_in_client):
     cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
     assert cur.fetchone()["c"] == 1
 
+    # cashbook.payment_id reconciliation deliberately stays on the SQLite
+    # mirror - payments is still SQLite-only, so Supabase's cashbook never
+    # gets a real payment_id (its FK to payments would reject it). See
+    # ADR-22 / TD-38 in docs/11_FUTURE_WORK.md.
     cur.execute("SELECT COUNT(*) AS c FROM cashbook WHERE payment_id IN (SELECT payment_id FROM payments WHERE membership_id=?)", (mid,))
     assert cur.fetchone()["c"] == 1
     conn.close()

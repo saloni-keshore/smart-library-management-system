@@ -6,6 +6,7 @@ from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, get_enquiry_by_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id, get_membership_by_id,
+    get_cashbook_entries, get_audit_log_entries,
 )
 
 
@@ -39,28 +40,20 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     assert payment_1["amount_paid"] == 600
     conn.close()
 
-    # 4. Cashbook: exactly one automatic Income entry for this payment
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT * FROM cashbook WHERE admin_id=? AND category='Admission Fee'",
-        (admin_id,),
-    )
-    cb_rows = cur.fetchall()
-    conn.close()
+    # 4. Cashbook: exactly one automatic Income entry for this payment.
+    # cashbook now lives in Supabase (ADR-22) - the automatic entry made by
+    # insert_income_entry() is mirrored there too, so this checks the
+    # source of truth routes/cashbook.py's index() actually reads.
+    cb_rows = get_cashbook_entries(admin_id, category="Admission Fee")
     assert len(cb_rows) == 1
     assert cb_rows[0]["amount"] == 600
     assert cb_rows[0]["source"] == "Admission"
 
     # 4b. Audit log: exactly one Auto-Created entry for that cashbook row
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT COUNT(*) AS c FROM audit_log WHERE admin_id=? AND entry_id=? AND action='Auto-Created'",
-        (admin_id, cb_rows[0]["entry_id"]),
+    audit_rows = get_audit_log_entries(
+        admin_id, entry_id=cb_rows[0]["entry_id"], action="Auto-Created"
     )
-    assert cur.fetchone()["c"] == 1
-    conn.close()
+    assert len(audit_rows) == 1
 
     # 5. Collect the remaining pending balance -> second payment/receipt/cashbook/audit row
     client.post(
@@ -85,10 +78,9 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
 
     cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
     assert cur.fetchone()["c"] == 2
-
-    cur.execute("SELECT COUNT(*) AS c FROM cashbook WHERE admin_id=? AND category='Membership Fee'", (admin_id,))
-    assert cur.fetchone()["c"] == 1
     conn.close()
+
+    assert len(get_cashbook_entries(admin_id, category="Membership Fee")) == 1
 
     # 6. Dashboard totals reflect the same numbers
     from database.cashbook_queries import get_total_fee_revenue, get_pending_fees
@@ -169,13 +161,13 @@ def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) AS c FROM payments p JOIN memberships m ON p.membership_id=m.membership_id WHERE m.student_id=?", (sid,))
     assert cur.fetchone()["c"] == 2  # one payment per membership, none lost/duplicated
-
-    cur.execute(
-        "SELECT COUNT(*) AS c FROM cashbook WHERE admin_id=? AND category IN ('Admission Fee','Membership Renewal')",
-        (admin_id,),
-    )
-    assert cur.fetchone()["c"] == 2
     conn.close()
+
+    admission_and_renewal = [
+        e for e in get_cashbook_entries(admin_id)
+        if e.get("category") in ("Admission Fee", "Membership Renewal")
+    ]
+    assert len(admission_and_renewal) == 2
 
     from database.cashbook_queries import get_total_fee_revenue
     assert get_total_fee_revenue(admin_id) == 1000
@@ -205,6 +197,12 @@ def test_no_orphan_payments_or_cashbook_rows_after_full_run(logged_in_client):
     """)
     assert cur.fetchone()["c"] == 0
 
+    # payment_id reconciliation deliberately stays on the SQLite mirror, not
+    # Supabase: `payments` is still SQLite-only (unmigrated), and Supabase's
+    # cashbook.payment_id has a real FK to payments - insert_income_entry()
+    # never sends a real payment_id to Supabase (it would always violate
+    # that FK), so this specific linkage only exists in SQLite. See
+    # ADR-22 / TD-38 in docs/11_FUTURE_WORK.md.
     cur.execute("""
         SELECT COUNT(*) AS c FROM cashbook c
         WHERE c.payment_id IS NOT NULL

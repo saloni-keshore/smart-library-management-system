@@ -101,6 +101,8 @@ routes/cashbook.py              → database.cashbook_queries (insert_transactio
                                    get_transaction_by_id, update_manual_transaction)
                                 → database.audit_queries.get_recent_audit_log
                                 → database.cashbook_categories (constants)
+                                (no code changes for the ADR-22 Supabase cutover - see cashbook_queries.py/
+                                 audit_queries.py below, this route's own calls are unchanged)
 routes/business_intelligence.py → database.cashbook_queries.get_monthly_income / get_monthly_expense
                                 → database.bi_queries (last_n_months, get_monthly_new_memberships,
                                    get_business_health_score, get_revenue_growth, classify_revenue_health,
@@ -118,18 +120,32 @@ routes/report.py               → (no DB access — pure redirect)
 ## `database/` internal dependencies
 
 ```
-database/cashbook_queries.py   → database.audit_queries.log_entry   (writes an audit row in the same transaction
-                                                                       as insert_transaction, insert_income_entry,
-                                                                       update_manual_transaction)
+database/cashbook_queries.py   → database.audit_queries.log_entry   (SQLite mirror audit-write only, same
+                                                                       transaction as insert_transaction,
+                                                                       insert_income_entry, update_manual_transaction)
+                                → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
+                                  cashbook table, source of truth for every read; primary write for
+                                  insert_transaction(), best-effort mirror write for insert_income_entry() —
+                                  see routes/membership.py's/routes/payment.py's cards for why the latter can't
+                                  be strict; payment_id never sent to Supabase, TD-38)
+                                → database.db.get_connection   (SQLite mirror read/write — every cashbook write's
+                                  mirror row, plus get_pending_fees()/get_today_fee_collection()/
+                                  get_total_fee_revenue(), unchanged, reading memberships/payments/students not
+                                  cashbook)
 database/bi_queries.py         → database.cashbook_queries (get_monthly_income, get_monthly_expense,
                                    get_income_category_totals, get_expense_category_totals,
-                                   get_pending_fees, get_total_fee_revenue)
-database/audit_queries.py      → (no internal dependencies — takes a cursor, doesn't open its own connection)
+                                   get_pending_fees, get_total_fee_revenue, get_recent_transactions — all now
+                                   Supabase-backed for the cashbook-table ones, as of ADR-22)
+database/audit_queries.py      → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
+                                  audit_log table, source of truth for get_recent_audit_log(); log_entry()
+                                  itself is unchanged — takes a cursor, doesn't open its own connection, SQLite
+                                  mirror-write only)
 database/membership_settings_queries.py → database.db.get_connection only
 database/membership_queries.py → database.db.get_connection only (added 2026-07-21 - see TD-6/TD-7)
 database/payment_queries.py    → database.cashbook_queries.insert_income_entry (added 2026-07-22 - see TD-22, ADR-13;
                                    generate_receipt_number() reads/writes library_settings directly via the caller's
-                                   conn, no separate connection)
+                                   conn, no separate connection; unaffected by ADR-22 — still SQLite-only itself,
+                                   the function it calls just gained a best-effort Supabase mirror internally)
 database/settings_queries.py   → database.db.get_connection only
 database/cashbook_categories.py → (no DB access — static constants module)
 ```

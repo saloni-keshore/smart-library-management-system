@@ -181,3 +181,35 @@ def get_membership_by_id(membership_id):
     supabase = get_supabase_client()
     response = supabase.table("memberships").select("*").eq("membership_id", membership_id).execute()
     return response.data[0] if response.data else None
+
+
+def get_cashbook_entries(admin_id, **filters):
+    """cashbook now lives in Supabase (routes/cashbook.py, ADR-22) — replaces
+    a SQLite lookup for asserting ledger state after an add/edit. `filters`
+    are applied as equality filters (e.g. category="Admission Fee")."""
+    supabase = get_supabase_client()
+    query = supabase.table("cashbook").select("*").eq("admin_id", admin_id)
+    for key, value in filters.items():
+        query = query.eq(key, value)
+    return query.execute().data
+
+
+def get_last_cashbook_entry(admin_id):
+    entries = get_cashbook_entries(admin_id)
+    return max(entries, key=lambda e: e["entry_id"]) if entries else None
+
+
+def get_cashbook_entry_by_id(entry_id):
+    supabase = get_supabase_client()
+    response = supabase.table("cashbook").select("*").eq("entry_id", entry_id).execute()
+    return response.data[0] if response.data else None
+
+
+def get_audit_log_entries(admin_id, **filters):
+    """audit_log now lives in Supabase (database/audit_queries.py, ADR-22)
+    — replaces a SQLite lookup for asserting an audit trail row was made."""
+    supabase = get_supabase_client()
+    query = supabase.table("audit_log").select("*").eq("admin_id", admin_id)
+    for key, value in filters.items():
+        query = query.eq(key, value)
+    return query.execute().data

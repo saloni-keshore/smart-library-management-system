@@ -1,5 +1,8 @@
 """Cashbook: manual entries, filters, ledger, edit, KPI consistency."""
-from database.db import get_connection
+from tests.conftest import (
+    get_cashbook_entries, get_last_cashbook_entry, get_audit_log_entries,
+    get_cashbook_entry_by_id,
+)
 
 
 def add_txn(client, **overrides):
@@ -32,11 +35,8 @@ def test_add_income_transaction_success(logged_in_client):
     client, admin = logged_in_client
     resp = add_txn(client)
     assert b"recorded under" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM cashbook WHERE admin_id=? AND type='Income'", (admin["admin_id"],))
-    assert cur.fetchone()["c"] == 1
-    conn.close()
+    entries = get_cashbook_entries(admin["admin_id"], type="Income")
+    assert len(entries) == 1
 
 
 def test_add_expense_transaction_success(logged_in_client):
@@ -124,38 +124,21 @@ def test_add_transaction_sql_injection_description(logged_in_client):
     client, admin = logged_in_client
     resp = add_txn(client, description="'; DROP TABLE cashbook;--")
     assert b"recorded under" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM cashbook")
-    assert cur.fetchone()["c"] > 0
-    conn.close()
+    assert len(get_cashbook_entries(admin["admin_id"])) > 0
 
 
 def test_add_transaction_reference_id_generated(logged_in_client):
     client, admin = logged_in_client
     add_txn(client, transaction_type="Expense", category="Rent", amount="999")
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT reference_id FROM cashbook WHERE admin_id=? ORDER BY entry_id DESC LIMIT 1",
-        (admin["admin_id"],),
-    )
-    ref = cur.fetchone()["reference_id"]
-    conn.close()
-    assert ref.startswith("EXP-")
+    entry = get_last_cashbook_entry(admin["admin_id"])
+    assert entry["reference_id"].startswith("EXP-")
 
 
 def test_add_transaction_audit_log_created(logged_in_client):
     client, admin = logged_in_client
     add_txn(client)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT COUNT(*) AS c FROM audit_log WHERE admin_id=? AND action='Created'",
-        (admin["admin_id"],),
-    )
-    assert cur.fetchone()["c"] >= 1
-    conn.close()
+    entries = get_audit_log_entries(admin["admin_id"], action="Created")
+    assert len(entries) >= 1
 
 
 def test_add_transaction_redirect_to_dashboard(logged_in_client):
@@ -169,12 +152,8 @@ def test_add_transaction_redirect_to_dashboard(logged_in_client):
 # ---------------------------------------------------------------------------
 
 def _last_entry_id(admin_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT entry_id FROM cashbook WHERE admin_id=? ORDER BY entry_id DESC LIMIT 1", (admin_id,))
-    row = cur.fetchone()
-    conn.close()
-    return row["entry_id"] if row else None
+    entry = get_last_cashbook_entry(admin_id)
+    return entry["entry_id"] if entry else None
 
 
 def test_edit_manual_transaction_success(logged_in_client):
@@ -188,11 +167,7 @@ def test_edit_manual_transaction_success(logged_in_client):
         follow_redirects=True,
     )
     assert b"Transaction updated successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT amount, category FROM cashbook WHERE entry_id=?", (eid,))
-    row = cur.fetchone()
-    conn.close()
+    row = get_cashbook_entry_by_id(eid)
     assert row["amount"] == 750
     assert row["category"] == "Library Fine"
 
@@ -208,14 +183,11 @@ def test_edit_automatic_entry_blocked(logged_in_client):
     sid = get_last_student_id(admin["admin_id"])
     create_membership(client, sid, paid_amount="500", due_amount="0")
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT entry_id, amount FROM cashbook WHERE admin_id=? AND source != 'Cashbook Manual Entry' ORDER BY entry_id DESC LIMIT 1",
-        (admin["admin_id"],),
-    )
-    auto_entry = cur.fetchone()
-    conn.close()
+    auto_entries = [
+        e for e in get_cashbook_entries(admin["admin_id"])
+        if e.get("source") != "Cashbook Manual Entry"
+    ]
+    auto_entry = max(auto_entries, key=lambda e: e["entry_id"]) if auto_entries else None
     assert auto_entry is not None
 
     resp = client.post(
@@ -226,11 +198,8 @@ def test_edit_automatic_entry_blocked(logged_in_client):
     )
     assert b"cannot be edited" in resp.data
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT amount FROM cashbook WHERE entry_id=?", (auto_entry["entry_id"],))
-    assert cur.fetchone()["amount"] == auto_entry["amount"]
-    conn.close()
+    row = get_cashbook_entry_by_id(auto_entry["entry_id"])
+    assert row["amount"] == auto_entry["amount"]
 
 
 def test_edit_transaction_nonexistent(logged_in_client):
