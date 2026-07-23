@@ -1,7 +1,8 @@
 """Auth: login, logout, register, forgot-password."""
 import re
 
-from database.db import get_connection
+from database.supabase_client import get_supabase_client
+from tests.conftest import get_admin_by_username
 
 
 # ---------------------------------------------------------------------------
@@ -87,11 +88,7 @@ def test_login_sql_injection_drop_table(client):
     )
     assert resp.status_code == 200
     # verify table still exists / admin still present
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM admins WHERE username='sona'")
-    assert cur.fetchone()["c"] == 1
-    conn.close()
+    assert get_admin_by_username("sona") is not None
 
 
 def test_login_username_with_only_whitespace(client):
@@ -140,12 +137,8 @@ def test_register_success(client):
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT role FROM admins WHERE username='qa_register_ok'")
-    row = cur.fetchone()
-    conn.close()
-    assert row is not None
+    admin = get_admin_by_username("qa_register_ok")
+    assert admin is not None
 
 
 def test_register_duplicate_username(client):
@@ -304,13 +297,9 @@ def test_register_empty_full_name(client):
         follow_redirects=True,
     )
     # No server-side validation exists for empty full_name; row is created regardless
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name FROM admins WHERE username='qa_emptyname'")
-    row = cur.fetchone()
-    conn.close()
-    assert row is not None
-    assert row["full_name"] == ""
+    admin = get_admin_by_username("qa_emptyname")
+    assert admin is not None
+    assert admin["full_name"] == ""
 
 
 def test_register_empty_username(client):
@@ -342,11 +331,9 @@ def test_register_sql_injection_username(client):
         },
         follow_redirects=True,
     )
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM admins")
-    assert cur.fetchone()["c"] > 0
-    conn.close()
+    supabase = get_supabase_client()
+    count = supabase.table("admins").select("admin_id", count="exact", head=True).execute().count
+    assert count > 0
 
 
 def test_register_unicode_and_emoji_name(client):
@@ -363,13 +350,9 @@ def test_register_unicode_and_emoji_name(client):
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name FROM admins WHERE username='qa_unicode1'")
-    row = cur.fetchone()
-    conn.close()
-    assert row is not None
-    assert row["full_name"] == "田中さん 😀"
+    admin = get_admin_by_username("qa_unicode1")
+    assert admin is not None
+    assert admin["full_name"] == "田中さん 😀"
 
 
 def test_register_role_hardcoded_admin_capital(client):
@@ -387,12 +370,8 @@ def test_register_role_hardcoded_admin_capital(client):
         },
         follow_redirects=True,
     )
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT role FROM admins WHERE username='qa_rolecheck'")
-    row = cur.fetchone()
-    conn.close()
-    assert row["role"] == "Admin"
+    admin = get_admin_by_username("qa_rolecheck")
+    assert admin["role"] == "Admin"
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,11 @@ Which files import/call which. Two data-access styles coexist (see [02_ARCHITECT
 ## Routes that use raw SQL directly (no `database/*_queries.py` module)
 
 ```
-routes/auth.py                 → database.db.get_connection   (admins table)
+routes/auth.py                 → database.supabase_client.get_supabase_client   (admins table, Supabase/PostgreSQL —
+                                  as of 2026-07-23, ADR-16; was database.db.get_connection until this cutover)
+                                → database.db.get_connection   (register() ONLY — mirror-inserts the same new admin
+                                  into SQLite too, since enquiries/students/library_settings/membership_settings/
+                                  audit_log still enforce a SQLite FK to admins.admin_id; TD-35, temporary bridge)
 routes/dashboard.py            → database.db.get_connection   (students, memberships, payments, enquiries)
                                 → utils.charts (generate_revenue_chart, generate_membership_chart)
                                 → database.cashbook_categories (constants only)
@@ -61,6 +65,10 @@ routes/business_intelligence.py → database.cashbook_queries.get_monthly_income
                                    get_top_expense_categories, get_action_items, get_business_timeline)
 routes/setting.py              → database.settings_queries (get/save/create/update/clear library settings)
                                 → database.membership_settings_queries (get/save)
+                                → database.supabase_client.get_supabase_client (security_settings()'s password
+                                  branch ONLY, admins table, Supabase/PostgreSQL — as of 2026-07-23, ADR-17; was
+                                  database.db.get_connection until this cutover; every other function in this
+                                  file, including the rest of security_settings(), is still SQLite)
 routes/report.py               → (no DB access — pure redirect)
 ```
 

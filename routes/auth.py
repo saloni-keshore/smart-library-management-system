@@ -1,3 +1,5 @@
+import sqlite3
+
 from flask import (
     Blueprint,
     current_app,
@@ -12,7 +14,10 @@ from werkzeug.security import (
     check_password_hash,
     generate_password_hash
 )
+from postgrest.exceptions import APIError
+
 from database.db import get_connection
+from database.supabase_client import get_supabase_client
 from utils.security import clear_rate_limit, rate_limited
 
 auth_bp = Blueprint(
@@ -39,14 +44,14 @@ def validate_password(password):
 @rate_limited()
 def login():
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    supabase = get_supabase_client()
 
-    cursor.execute("SELECT COUNT(*) AS total FROM admins")
-
-    admin_count = cursor.fetchone()["total"]
-
-    conn.close()
+    admin_count = (
+        supabase.table("admins")
+        .select("admin_id", count="exact", head=True)
+        .execute()
+        .count
+    )
 
     show_signup = (admin_count == 0)
 
@@ -55,21 +60,13 @@ def login():
         login_id = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            SELECT * FROM admins
-            WHERE username = ?
-                OR mobile = ?
-            """,
-            (login_id, login_id)
-        )
-
-        admin = cursor.fetchone()
-
-        conn.close()
+        try:
+            response = supabase.table("admins").select("*").eq("username", login_id).execute()
+            if not response.data:
+                response = supabase.table("admins").select("*").eq("mobile", login_id).execute()
+            admin = response.data[0] if response.data else None
+        except APIError:
+            admin = None
 
         if admin and check_password_hash(admin["password"], password):
             session.clear()
@@ -102,9 +99,13 @@ def logout():
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
 
-    conn = get_connection()
-    admin_count = conn.execute("SELECT COUNT(*) AS total FROM admins").fetchone()["total"]
-    conn.close()
+    supabase = get_supabase_client()
+    admin_count = (
+        supabase.table("admins")
+        .select("admin_id", count="exact", head=True)
+        .execute()
+        .count
+    )
     if admin_count and not current_app.testing:
         flash("Administrator registration is available only during initial setup.", "danger")
         return redirect(url_for("auth.login"))
@@ -134,43 +135,58 @@ def register():
             flash(error, "danger")
             return redirect("/register")
 
-        conn = get_connection()
-        cursor = conn.cursor()
+        try:
+            # Username exists check
+            response = supabase.table("admins").select("admin_id").eq("username", username).execute()
+            if response.data:
+                flash("Username already exists.", "danger")
+                return redirect("/register")
 
-        # Username exists check
-        cursor.execute(
-            "SELECT admin_id FROM admins WHERE username = ?",
-            (username,)
-        )
+            # Mobile exists check
+            response = supabase.table("admins").select("admin_id").eq("mobile", mobile).execute()
+            if response.data:
+                flash("Mobile number is already registered.", "danger")
+                return redirect("/register")
 
-        if cursor.fetchone():
-            conn.close()
-            flash("Username already exists.", "danger")
+            hashed_password = generate_password_hash(password)
+
+            insert_response = supabase.table("admins").insert({
+                "full_name": full_name,
+                "username": username,
+                "mobile": mobile,
+                "email": email,
+                "password": hashed_password,
+                "role": "Admin",
+            }).execute()
+        except APIError:
+            flash("Something went wrong. Please try again.", "danger")
             return redirect("/register")
 
-        # Mobile exists check
-        cursor.execute(
-            "SELECT admin_id FROM admins WHERE mobile = ?",
-            (mobile,)
-        )
+        new_admin_id = insert_response.data[0]["admin_id"]
 
-        if cursor.fetchone():
-            conn.close()
-            flash("Mobile number is already registered.", "danger")
+        # Bridge (TD-35): enquiries/students/audit_log/library_settings/
+        # membership_settings/backup_log/security_settings all still enforce a
+        # SQLite foreign key back to admins.admin_id (database/db.py sets
+        # PRAGMA foreign_keys = ON on every connection), so a brand-new admin
+        # who only exists in Supabase would fail every one of those inserts
+        # the moment they're used. Mirror the row into SQLite too, under the
+        # same admin_id, until those modules are migrated to Supabase.
+        try:
+            sqlite_conn = get_connection()
+            sqlite_conn.execute(
+                """
+                INSERT INTO admins (admin_id, full_name, username, mobile, email, password, role)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (new_admin_id, full_name, username, mobile, email, hashed_password, "Admin")
+            )
+            sqlite_conn.commit()
+            sqlite_conn.close()
+        except sqlite3.Error:
+            supabase.table("admins").delete().eq("admin_id", new_admin_id).execute()
+            flash("Something went wrong. Please try again.", "danger")
             return redirect("/register")
 
-        hashed_password = generate_password_hash(password)
-
-        cursor.execute(
-            """
-            INSERT INTO admins (full_name, username, mobile, email, password, role)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (full_name, username, mobile, email, hashed_password, "Admin")
-        )
-
-        conn.commit()
-        conn.close()
         flash("Account created successfully. Please login.", "success")
 
         return redirect("/")
@@ -209,24 +225,21 @@ def forgot_password():
             flash(error, "danger")
             return redirect("/forgot-password")
 
-        conn = get_connection()
-        cursor = conn.cursor()
+        supabase = get_supabase_client()
 
-        # Require BOTH full name AND mobile to match — prevents reset with
-        # just a known phone number.
-        cursor.execute(
-            """
-            SELECT * FROM admins
-            WHERE mobile = ?
-            AND LOWER(full_name) = LOWER(?)
-            """,
-            (mobile, full_name)
-        )
-
-        admin = cursor.fetchone()
+        # mobile is UNIQUE, so this returns at most one row; full name is
+        # then compared case-insensitively in Python. Require BOTH full
+        # name AND mobile to match — prevents reset with just a known
+        # phone number.
+        try:
+            response = supabase.table("admins").select("*").eq("mobile", mobile).execute()
+            admin = response.data[0] if response.data else None
+        except APIError:
+            admin = None
+        if admin and admin["full_name"].lower() != full_name.lower():
+            admin = None
 
         if not admin:
-            conn.close()
             flash(
                 "No account found with that name and mobile number.",
                 "danger"
@@ -235,17 +248,14 @@ def forgot_password():
 
         hashed_password = generate_password_hash(new_password)
 
-        cursor.execute(
-            """
-            UPDATE admins
-            SET password = ?
-            WHERE admin_id = ?
-            """,
-            (hashed_password, admin["admin_id"])
-        )
+        try:
+            supabase.table("admins").update(
+                {"password": hashed_password}
+            ).eq("admin_id", admin["admin_id"]).execute()
+        except APIError:
+            flash("Something went wrong. Please try again.", "danger")
+            return redirect("/forgot-password")
 
-        conn.commit()
-        conn.close()
         clear_rate_limit("forgot_password")
 
         flash("Password changed successfully. Please login.", "success")

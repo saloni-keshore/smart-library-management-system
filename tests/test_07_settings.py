@@ -612,9 +612,19 @@ def test_security_settings_change_password_success(logged_in_client):
         follow_redirects=True,
     )
     assert b"Password changed successfully" in resp.data
+
+    # TD-35 resolved 2026-07-23: security_settings() now writes
+    # admins.password to Supabase (same table/client routes/auth.py's
+    # login() reads from), so a password changed here takes effect on the
+    # very next login -- log out and back in with the new password to
+    # prove the two are no longer split-brained.
     client.get("/logout")
-    login_resp = client.post("/", data={"username": admin["username"], "password": "BrandNewPass1"}, follow_redirects=False)
-    assert login_resp.status_code == 302
+    login_resp = client.post(
+        "/",
+        data={"username": admin["username"], "password": "BrandNewPass1"},
+        follow_redirects=True,
+    )
+    assert b"Login Successful" in login_resp.data
 
 
 def test_security_settings_change_password_wrong_current(logged_in_client):

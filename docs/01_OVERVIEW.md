@@ -9,7 +9,7 @@ It is **multi-tenant**: every logged-in admin only ever sees their own data. Iso
 ## Tech stack (actual, as installed)
 
 - **Backend:** Flask (`requirements.txt` pins only `Flask>=2.3.0` and `Werkzeug>=2.3.0`)
-- **Database:** SQLite, single file at `database/library.db`, accessed with the stdlib `sqlite3` module (no ORM)
+- **Database:** SQLite, single file at `database/library.db`, accessed with the stdlib `sqlite3` module (no ORM) — **except** `admins`, which as of 2026-07-23 reads/writes Supabase (PostgreSQL) via the `supabase-py` client (`database/supabase_client.py`): `routes/auth.py` (login/register/forgot-password, ADR-16) and `routes/setting.py`'s `security_settings()` password-change branch only (ADR-17); every other table/route, and the rest of `routes/setting.py`, is still SQLite. See ADR-16/ADR-17 in [DECISIONS.md](DECISIONS.md) for the incremental-migration plan and TD-35 (`Resolved`) in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) for the transitional split it closed.
 - **Templates:** Jinja2 (bundled with Flask)
 - **Frontend:** Bootstrap 5.3.7 + Bootstrap Icons 1.11.3 (via CDN), Chart.js (client-side interactive charts), Google Fonts "Poppins"
 - **Server-rendered charts:** `matplotlib` + `numpy` (used by `utils/charts.py` to render PNGs saved to `static/charts/`)

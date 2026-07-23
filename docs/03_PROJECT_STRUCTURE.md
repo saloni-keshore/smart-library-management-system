@@ -23,6 +23,7 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | Path | Purpose |
 |---|---|
 | `db.py` | `get_connection()` — the single shared SQLite connection factory |
+| `supabase_client.py` | `get_supabase_client()` — the single shared Supabase (PostgREST) client factory, used by `routes/auth.py` (ADR-16) and `routes/setting.py`'s `security_settings()` password branch (ADR-17), both as of 2026-07-23 |
 | `schema.sql` | Full DDL for every table (source of truth for a from-scratch DB) |
 | `seed.py` | Despite the name, does **not** insert sample data — runs `schema.sql` via `executescript()` to (re)create tables |
 | `migrate.py` | Multi-tenant retrofit: adds `admin_id` to `enquiries`/`students` |

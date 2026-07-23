@@ -12,8 +12,10 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+from postgrest.exceptions import APIError
 
 from database.db import get_connection, DATABASE_PATH
+from database.supabase_client import get_supabase_client
 from database.settings_queries import (
     get_library_settings, save_library_settings, clear_library_logo
 )
@@ -824,33 +826,33 @@ def security_settings():
             new_password = request.form.get("new_password", "")
             confirm_password = request.form.get("confirm_password", "")
 
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM admins WHERE admin_id = ?", (admin_id,))
-            admin = cursor.fetchone()
+            supabase = get_supabase_client()
+            try:
+                response = supabase.table("admins").select("*").eq("admin_id", admin_id).execute()
+                admin = response.data[0] if response.data else None
+            except APIError:
+                admin = None
 
             if not admin or not check_password_hash(admin["password"], current_password):
-                conn.close()
                 flash("Current password is incorrect.", "danger")
                 return redirect(url_for("setting.security_settings"))
 
             if new_password != confirm_password:
-                conn.close()
                 flash("New passwords do not match.", "danger")
                 return redirect(url_for("setting.security_settings"))
 
             error = validate_password(new_password)
             if error:
-                conn.close()
                 flash(error, "danger")
                 return redirect(url_for("setting.security_settings"))
 
-            cursor.execute(
-                "UPDATE admins SET password = ? WHERE admin_id = ?",
-                (generate_password_hash(new_password), admin_id)
-            )
-            conn.commit()
-            conn.close()
+            try:
+                supabase.table("admins").update(
+                    {"password": generate_password_hash(new_password)}
+                ).eq("admin_id", admin_id).execute()
+            except APIError:
+                flash("Something went wrong. Please try again.", "danger")
+                return redirect(url_for("setting.security_settings"))
 
             flash("Password changed successfully.", "success")
             return redirect(url_for("setting.security_settings"))

@@ -18,6 +18,10 @@ Single SQLite file: `database/library.db`. Source of truth for a fresh DB is `da
 
 The tenant root — every other admin-scoped table references `admin_id` back to this table.
 
+**As of 2026-07-23 (ADR-16/ADR-17), `admins` is read/written in two places** — this is the first table in the incremental Supabase cutover, and the split is deliberate but temporary: `routes/auth.py` (login/register/forgot-password) reads/writes the copy in **Supabase** (PostgreSQL, schema defined by `database/supabase_migration.sql` — column shapes are identical to the SQLite table above per ADR-14) via `database/supabase_client.py`. As of the same day (ADR-17), `routes/setting.py`'s `security_settings()` (Settings → Security Settings → Change Password) reads/writes `admins.password` in **Supabase too**, via the same client — `admins.password` now has a single writer again (TD-35, `Resolved`).
+
+Row *existence* (the `admin_id` FK every other admin-scoped table needs) is kept in sync: `routes/auth.py`'s `register()` inserts into Supabase, then mirrors the identical row (same `admin_id`) into SQLite too — this is a deliberate bridge, not an oversight, because all 7 tables listed in the "Multi-tenant (`admin_id`) summary" section below with a real FK (`enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings`) still enforce it against `admins.admin_id` (`database/db.py` sets `PRAGMA foreign_keys = ON` on every connection). Without this mirror, a newly registered admin would satisfy Supabase-backed login but get `sqlite3.IntegrityError: FOREIGN KEY constraint failed` the instant they touched any of those seven tables — confirmed live via the full test suite before this bridge was added. This mirror is unaffected by ADR-17 — it exists for `admin_id` row existence, not `password`, and none of the 7 FK-dependent tables were migrated in that slice. Every other table in this file is still SQLite-only.
+
 ### `settings` (legacy, superseded)
 | Column | Type | Notes |
 |---|---|---|

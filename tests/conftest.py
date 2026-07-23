@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app import create_app  # noqa: E402
 from database.db import get_connection  # noqa: E402
+from database.supabase_client import get_supabase_client  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -33,6 +34,13 @@ def _rand_mobile():
     return "9" + "".join(random.choices(string.digits, k=9))
 
 
+def get_admin_by_username(username):
+    """admins now lives in Supabase (routes/auth.py) — replaces a SQLite lookup."""
+    supabase = get_supabase_client()
+    response = supabase.table("admins").select("*").eq("username", username).execute()
+    return response.data[0] if response.data else None
+
+
 @pytest.fixture()
 def new_admin(client):
     """Registers a fresh, isolated admin account and returns its creds/id."""
@@ -48,14 +56,10 @@ def new_admin(client):
     resp = client.post("/register", data=creds, follow_redirects=True)
     assert resp.status_code == 200
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT admin_id FROM admins WHERE username = ?", (creds["username"],))
-    row = cur.fetchone()
-    conn.close()
-    assert row is not None, "registration did not create an admin row"
+    admin = get_admin_by_username(creds["username"])
+    assert admin is not None, "registration did not create an admin row"
 
-    creds["admin_id"] = row["admin_id"]
+    creds["admin_id"] = admin["admin_id"]
     return creds
 
 

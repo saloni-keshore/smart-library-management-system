@@ -74,8 +74,10 @@ graph TD
     end
 
     Charts["utils/charts.py (matplotlib)"]
+    SupabaseClient["database/supabase_client.py — get_supabase_client()"]
 
-    Auth --> DB
+    Auth --> SupabaseClient
+    Auth -.->|"register() only — SQLite mirror-insert bridge, TD-35"| DB
     Dashboard --> DB
     Dashboard --> Charts
     Dashboard --> CatConst
@@ -100,6 +102,7 @@ graph TD
     Setting --> NotifSettQ
     Setting --> BackupQ
     Setting --> SecSettQ
+    Setting -.->|"security_settings() password branch ONLY, ADR-17"| SupabaseClient
     app_ctx["app.py: inject_notification_summary()"] --> NotifSettQ
 
     CashQ --> AuditQ
@@ -116,12 +119,15 @@ graph TD
     Charts --> DB
 
     DB --> SQLite[("library.db (SQLite)")]
+    SupabaseClient --> SupabaseDB[("Supabase (PostgreSQL) — admins")]
 
     Auth -.->|render_template| Templates["Jinja templates → static PNGs / Chart.js JSON"]
     Dashboard -.->|render_template| Templates
     Cashbook -.->|render_template| Templates
     BI -.->|render_template| Templates
 ```
+
+As of 2026-07-23 (ADR-16), `routes/auth.py` is the first module cut over off SQLite — `admins` reads/writes for login/register/forgot-password go through `database/supabase_client.py` to Supabase (PostgreSQL) instead of `database/db.py`'s SQLite connection. `register()` is the one exception: it also mirror-inserts the same new admin row into SQLite (dashed edge above), because 7 tables — `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` — still enforce real SQLite foreign keys back to `admins.admin_id` — this bridge is temporary scaffolding, not permanent design (TD-35). As of the same day (ADR-17), `routes/setting.py`'s `security_settings()` password-change branch also uses `SupabaseClient` for `admins.password` (dashed edge above, scoped to that one branch) — `admins.password` now has a single writer again across `forgot_password()` and `security_settings()`, closing TD-35's password split-brain (now `Resolved`). Every other function in `routes/setting.py`, and every other route/table shown above, is still 100% SQLite.
 
 ## 3. Request flow (Browser → Route → Database → Template)
 
@@ -266,7 +272,7 @@ erDiagram
 
 `settings` (legacy) and `transactions` (defined twice, see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md)) are omitted here since neither is used by any route today — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-2/TD-4.
 
-## 5. Module dependency graph (literal Python imports, verified by grep on 2026-07-20, updated 2026-07-21 for `database/membership_queries.py`, updated 2026-07-22 for `database/payment_queries.py`)
+## 5. Module dependency graph (literal Python imports, verified by grep on 2026-07-20, updated 2026-07-21 for `database/membership_queries.py`, updated 2026-07-22 for `database/payment_queries.py`, updated 2026-07-23 for `database/supabase_client.py`)
 
 ```mermaid
 graph LR
@@ -290,6 +296,7 @@ graph LR
 
     subgraph DB["database/"]
         db_py["db.py"]
+        supabase_client_py["supabase_client.py"]
         audit_queries_py["audit_queries.py"]
         bi_queries_py["bi_queries.py"]
         cashbook_queries_py["cashbook_queries.py"]
@@ -320,7 +327,8 @@ graph LR
     app_py --> setting_py
     app_py --> report_py
 
-    auth_py --> db_py
+    auth_py --> supabase_client_py
+    auth_py -.->|register only, TD-35 mirror bridge| db_py
     dashboard_py --> db_py
     dashboard_py --> charts_py
     dashboard_py --> cashbook_categories_py
@@ -353,6 +361,7 @@ graph LR
     setting_py --> notification_settings_queries_py
     setting_py --> backup_queries_py
     setting_py --> security_settings_queries_py
+    setting_py -.->|"security_settings() password branch ONLY, ADR-17"| supabase_client_py
     app_py -.->|"inject_notification_summary()"| notification_settings_queries_py
     dashboard_py --> notification_settings_queries_py
 
