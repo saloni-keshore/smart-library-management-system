@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-24 — Removed the `cashbook` SQLite mirror-write (Phase 10, second mirror fully removed)
+
+- **Feature:** Cashbook ledger (manual entries, automatic Income entries from Membership/Payment) — internal data layer, no user-visible feature change
+- **Files changed:** `database/cashbook_queries.py` (`insert_transaction()`, `insert_income_entry()`, `update_manual_transaction()` all drop their SQLite writes; `_generate_reference_id()`/`_next_entry_id()` switch from SQLite `COUNT`/`MAX` to Supabase's; `get_connection` import removed), `database/payment_queries.py` (`record_payment()`'s call to `insert_income_entry()` drops the now-removed `conn` argument), `database/migrate_backfill_cashbook_payments.py` (deleted — its SQLite-based reconciliation approach has nothing left to reconcile into)
+- **Why:** ADR-26 removed `audit_log`'s SQLite mirror-write, clearing `cashbook`'s FK-side removal condition (`audit_log.entry_id` no longer references it on any new insert); the only other tracked condition (the now-deleted backfill script) is resolved by removing the script
+- **Database changes:** None to the schema — SQLite stops receiving new `cashbook` rows; the table and its existing historical rows are untouched until Phase 11 removes SQLite entirely
+- **UI changes:** None — Supabase has been the read source for the Cashbook ledger since ADR-22
+- **Future impact:** `insert_income_entry()`'s Supabase failure mode changed from "leaves a stale mirror" to "loses the entry entirely" (no SQLite fallback left) — new debt, **TD-43** in docs/11_FUTURE_WORK.md, not a continuation of TD-39/TD-41. `payments` is now the next removal candidate and will need the same SQLite→Supabase ID-generation migration. See ADR-27 in docs/DECISIONS.md and the updated docs/MIRROR_TRACKER.md. Verified via the full pytest suite.
+
+---
+
 ## 2026-07-24 — Removed the `audit_log` SQLite mirror-write (Phase 10, first mirror fully removed)
 
 - **Feature:** Cashbook's Audit Trail — internal data layer only, no user-visible feature change

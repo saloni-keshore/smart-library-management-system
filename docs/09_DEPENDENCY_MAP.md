@@ -126,17 +126,18 @@ routes/report.py               → (no DB access — pure redirect)
 
 ```
 database/cashbook_queries.py   → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
-                                  cashbook table, source of truth for every read; primary write for
-                                  insert_transaction(), best-effort mirror write for insert_income_entry() —
-                                  see routes/membership.py's/routes/payment.py's cards for why the latter can't
-                                  be strict; payment_id now sent to Supabase as of ADR-25, closing TD-38's
-                                  common case, best-effort — TD-41)
+                                  cashbook table, source of truth for every read; as of 2026-07-24 (ADR-27),
+                                  also the only store for every write — insert_transaction() strict (rolls
+                                  back if audit_log fails), insert_income_entry() best-effort (id generation +
+                                  both inserts wrapped in one try/except, see routes/membership.py's/
+                                  routes/payment.py's cards for why it can't be strict); payment_id sent to
+                                  Supabase as of ADR-25, closing TD-38's common case, best-effort — TD-41/TD-43)
                                 → database.membership_queries.get_memberships_for_admin/get_admin_students
                                   (as of 2026-07-23/2026-07-24, ADR-23/ADR-25 — get_pending_fees() and the local
                                   _fetch_payments_for_admin() helper respectively, both Supabase)
-                                → database.db.get_connection   (mirror side of every cashbook write only, as of
-                                  ADR-25 — get_today_fee_collection()/get_total_fee_revenue() moved to Supabase;
-                                  no table-read dependency on SQLite left in this module)
+                                (as of 2026-07-24, ADR-27: no database.db.get_connection dependency left at all
+                                  — this module's last SQLite write, get_connection() for insert_transaction()/
+                                  insert_income_entry()/update_manual_transaction(), was removed)
 database/bi_queries.py         → database.cashbook_queries (get_monthly_income, get_monthly_expense,
                                    get_income_category_totals, get_expense_category_totals,
                                    get_pending_fees, get_total_fee_revenue, get_recent_transactions — all now
@@ -145,9 +146,9 @@ database/bi_queries.py         → database.cashbook_queries (get_monthly_income
                                   ADR-23 — replaces database.db.get_connection for its three membership-side
                                   functions; this module has no SQLite dependency left)
 database/audit_queries.py      → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
-                                  audit_log table, source of truth for get_recent_audit_log(); log_entry()
-                                  itself is unchanged — takes a cursor, doesn't open its own connection, SQLite
-                                  mirror-write only)
+                                  audit_log table, source of truth for get_recent_audit_log(), its only
+                                  function; log_entry() was deleted outright as of 2026-07-24, ADR-26 — this
+                                  module has zero SQLite dependency now)
 database/membership_settings_queries.py → database.supabase_client.get_supabase_client, database.settings_queries._now_iso
                                   (as of 2026-07-24, ADR-24 — no SQLite dependency left)
 database/membership_queries.py → database.supabase_client.get_supabase_client only (as of 2026-07-23, ADR-23 —

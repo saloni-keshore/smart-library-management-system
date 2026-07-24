@@ -30,7 +30,6 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | `migrate_audit_log.py` | Creates `audit_log` table |
 | `migrate_transactions.py` | Creates a `transactions` table (⚠ shape differs from the one also defined in `schema.sql` — see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md)) |
 | `migrate_cashbook_ledger.py` | Adds `cashbook.reference_id` and `cashbook.source` columns |
-| `migrate_backfill_cashbook_payments.py` | One-off data backfill: creates missing `cashbook` rows for historical `payments` |
 | `migrate_library_settings.py` | Creates `library_settings` table |
 | `migrate_settings_receipt_footer.py` | Adds `library_settings.receipt_footer` column |
 | `migrate_membership_setting.py` | Creates `membership_settings` table, with a schema-compatibility guard |

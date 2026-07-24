@@ -5,31 +5,33 @@ Every query here is scoped to a single admin_id so the Cashbook behaves
 like Students, Memberships, Payments and Enquiries: no admin can ever see
 another admin's transactions.
 
-Supabase's `cashbook` table is the source of truth for every read (ADR-22).
-Reference-id and entry_id generation stay SQLite-based (unchanged from the
-pre-migration logic - see _generate_reference_id below), and every write
-still keeps the SQLite mirror in sync, following the same explicit-id
-pattern ADR-18/19/20 established for enquiries/students/memberships:
-Supabase's identity sequence trails SQLite's ever-climbing counter, so IDs
-are always computed from SQLite's MAX(entry_id) and passed explicitly to
-both stores rather than letting either auto-assign.
+As of 2026-07-24 (ADR-27, Phase 10 - the second mirror-write fully
+removed), Supabase's `cashbook` table is this module's only store, for
+both reads and writes - there is no SQLite mirror left. Reference-id and
+entry_id generation (`_generate_reference_id`/`_next_entry_id`) query
+Supabase's own `MAX`/`COUNT` now, the same explicit-id pattern
+ADR-18/19/20/22 established (IDs computed explicitly rather than left to
+an auto-increment sequence), just against Supabase instead of SQLite.
 
 Two different write shapes coexist here, deliberately:
 
 - insert_transaction() (manual entries, called directly from the in-scope
-  routes/cashbook.py) writes Supabase first and rolls the Supabase insert
-  back if the SQLite mirror-write fails - the same strict shape
-  routes/enquiries.py/student.py/membership.py use for their own mirrors.
+  routes/cashbook.py) writes the `cashbook` row first and rolls it back if
+  the matching `audit_log` insert then fails - the same strict shape
+  routes/enquiries.py/student.py/membership.py use for their own mirrors,
+  just entirely within Supabase now instead of Supabase-then-SQLite.
 - insert_income_entry() (automatic entries, called from
   database/payment_queries.py's record_payment() - itself called from
   routes/membership.py and routes/payment.py, both out of scope for this
-  migration slice) keeps its SQLite write as the primary, unchanged path,
-  and best-effort mirrors the same row into Supabase afterward, swallowing
-  any Supabase-side failure. Those two routes only catch sqlite3.Error
-  around this call and manage their own SQLite commit/rollback; letting a
-  Supabase hiccup raise past insert_income_entry() would surface as an
-  unhandled error in a file this migration isn't touching. See
-  docs/MIRROR_TRACKER.md and TD-38/TD-39 in docs/11_FUTURE_WORK.md.
+  migration slice) wraps id generation and both inserts in one bare
+  except, swallowing any failure - the same best-effort contract this
+  function has had since ADR-22. Those two routes only catch sqlite3.Error
+  around record_payment() and can't be given a new caught exception type
+  without expanding this migration's scope back into those two files. As
+  of ADR-27, there is no SQLite fallback left: a Supabase outage during
+  this call means the automatic entry (and its audit-log row) for that one
+  payment is not recorded anywhere at all, not just left stale - see
+  docs/MIRROR_TRACKER.md and TD-43 in docs/11_FUTURE_WORK.md.
 
 As of 2026-07-24 (ADR-25), `payment_id` **is** sent to Supabase for
 automatic entries - `payments` itself migrated to Supabase (best-effort
@@ -44,7 +46,6 @@ from datetime import date
 
 from postgrest.exceptions import APIError
 
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 from database.membership_queries import get_memberships_for_admin, get_admin_students
 
@@ -53,31 +54,41 @@ from database.membership_queries import get_memberships_for_admin, get_admin_stu
 # Reference IDs
 # ---------------------------------------------------------------------------
 
-def _generate_reference_id(cursor, prefix):
+def _generate_reference_id(supabase, prefix):
     """Unique, human-readable reference number: PREFIX-YYYYMMDD-00001.
 
     Sequence is scoped to the prefix (PAY / EXP / INC) so the three entry
-    origins each get their own counter instead of colliding on one. Stays
-    SQLite-based (unchanged from before this module's Supabase migration)
-    so numbering never depends on Supabase being reachable at write time -
-    both insert paths below keep the SQLite mirror in lockstep with every
-    write, so this count is always current.
+    origins each get their own counter instead of colliding on one. As of
+    2026-07-24 (ADR-27, Phase 10 - cashbook's SQLite mirror-write removed),
+    counts against Supabase `cashbook` - the source of truth for this table
+    since ADR-22, and the only copy that still receives new rows.
     """
 
-    cursor.execute(
-        "SELECT COUNT(*) AS total FROM cashbook WHERE reference_id LIKE ?",
-        (f"{prefix}-%",)
+    resp = (
+        supabase.table("cashbook")
+        .select("*", count="exact", head=True)
+        .like("reference_id", f"{prefix}-%")
+        .execute()
     )
-    sequence = cursor.fetchone()["total"] + 1
+    sequence = (resp.count or 0) + 1
 
     return f"{prefix}-{date.today().strftime('%Y%m%d')}-{sequence:05d}"
 
 
-def _next_entry_id(cursor):
-    """Next explicit entry_id, from SQLite's MAX (see module docstring)."""
+def _next_entry_id(supabase):
+    """Next explicit entry_id, from Supabase `cashbook`'s own MAX (see
+    module docstring) - as of ADR-27, Supabase replaces SQLite as the MAX
+    source now that this table's SQLite mirror-write is gone.
+    """
 
-    cursor.execute("SELECT IFNULL(MAX(entry_id), 0) AS m FROM cashbook")
-    return cursor.fetchone()["m"] + 1
+    resp = (
+        supabase.table("cashbook")
+        .select("entry_id")
+        .order("entry_id", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return (resp.data[0]["entry_id"] + 1) if resp.data else 1
 
 
 def _admin_full_name(supabase, admin_id):
@@ -126,39 +137,33 @@ def insert_transaction(
 
     Manual entries are the only ones an admin creates directly - automatic
     Income entries come from insert_income_entry() below, triggered by
-    Membership/Payment routes. Supabase is written first (source of
-    truth); if the SQLite mirror-write fails, the Supabase row(s) are
-    rolled back so the two stores never disagree about which manual
-    entries exist.
+    Membership/Payment routes. As of 2026-07-24 (ADR-27), Supabase is the
+    only store: the `cashbook` row is written first, and rolled back if the
+    matching `audit_log` row then fails, so the two Supabase tables never
+    disagree about which manual entries exist.
     """
 
     supabase = get_supabase_client()
-    conn = get_connection()
-    cursor = conn.cursor()
 
     prefix = "EXP" if transaction_type == "Expense" else "INC"
-    reference_id = _generate_reference_id(cursor, prefix)
-    entry_id = _next_entry_id(cursor)
+    reference_id = _generate_reference_id(supabase, prefix)
+    entry_id = _next_entry_id(supabase)
 
     details = f"Manual {transaction_type} of ₹{amount} added under '{category}' ({reference_id})"
 
-    try:
-        supabase.table("cashbook").insert({
-            "entry_id": entry_id,
-            "admin_id": admin_id,
-            "type": transaction_type,
-            "category": category,
-            "person": person,
-            "description": description,
-            "amount": amount,
-            "payment_method": payment_method,
-            "entry_date": entry_date,
-            "reference_id": reference_id,
-            "source": "Cashbook Manual Entry",
-        }).execute()
-    except Exception:
-        conn.close()
-        raise
+    supabase.table("cashbook").insert({
+        "entry_id": entry_id,
+        "admin_id": admin_id,
+        "type": transaction_type,
+        "category": category,
+        "person": person,
+        "description": description,
+        "amount": amount,
+        "payment_method": payment_method,
+        "entry_date": entry_date,
+        "reference_id": reference_id,
+        "source": "Cashbook Manual Entry",
+    }).execute()
 
     try:
         supabase.table("audit_log").insert({
@@ -169,47 +174,12 @@ def insert_transaction(
         }).execute()
     except Exception:
         supabase.table("cashbook").delete().eq("entry_id", entry_id).execute()
-        conn.close()
         raise
-
-    cursor.execute("""
-        INSERT INTO cashbook
-        (
-            entry_id,
-            admin_id,
-            type,
-            category,
-            person,
-            description,
-            amount,
-            payment_method,
-            entry_date,
-            reference_id,
-            source
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        entry_id,
-        admin_id,
-        transaction_type,
-        category,
-        person,
-        description,
-        amount,
-        payment_method,
-        entry_date,
-        reference_id,
-        "Cashbook Manual Entry"
-    ))
-
-    conn.commit()
-    conn.close()
 
     return reference_id
 
 
 def insert_income_entry(
-    conn,
     admin_id,
     category,
     person,
@@ -221,47 +191,42 @@ def insert_income_entry(
     reference_prefix="PAY",
     payment_id=None
 ):
-    """Record an automatic Income entry using an already-open connection.
+    """Record an automatic Income entry for a just-recorded payment.
 
-    Membership (create/renew) and Payment (collect) routes call this right
-    after they insert into `payments`, using their own connection/cursor so
-    the Cashbook entry commits as part of the very same transaction as the
-    payment it represents - no second connection, no duplicated SQL. That
-    SQLite write is unchanged from before this module's Supabase migration;
-    see the module docstring for why the Supabase mirror-write below is
-    best-effort rather than part of that same guarantee.
+    Membership (create/renew) and Payment (collect) routes trigger this via
+    database/payment_queries.py's record_payment(), right after that
+    function's own `payments` insert. As of 2026-07-24 (ADR-27, Phase 10 -
+    cashbook's SQLite mirror-write removed), this writes only Supabase, and
+    the whole thing (id generation plus both inserts) is best-effort,
+    wrapped in one bare except - the same fire-and-forget contract this
+    function has had since ADR-22, preserved deliberately: those two routes
+    only catch sqlite3.Error around record_payment() and can't be given a
+    new caught exception type without expanding this migration's scope back
+    into those two files. Before ADR-27, a Supabase outage here only left
+    the Supabase mirror stale (TD-39/TD-41) - the SQLite row still existed.
+    As of ADR-27, there is no SQLite fallback left, so an outage now means
+    the automatic Income entry (and its audit-log row) for that one payment
+    is not recorded anywhere at all - see TD-43 in docs/11_FUTURE_WORK.md.
 
     As of 2026-07-24 (ADR-25, closing TD-38), `payment_id` is sent to
-    Supabase too, now that `payments` itself has a Supabase row (also
-    best-effort, via `database/payment_queries.py`'s `record_payment()`) -
-    Supabase's `cashbook.payment_id` FK can now resolve in the common case.
-    If that payments mirror-write happened to fail moments earlier, this
-    insert (both the `cashbook` and `audit_log` rows together) falls back
-    to the same best-effort miss the rest of this function already risks -
-    see TD-41 in docs/11_FUTURE_WORK.md.
+    Supabase, now that `payments` itself has a Supabase row (also
+    best-effort, via record_payment()) - Supabase's `cashbook.payment_id`
+    FK can resolve in the common case.
+
+    Returns the generated reference_id, or None if the write didn't
+    succeed (nothing to return - there is no longer a guaranteed copy).
     """
-
-    cursor = conn.cursor()
-    reference_id = _generate_reference_id(cursor, reference_prefix)
-    entry_id = _next_entry_id(cursor)
-
-    cursor.execute("""
-        INSERT INTO cashbook
-        (entry_id, admin_id, type, category, person, description, amount,
-         payment_method, entry_date, reference_id, source, payment_id)
-        VALUES (?, ?, 'Income', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        entry_id, admin_id, category, person, description, amount,
-        payment_method, entry_date, reference_id, source, payment_id
-    ))
-
-    details = (
-        f"Automatic Income of ₹{amount} recorded under '{category}' for "
-        f"{person or 'N/A'} via {source} ({reference_id})"
-    )
 
     try:
         supabase = get_supabase_client()
+        reference_id = _generate_reference_id(supabase, reference_prefix)
+        entry_id = _next_entry_id(supabase)
+
+        details = (
+            f"Automatic Income of ₹{amount} recorded under '{category}' for "
+            f"{person or 'N/A'} via {source} ({reference_id})"
+        )
+
         supabase.table("cashbook").insert({
             "entry_id": entry_id,
             "admin_id": admin_id,
@@ -282,12 +247,13 @@ def insert_income_entry(
             "action": "Auto-Created",
             "details": details,
         }).execute()
-    except Exception:
-        # Best-effort mirror only - see module docstring for why this must
-        # never block the caller's own SQLite transaction.
-        pass
 
-    return reference_id
+        return reference_id
+    except Exception:
+        # Best-effort only - see docstring above for why this must never
+        # raise past the caller's own transaction (routes/membership.py /
+        # routes/payment.py, both out of scope for this migration slice).
+        return None
 
 
 def get_transaction_by_id(admin_id, entry_id):
@@ -326,8 +292,8 @@ def update_manual_transaction(
     Scoped to source = 'Cashbook Manual Entry' so automatic ledger entries
     (which mirror a Payments row) can never be silently edited out of sync.
     Returns False if the entry doesn't exist, isn't this admin's, or isn't
-    manual - callers use that to reject the request. Supabase (source of
-    truth) is updated first, then the SQLite mirror.
+    manual - callers use that to reject the request. As of 2026-07-24
+    (ADR-27), Supabase is the only store updated.
     """
 
     supabase = get_supabase_client()
@@ -360,22 +326,6 @@ def update_manual_transaction(
         "action": "Updated",
         "details": details,
     }).execute()
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE cashbook
-        SET category = ?, person = ?, description = ?, amount = ?,
-            payment_method = ?, entry_date = ?
-        WHERE entry_id = ? AND admin_id = ? AND source = 'Cashbook Manual Entry'
-    """, (
-        category, person, description, amount, payment_method, entry_date,
-        entry_id, admin_id
-    ))
-
-    conn.commit()
-    conn.close()
 
     return True
 

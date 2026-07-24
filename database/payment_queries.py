@@ -202,7 +202,6 @@ def record_payment(
         pass
 
     insert_income_entry(
-        conn,
         admin_id,
         category=category,
         person=student_name,
