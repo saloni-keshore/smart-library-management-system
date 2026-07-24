@@ -1,5 +1,4 @@
 """Students/Admission -> Membership -> Payment: the core money workflow."""
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry,
@@ -407,18 +406,8 @@ def test_collect_payment_success(logged_in_client):
     )
     assert b"collected successfully" in resp.data
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT paid_amount, pending_amount FROM memberships WHERE membership_id=?", (mid,))
-    row = cur.fetchone()
-    conn.close()
-    assert row["paid_amount"] == 500
-    assert row["pending_amount"] == 500
-
-    # TD-37 (resolved): routes/payment.py's collect() now writes
-    # memberships.paid_amount/pending_amount to Supabase directly (the
-    # source of truth routes/membership.py's index() reads), not just the
-    # SQLite mirror checked above.
+    # memberships now lives in Supabase only (ADR-29) - the source of truth
+    # routes/membership.py's index() reads.
     m = get_membership_by_id(mid)
     assert m["paid_amount"] == 500
     assert m["pending_amount"] == 500
@@ -450,11 +439,6 @@ def test_collect_payment_exact_pending_clears_balance(logged_in_client):
         follow_redirects=True,
     )
     assert b"collected successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT pending_amount FROM memberships WHERE membership_id=?", (mid,))
-    assert cur.fetchone()["pending_amount"] == 0
-    conn.close()
 
     assert get_membership_by_id(mid)["pending_amount"] == 0
 

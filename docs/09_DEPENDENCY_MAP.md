@@ -38,13 +38,13 @@ routes/enquiries.py            → database.supabase_client.get_supabase_client 
                                   migrated off this list, ADR-24)
 routes/student.py              → database.supabase_client.get_supabase_client   (students table, Supabase/
                                   PostgreSQL — as of 2026-07-23, ADR-19; source of truth for index()/admission()/
-                                  view()/edit(); also reads/writes enquiries there directly in admission(),
-                                  closing TD-36; as of 2026-07-24 (ADR-25), also view()'s memberships/payments
-                                  reads)
-                                → database.db.get_connection   (SQLite mirror-write in admission()/edit() only,
-                                  as of ADR-25 — view()'s reads no longer use this)
+                                  view()/edit(), and as of 2026-07-24 (ADR-29) the only store; also reads/writes
+                                  enquiries there directly in admission(), closing TD-36; as of 2026-07-24
+                                  (ADR-25), also view()'s memberships/payments reads)
                                 → database.membership_queries (get_memberships_for_admin, get_effective_status —
                                   as of 2026-07-23, ADR-23, replacing the raw SQLite self-join index() used before)
+                                (as of 2026-07-24, ADR-29: no database.db.get_connection dependency left at all -
+                                  admission()/edit()'s SQLite mirror-writes were removed outright)
 routes/membership_distribution.py → database.supabase_client (via database.membership_queries, ADR-23 —
                                   students/memberships reads)
                                 → database.payment_queries.get_payments_for_admin (as of 2026-07-24, ADR-25,
@@ -65,36 +65,32 @@ routes/membership_analytics.py → (no DB access at all - redirects to membershi
 
 ```
 routes/membership.py           → database.supabase_client.get_supabase_client   (memberships table, Supabase/
-                                  PostgreSQL — as of 2026-07-23, ADR-20; was database.db.get_connection until
-                                  this cutover; source of truth for index()/create()/renew(); also reads
-                                  students there directly (Supabase, ADR-19) instead of the SQLite mirror)
-                                → database.db.get_connection   (SQLite mirror-write in create()/renew() — a
-                                  mirror at zero readers as of ADR-25, and as of ADR-28 also zero remaining FK
-                                  dependents (payments' own SQLite insert is gone) - a removal candidate itself,
-                                  pending Phase 10's next removal call)
+                                  PostgreSQL — as of 2026-07-23, ADR-20, and as of 2026-07-24 (ADR-29) the only
+                                  store; source of truth for index()/create()/renew(); also reads students
+                                  there directly (Supabase, ADR-19) instead of the SQLite mirror)
                                 → database.payment_queries.record_payment (added 2026-07-22, replacing a direct
                                   database.cashbook_queries.insert_income_entry call + an inline receipt-number
                                   formula duplicated across create()/renew()/payment.collect() - TD-22, ADR-13;
                                   as of 2026-07-24 (ADR-28), Supabase-only and strict - create()/renew()'s
-                                  except sqlite3.Error widened to except (sqlite3.Error, APIError))
+                                  except clause is except APIError, wrapping only this call)
                                 → database.membership_settings_queries.get_membership_settings (added 2026-07-21 - TD-7;
                                   Supabase as of 2026-07-24, ADR-24)
                                 → database.membership_queries (get_effective_status, get_active_membership —
                                   now Supabase-backed since create() is its only caller, ADR-20 —
                                   get_plan_pricing, get_admission_fee - added 2026-07-21 - TD-6/TD-7)
+                                (as of 2026-07-24, ADR-29: no database.db.get_connection dependency left at all -
+                                  create()/renew()'s SQLite mirror-writes were removed outright)
 routes/payment.py              → database.supabase_client.get_supabase_client   (memberships table, Supabase/
-                                  PostgreSQL — as of 2026-07-23, ADR-21; source of truth for collect()'s
-                                  paid_amount/pending_amount read+update; also reads students there directly
-                                  (Supabase, ADR-19) to verify ownership)
+                                  PostgreSQL — as of 2026-07-23, ADR-21, and as of 2026-07-24 (ADR-29) the only
+                                  store; source of truth for collect()'s paid_amount/pending_amount read+update;
+                                  also reads students there directly (Supabase, ADR-19) to verify ownership)
                                 → database.payment_queries.get_payments_for_admin (as of 2026-07-24, ADR-25 —
                                   index()'s Supabase payments/students read, replacing raw SQL)
-                                → database.db.get_connection   (SQLite mirror-write of paid_amount/pending_amount
-                                  in collect() only — a mirror at zero readers as of ADR-25, and as of ADR-28
-                                  also zero remaining FK dependents - a removal candidate itself, pending Phase
-                                  10's next removal call)
                                 → database.payment_queries.record_payment (added 2026-07-22 - see routes/membership.py
                                   note above, same fix; as of 2026-07-24 (ADR-28), Supabase-only and strict -
-                                  collect()'s except sqlite3.Error widened to except (sqlite3.Error, APIError))
+                                  collect()'s except clause is except APIError, wrapping only this call)
+                                (as of 2026-07-24, ADR-29: no database.db.get_connection dependency left at all -
+                                  collect()'s SQLite mirror-write was removed outright)
 routes/cashbook.py              → database.cashbook_queries (insert_transaction, get_total_income/expense,
                                    get_today_income/expense, get_pending_fees, get_monthly_income/expense,
                                    get_income_category_totals, get_expense_category_totals,

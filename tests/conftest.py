@@ -122,18 +122,18 @@ def admit_student(client, enquiry_id, **overrides):
 
 
 def get_last_student_id(admin_id):
-    """students.admission() mirror-inserts into SQLite under the same
-    student_id, so this SQLite lookup still returns the right id post-
-    migration."""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT student_id FROM students WHERE admin_id=? ORDER BY student_id DESC LIMIT 1",
-        (admin_id,),
+    """students now lives in Supabase only (routes/student.py, ADR-29) - no
+    SQLite mirror left to read."""
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("students")
+        .select("student_id")
+        .eq("admin_id", admin_id)
+        .order("student_id", desc=True)
+        .limit(1)
+        .execute()
     )
-    row = cur.fetchone()
-    conn.close()
-    return row["student_id"] if row else None
+    return response.data[0]["student_id"] if response.data else None
 
 
 def get_student_by_id(student_id):
@@ -161,18 +161,18 @@ def create_membership(client, student_id, **overrides):
 
 
 def get_last_membership_id(student_id):
-    """memberships.create()/renew() mirror-insert into SQLite under the same
-    membership_id, so this SQLite lookup still returns the right id post-
-    migration."""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT membership_id FROM memberships WHERE student_id=? ORDER BY membership_id DESC LIMIT 1",
-        (student_id,),
+    """memberships now lives in Supabase only (routes/membership.py,
+    ADR-29) - no SQLite mirror left to read."""
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("memberships")
+        .select("membership_id")
+        .eq("student_id", student_id)
+        .order("membership_id", desc=True)
+        .limit(1)
+        .execute()
     )
-    row = cur.fetchone()
-    conn.close()
-    return row["membership_id"] if row else None
+    return response.data[0]["membership_id"] if response.data else None
 
 
 def get_membership_by_id(membership_id):

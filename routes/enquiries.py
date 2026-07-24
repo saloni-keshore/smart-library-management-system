@@ -137,12 +137,11 @@ def add():
 
         # Bridge: this mirror has zero remaining readers (routes/student.py's
         # admission() reads/writes enquiries via Supabase directly, ADR-19).
-        # students.enquiry_id still enforces a real SQLite foreign key
-        # (database/db.py sets PRAGMA foreign_keys = ON), and
-        # routes/student.py's admission() still inserts a SQLite students
-        # mirror row referencing enquiry_id - so this mirror stays for the
-        # FK chain, pending Phase 10's removal call. See
-        # docs/MIRROR_TRACKER.md (same shape as auth.py's register() bridge).
+        # As of 2026-07-24 (ADR-29), routes/student.py's admission() no
+        # longer writes SQLite students at all, so students.enquiry_id's
+        # SQLite FK is no longer exercised by any new insert - this mirror
+        # is now a removal candidate itself, pending Phase 10's next
+        # removal call. See docs/MIRROR_TRACKER.md.
         try:
             sqlite_conn.execute(
                 """
@@ -198,11 +197,14 @@ def edit(enquiry_id):
             flash("Something went wrong. Please try again.", "danger")
             return redirect(url_for("enquiry.edit", enquiry_id=enquiry_id))
 
-        # Bridge (TD-36): keep the SQLite mirror's editable fields in sync
-        # too -- routes/student.py's admission() reads full_name/mobile/
-        # purpose/preferred_shift for this enquiry_id straight from SQLite,
-        # and must not see stale pre-edit values (out of this session's
-        # scope to fix on the read side, so kept correct on the write side).
+        # Bridge: this mirror has zero remaining readers (as of ADR-19,
+        # routes/student.py's admission() reads enquiry field values from
+        # Supabase directly, not this SQLite copy). As of 2026-07-24
+        # (ADR-29), admission()'s own SQLite students insert is gone too, so
+        # students.enquiry_id's SQLite FK is no longer exercised - this
+        # mirror-write is now a removal candidate itself, pending Phase 10's
+        # next removal call. Kept in sync here purely so the mirror doesn't
+        # drift while it still exists. See docs/MIRROR_TRACKER.md.
         sqlite_conn = get_connection()
         sqlite_conn.execute(
             """
@@ -266,9 +268,11 @@ def delete(enquiry_id):
     # from the Enquiries list) must not be undone by a SQLite-only problem.
     # A student already admitted from this enquiry (students.enquiry_id's
     # SQLite FK, no ON DELETE clause) would make this raise sqlite3.Error --
-    # the same failure this action already risked pre-migration, just now
-    # left as an orphaned SQLite mirror row instead of an atomic no-op; see
-    # TD-36.
+    # as of 2026-07-24 (ADR-29), admission() no longer inserts into SQLite
+    # students at all, so this can only happen for a student admitted
+    # *before* ADR-29 (an existing, frozen SQLite students row) - the same
+    # failure this action already risked pre-migration, just now left as an
+    # orphaned SQLite mirror row instead of an atomic no-op; see TD-36.
     try:
         sqlite_conn = get_connection()
         sqlite_conn.execute(

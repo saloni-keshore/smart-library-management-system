@@ -51,10 +51,10 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 
 | Mirror table | Source of truth since | Readers remaining | FK dependents still requiring it | Status |
 |---|---|---|---|---|
-| [`admins`](#admins-existence-only-bridge) | Supabase, ADR-16 (2026-07-23) | None (existence-only) | `enquiries`, `students`, `audit_log` (3, down from 7 — ADR-24) | **Open** |
-| [`enquiries`](#enquiries) | Supabase, ADR-18 (2026-07-23) | None (0, since ADR-23) | `students.enquiry_id` | **Open** |
-| [`students`](#students) | Supabase, ADR-19 (2026-07-23) | None (0, since ADR-25) | `memberships.student_id` (cleared: `payments.student_id`, ADR-28) | **Open** |
-| [`memberships`](#memberships) | Supabase, ADR-20 (2026-07-23) | None (0, since ADR-25) | none (cleared, ADR-28) | **Open** — next removal candidate |
+| [`admins`](#admins-existence-only-bridge) | Supabase, ADR-16 (2026-07-23) | None (existence-only) | `enquiries`, `audit_log` (2, down from 7 — ADR-24/29) | **Open** |
+| [`enquiries`](#enquiries) | Supabase, ADR-18 (2026-07-23) | None (0, since ADR-23) | none (cleared, ADR-29) | **Open** — next removal candidate |
+| [`students`](#students--removed-2026-07-24-adr-29) | Supabase, ADR-19 (2026-07-23) | None | none | **Removed** (ADR-29) |
+| [`memberships`](#memberships--removed-2026-07-24-adr-29) | Supabase, ADR-20 (2026-07-23) | None | none | **Removed** (ADR-29) |
 | [`payments`](#payments--removed-2026-07-24-adr-28) | Supabase, ADR-25 (2026-07-24) | None | none | **Removed** (ADR-28) |
 | [`cashbook`](#cashbook--removed-2026-07-24-adr-27) | Supabase, ADR-22 (2026-07-23) | None | none | **Removed** (ADR-27) |
 | [`audit_log`](#audit_log--removed-2026-07-24-adr-26) | Supabase, ADR-22 (2026-07-23) | None | none | **Removed** (ADR-26) |
@@ -73,17 +73,19 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 
 **Current writers:** `routes/auth.py`'s `register()` — inserts into Supabase first, then mirrors the identical row (`admin_id`, `full_name`, `username`, `mobile`, `email`, hashed `password`, `role`) into SQLite via `database.db.get_connection()`, rolling back the Supabase insert if the SQLite insert raises `sqlite3.Error`. `login()`/`forgot_password()` and `routes/setting.py`'s `security_settings()` password branch touch Supabase's `admins.password` only — they never write SQLite (TD-35, `Resolved` via ADR-17).
 
-**Why the mirror still exists:** 3 tables enforce a real SQLite FK to `admins.admin_id` and are actively inserted into on every request that touches them: `enquiries` (`routes/enquiries.py`'s `add()` mirror-insert), `students` (`routes/student.py`'s `admission()` mirror-insert), `audit_log` (written transitively by `routes/cashbook.py`/`routes/membership.py`/`routes/payment.py` via `database/cashbook_queries.py`'s `insert_income_entry()`/`insert_transaction()` → `database/audit_queries.py`'s `log_entry()`). Migrating `enquiries`/`students` at the *route* level (ADR-18/ADR-19) did **not** remove them from this list — both still insert their own SQLite mirror rows referencing `admin_id`, so the FK still fires. `audit_log` joined them 2026-07-23 (ADR-22): its reads moved to Supabase too, but `log_entry()`'s SQLite mirror-write is completely unchanged, so it didn't shrink this list either. **`library_settings`/`membership_settings`/`backup_log`/`security_settings` dropped off this list entirely 2026-07-24 (ADR-24)** — unlike `enquiries`/`students`/`audit_log`, they don't just have a Supabase-backed read side now, they stopped inserting into SQLite *at all* (no mirror kept, see the "Fully migrated, no mirror" section above), so their FK to `admins.admin_id` is never exercised by this app anymore. The bridge now needs only the remaining 3, unconditionally.
+**Why the mirror still exists:** as of 2026-07-24 (ADR-29), only **1** table still enforces a real SQLite FK to `admins.admin_id` via an active insert: `enquiries` (`routes/enquiries.py`'s `add()` mirror-insert). Migrating `enquiries` at the *route* level (ADR-18) did **not** remove it from this list — it still inserts its own SQLite mirror row referencing `admin_id`, so the FK still fires. `students` and `audit_log` **both dropped off this list already**: `audit_log`'s SQLite mirror-write (`log_entry()`) was deleted outright in ADR-26, and `students`' SQLite mirror-write (`admission()`) was deleted outright in ADR-29 — neither inserts into SQLite at all anymore, so neither exercises this FK. `library_settings`/`membership_settings`/`backup_log`/`security_settings` dropped off this list entirely 2026-07-24 (ADR-24) for the same reason (no mirror kept at all, see the "Fully migrated, no mirror" section above). The bridge now needs only `enquiries`, unconditionally.
 
 **Exact removal conditions (both required):**
 1. **Read-side:** none — already zero readers.
-2. **FK-side:** `audit_log` must be migrated to Supabase so it stops inserting into SQLite (i.e., `log_entry()`'s mirror-write removed, which needs `cashbook`'s own mirror gone first — see that section), **and** either the `enquiries`/`students` mirrors (below) must themselves be fully removed, or their mirror-inserts must stop being written (which requires those mirrors' own removal conditions first, both gated on `payments`). In practice: this bridge is still one of the *last* things removable — it's blocked on `payments` migrating (transitively, via `enquiries`/`students`) and on `cashbook`'s mirror coming down (transitively, via `audit_log`).
+2. **FK-side:** `enquiries` must stop inserting into its SQLite mirror (`routes/enquiries.py`'s `add()`) — the **only** remaining dependent, gated on `students` (already cleared, ADR-29) per the FK chain `enquiries ← students`. This is now the single remaining condition for this bridge.
 
 **Change history:**
 - 2026-07-23 (ADR-16): bridge introduced — `register()`'s Supabase-only write broke 7 tables' SQLite FK on the very next admin who touched any of them (74 test failures caught this).
 - 2026-07-23 (ADR-17): `admins.password`'s split-brain closed (TD-35 `Resolved`) — unrelated to this bridge, which covers row existence, not `password`.
 - 2026-07-23 (post-ADR-22 full-codebase re-grep): re-verified against source — no production route/query module reads SQLite `admins` for any purpose (the only non-`register()` hits are `database/migrate.py`, a one-time script, and test files). List unchanged; `audit_log` remains one of the 7 FK dependents (see its own section — migrating its reads to Supabase, ADR-22, did not remove it from this list).
 - 2026-07-24 (ADR-24): `library_settings`/`membership_settings`/`backup_log`/`security_settings` migrated to Supabase with no SQLite mirror kept at all (they're leaf tables, nothing downstream needed them) — dropped off this bridge's dependent list entirely, shrinking it from 7 to 3 (`enquiries`, `students`, `audit_log`).
+- 2026-07-24 (ADR-26): `audit_log`'s SQLite mirror-write removed outright — dropped off this bridge's dependent list, shrinking it from 3 to 2 (`enquiries`, `students`).
+- 2026-07-24 (ADR-29): `students`' SQLite mirror-write removed outright — dropped off this bridge's dependent list, shrinking it to 1 (`enquiries` only). `enquiries` is now the sole remaining dependent and, once its own mirror-write is removed, this bridge itself becomes removable.
 
 ---
 
@@ -101,23 +103,24 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 
 **Why the mirror still exists:**
 - **Read-side:** none — zero readers as of ADR-23.
-- **FK-side:** `students.enquiry_id` is a real SQLite FK. `routes/student.py`'s `admission()` inserts a SQLite `students` mirror row (ADR-19) that references `enquiry_id` — that insert requires the `enquiries` row to already exist in SQLite. (Note: `admission()` itself no longer *reads* the enquiries mirror — as of ADR-19 it reads/writes the `enquiries` row it needs directly against Supabase — but its SQLite `students` insert still needs the SQLite `enquiries` row to exist for the FK to resolve.)
+- **FK-side:** none, as of 2026-07-24 (ADR-29) — `students.enquiry_id` was a real SQLite FK, but `students`' own SQLite mirror-write (`routes/student.py`'s `admission()`) was removed outright in the same slice as `memberships`, so that FK is no longer exercised by any new insert. This mirror is now purely a **write-path** question — nothing downstream requires it to exist for any FK to resolve.
 
-**Exact removal conditions (both required):**
+**Exact removal conditions:**
 1. **Read-side:** already done (ADR-23) — zero readers remain.
-2. **FK-side:** the `students` mirror (below) must stop inserting rows with a real `enquiry_id` FK reference — i.e., either `students`' own mirror is fully removed (see its section), or `students.enquiry_id`'s FK constraint is dropped/relaxed. This is the only thing still blocking this mirror's removal.
+2. **FK-side:** already clear as of ADR-29. **The only remaining condition is `routes/enquiries.py`'s `add()`/`edit()`/`delete()` stopping their own SQLite mirror-writes** — a pure write-path decision for Phase 10 (Mirror Removal), the **next removal candidate**.
 
 **Change history:**
 - 2026-07-23 (ADR-18): mirror introduced — needed as an ongoing two-way sync (not a one-shot bridge like `admins`'), since `admission()` (at the time) read live enquiry field values from SQLite, not just row existence.
 - 2026-07-23 (ADR-19): `status` column's writer moved to Supabase-only, closing TD-36. `admission()` stopped reading this mirror's field values (`full_name`/`mobile`/`purpose`/`preferred_shift`) — it now reads Supabase directly. Mirror itself (row existence + non-`status` columns) remained required, for the two reasons listed above.
 - 2026-07-23 (post-ADR-22 full-codebase re-grep): re-verified against source — `routes/dashboard.py` is still the only production reader of SQLite `enquiries`; no additional reader surfaced (unlike `students`/`memberships`, see their sections). List unchanged.
 - 2026-07-23 (ADR-23): `routes/dashboard.py`'s enquiry count migrated to Supabase (`.select("enquiry_id", count="exact", head=True).eq("admin_id", admin_id)`) — this mirror's read-side condition is now fully satisfied. Still blocked purely on the FK-side (`students` mirror).
+- 2026-07-24 (ADR-29): `students`' SQLite mirror-write removed, clearing the FK-side condition entirely. `enquiries` is now the **next removal candidate** in Phase 10.
 
 ---
 
-## `students`
+## `students` — **Removed** (2026-07-24, ADR-29)
 
-**Source of truth:** Supabase `students` table, since ADR-19 (2026-07-23), for `index()`/`admission()`/`view()`/`edit()` in `routes/student.py`.
+**Source of truth:** Supabase `students` table, since ADR-19 (2026-07-23), for `index()`/`admission()`/`view()`/`edit()` in `routes/student.py`. As of ADR-29, it is also the only store — there is no SQLite copy receiving writes anymore.
 
 **Columns mirror-synced:** every column — `student_id` (explicit, `MAX(student_id) + 1`, same reasoning as `enquiries.enquiry_id`), `admin_id`, `enquiry_id`, `full_name`, `mobile`, `address`, `id_proof`, `purpose`, `shift`, `join_date`, `status`. Unlike `enquiries`, there is no held-back column — `admission()`/`edit()` write both databases in full, since `students.status` has no split-brain risk analogous to `enquiries.status` (nothing else writes it).
 
@@ -131,15 +134,11 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 
 **Not** a reader: `routes/membership.py` — migrated off this list by ADR-20 (its own student lookups go through Supabase). `routes/payment.py`'s `collect()` — migrated off this list by ADR-21 (its ownership check now reads Supabase `students`).
 
-**Current writers (SQLite):** `routes/student.py`'s `admission()` (mirror-insert, explicit `student_id`), `edit()` (mirror-update, not best-effort).
+**Current writers (SQLite):** None — `routes/student.py`'s `admission()`/`edit()` had their SQLite `INSERT`/`UPDATE` calls deleted outright in ADR-29, along with the now-unused `sqlite3`/`database.db.get_connection` imports. `student_id` is now computed from Supabase's own `MAX(student_id)`.
 
-**Why the mirror still exists:**
-- **Read-side:** none, as of ADR-25 — zero query-based readers. `routes/setting.py`'s `backup_create()`'s whole-file copy is the only remaining consumer, tracked separately.
-- **FK-side:** none, as of 2026-07-24 (ADR-28) — `payments`' SQLite mirror-write (`record_payment()`) was removed outright, so `payments.student_id`'s SQLite FK is no longer exercised by any new insert. `memberships.student_id`'s SQLite FK is still exercised by `routes/membership.py`'s `create()`/`renew()`'s own mirror-write, but that mirror-write itself has no remaining FK dependents of its own (see `memberships`' section below) — it's the next removal candidate, and once it's gone, this table's FK-side condition is fully clear too.
+**Why this mirror was removable:** `payments`' SQLite mirror-write (ADR-28) was the last thing exercising `payments.student_id`'s SQLite FK; `memberships`' SQLite mirror-write (removed in the same slice as this table, ADR-29) was the last thing exercising `memberships.student_id`'s SQLite FK. With both gone, nothing in the SQLite FK graph required a `students` row to exist for a write to succeed.
 
-**Exact removal conditions:**
-1. **Read-side:** done as of ADR-25 (query-based). `routes/setting.py`'s `backup_create()` still needs a plan for what "backup" means once SQLite itself is removed (Phase 11 concern, not a read to migrate).
-2. **FK-side:** `routes/membership.py`'s `create()`/`renew()` must stop writing the `memberships` SQLite mirror — the **only** remaining write-path decision (`payments`' own mirror-write is already gone, ADR-28). See Phase 10 (Mirror Removal).
+**Exact removal conditions:** none remaining — fully removed. `routes/setting.py`'s `backup_create()` whole-file SQLite copy is unaffected (it copies the file, not a live query) and remains a Phase 11 concern.
 
 **Change history:**
 - 2026-07-23 (ADR-19): mirror introduced, widest fan-out found so far (8 modules at the time). Closed TD-36 at the source (`admission()`'s `enquiries.status` write moved to Supabase). `enquiries` mirror confirmed still required, independent of this migration.
@@ -150,16 +149,17 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 - 2026-07-24 (ADR-24): `routes/setting.py`'s `backup_export_csv()` migrated to Supabase while Settings was already being touched for the 4 Settings tables — shrinking the tracked query-based reader list from 4 to 3, all now gated purely on `payments`.
 - 2026-07-24 (ADR-25): `payments` itself migrated to Supabase, closing all 3 remaining readers in one slice. Read-side condition now fully satisfied — only the FK-side (SQLite mirror-*writes*, not reads) remains open. Backfilling `payments` also surfaced and fixed **TD-42**: Supabase `students` (and `enquiries`/`memberships`) had a large pre-existing gap of rows never copied from SQLite, unrelated to this mirror's reader list but a real data-integrity issue this slice's investigation caught — see ADR-25 and TD-42 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
 - 2026-07-24 (ADR-28): `payments`' SQLite mirror-write removed, clearing one of this mirror's two FK dependents. `memberships`' own SQLite mirror-write is the only one left — see that section for why it's now the next removal candidate.
+- 2026-07-24 (ADR-29): `admission()`/`edit()`'s SQLite writes deleted outright, alongside `memberships`' own removal in the same slice. `enquiries` is now the next removal candidate.
 
 ---
 
-## `memberships`
+## `memberships` — **Removed** (2026-07-24, ADR-29)
 
-**Source of truth:** Supabase `memberships` table, since ADR-20 (2026-07-23), for `index()`/`create()`/`renew()` in `routes/membership.py`, and since ADR-21 (2026-07-23) for `paid_amount`/`pending_amount` specifically in `routes/payment.py`'s `collect()`.
+**Source of truth:** Supabase `memberships` table, since ADR-20 (2026-07-23), for `index()`/`create()`/`renew()` in `routes/membership.py`, and since ADR-21 (2026-07-23) for `paid_amount`/`pending_amount` specifically in `routes/payment.py`'s `collect()`. As of ADR-29, it is also the only store — there is no SQLite copy receiving writes anymore.
 
-**Columns mirror-synced:** every column, from two different writers — `routes/membership.py`'s `create()`/`renew()` write the full row (`membership_id`, explicit `MAX(membership_id) + 1`; `student_id`, `plan_name`, `joining_date`, `duration_days`, `end_date`, `total_fee`, `paid_amount`, `pending_amount`, `remarks`, `membership_status`); `routes/payment.py`'s `collect()` writes only `paid_amount`/`pending_amount` on an existing row (it never inserts a new membership row).
+**Columns (historical, SQLite mirror):** every column, from two different writers — `routes/membership.py`'s `create()`/`renew()` wrote the full row (`membership_id`, explicit `MAX(membership_id) + 1`; `student_id`, `plan_name`, `joining_date`, `duration_days`, `end_date`, `total_fee`, `paid_amount`, `pending_amount`, `remarks`, `membership_status`); `routes/payment.py`'s `collect()` wrote only `paid_amount`/`pending_amount` on an existing row (it never inserted a new membership row).
 
-**Current readers (SQLite):** None, as of ADR-25.
+**Current readers (SQLite):** None.
 
 **Migrated to Supabase by ADR-23 (2026-07-23):** `routes/dashboard.py` (upcoming-expiries, recent-admissions), `database/membership_queries.py`'s `get_membership_counts()`, `routes/membership_distribution.py`'s `index()` (full membership listing's non-payment columns, plus `get_membership_counts()`), `routes/notification.py`'s `get_notification_summary()`, `routes/student.py`'s own `index()` self-join, `database/cashbook_queries.py`'s `get_pending_fees()`, `database/bi_queries.py` (`get_monthly_new_memberships()`/`get_membership_retention()`/`get_upcoming_expiries()`), and `utils/charts.py`'s `generate_membership_chart()`/`generate_membership_distribution_donut()`.
 
@@ -167,15 +167,11 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 
 **Not** a reader: `routes/payment.py`'s `collect()` — as of ADR-21 it reads the membership from Supabase, not SQLite, before updating either. `routes/payment.py`'s `index()` never touches `memberships` at all (only `payments`/`students`).
 
-**Current writers (SQLite):** `routes/membership.py`'s `create()`/`renew()` (full mirror), `routes/payment.py`'s `collect()` (`paid_amount`/`pending_amount` only, added ADR-21).
+**Current writers (SQLite):** None — `routes/membership.py`'s `create()`/`renew()` and `routes/payment.py`'s `collect()` all had their SQLite `INSERT`/`UPDATE` calls deleted outright in ADR-29. `membership_id` is now computed from Supabase's own `MAX(membership_id)`.
 
-**Why the mirror still exists:**
-- **Read-side:** none, as of ADR-25 — zero readers.
-- **FK-side:** none, as of 2026-07-24 (ADR-28) — `payments.membership_id` was a real SQLite FK, but `payments`' own SQLite mirror-write (`database/payment_queries.py`'s `record_payment()`) was removed outright in the same slice, so that FK is no longer exercised by any new insert. This mirror is now purely a **write-path** question — nothing downstream requires it to exist for any FK to resolve.
+**Why this mirror was removable:** `payments`' own SQLite mirror-write (ADR-28) was the last thing exercising `payments.membership_id`'s SQLite FK. With that gone, nothing in the SQLite FK graph required a `memberships` row to exist for a write to succeed.
 
-**Exact removal conditions:**
-1. **Read-side:** done as of ADR-25 — zero readers remain.
-2. **FK-side:** already clear as of ADR-28. **The only remaining condition is `routes/membership.py`'s `create()`/`renew()` and `routes/payment.py`'s `collect()` stopping their own SQLite mirror-writes** — a pure write-path decision for Phase 10 (Mirror Removal), the **next removal candidate**.
+**Exact removal conditions:** none remaining — fully removed.
 
 **Change history:**
 - 2026-07-23 (ADR-20): mirror introduced. `routes/payment.py`'s `collect()`, `routes/dashboard.py`, `routes/membership_distribution.py`, `routes/notification.py` named as remaining readers — this list was **incomplete** (see ADR-21's correction below).
@@ -184,6 +180,7 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 - 2026-07-23 (ADR-23): shrank from 7 to 1 tracked consumer in one slice — every reader except `routes/student.py`'s `view()` migrated to Supabase via the new shared `get_memberships_for_admin()` helper (see ADR-23 in [DECISIONS.md](DECISIONS.md)).
 - 2026-07-24 (ADR-25): `routes/student.py`'s `view()` migrated, closing the last reader — read-side condition now fully satisfied, only the FK-side (SQLite mirror-writes) remains open.
 - 2026-07-24 (ADR-28): `payments`' SQLite mirror-write removed, clearing the FK-side condition entirely. `memberships` is now the **next removal candidate** in Phase 10.
+- 2026-07-24 (ADR-29): `create()`/`renew()`/`collect()`'s SQLite writes deleted outright, alongside `students`' own removal in the same slice. `enquiries` is now the next removal candidate.
 
 ---
 
@@ -288,7 +285,7 @@ Working through each of the 7 active mirrors' **both** conditions (read-side and
 2. ~~Migrate Settings~~ — **done** (ADR-24, 2026-07-24).
 3. ~~Migrate `payments`~~ — **done** (ADR-25, 2026-07-24). Closed every remaining reader in this file, and surfaced/fixed a pre-existing Supabase parity gap in `enquiries`/`students`/`memberships` (TD-42).
 4. ~~Run the Phase 9 dependency audit directly against source~~ — **done**, see "Phase 9: Final Dependency Audit" below.
-5. Remove SQLite mirror-writes in FK-safe order (Phase 10) — **reverse** of the FK chain, starting from the table nothing else FKs to: ~~`audit_log`~~ — **done** (ADR-26) → ~~`cashbook`~~ — **done** (ADR-27) → ~~`payments`~~ — **done** (ADR-28) → `memberships`/`students` (next — `payments` no longer needs them, now true) → `enquiries` (once `students` stops needing it) → `admins` bridge last (once `enquiries`/`students`/`audit_log` all stop writing SQLite).
+5. Remove SQLite mirror-writes in FK-safe order (Phase 10) — **reverse** of the FK chain, starting from the table nothing else FKs to: ~~`audit_log`~~ — **done** (ADR-26) → ~~`cashbook`~~ — **done** (ADR-27) → ~~`payments`~~ — **done** (ADR-28) → ~~`memberships`/`students`~~ — **done** (ADR-29) → `enquiries` (next — `students` no longer needs it, now true) → `admins` bridge last (once `enquiries` stops writing SQLite).
 6. Once every mirror-write is gone, Phase 11 removes SQLite entirely.
 
 ## Phase 9: Final Dependency Audit (2026-07-24, post-ADR-25)

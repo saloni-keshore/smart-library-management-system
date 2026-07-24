@@ -1,4 +1,3 @@
-import sqlite3
 from datetime import date
 
 from flask import (
@@ -12,7 +11,6 @@ from flask import (
 )
 from postgrest.exceptions import APIError
 
-from database.db import get_connection
 from database.membership_queries import get_memberships_for_admin, get_effective_status
 from database.supabase_client import get_supabase_client
 
@@ -140,15 +138,20 @@ def admission(enquiry_id):
         # auto-assigned identity value -- same reasoning as
         # routes/enquiries.py's add() (ADR-18): Supabase's identity
         # sequence was seeded once from a one-time data copy (ADR-15) and
-        # trails SQLite's autoincrement counter, which has kept climbing
-        # from ordinary (and test-suite) usage in every session since.
-        # Assign one past SQLite's current max and insert that same value
-        # into both.
-        sqlite_conn = get_connection()
-        next_id_row = sqlite_conn.execute(
-            "SELECT MAX(student_id) AS m FROM students"
-        ).fetchone()
-        new_student_id = (next_id_row["m"] or 0) + 1
+        # trails ordinary usage. As of 2026-07-24 (ADR-29), computed from
+        # Supabase's own MAX(student_id) - the SQLite mirror this used to
+        # read is gone.
+        next_id_response = (
+            supabase.table("students")
+            .select("student_id")
+            .order("student_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        new_student_id = (
+            next_id_response.data[0]["student_id"] + 1
+            if next_id_response.data else 1
+        )
 
         student_row = {
             "student_id": new_student_id,
@@ -167,41 +170,6 @@ def admission(enquiry_id):
         try:
             supabase.table("students").insert(student_row).execute()
         except APIError:
-            sqlite_conn.close()
-            flash("Something went wrong. Please try again.", "danger")
-            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
-
-        # Bridge: this mirror has zero remaining readers as of ADR-25 (every
-        # consumer that used to JOIN students directly against SQLite has
-        # migrated to Supabase) - kept only because memberships/payments'
-        # own SQLite inserts still reference student_id (FK chain), pending
-        # Phase 10's removal call. See docs/MIRROR_TRACKER.md.
-        try:
-            sqlite_conn.execute(
-                """
-                INSERT INTO students
-                (student_id, admin_id, enquiry_id, full_name, mobile, address,
-                 id_proof, purpose, shift, join_date, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    new_student_id,
-                    admin_id,
-                    enquiry["enquiry_id"],
-                    enquiry["full_name"],
-                    enquiry["mobile"],
-                    address,
-                    id_proof,
-                    enquiry["purpose"],
-                    enquiry["preferred_shift"],
-                    join_date,
-                    "Active"
-                )
-            )
-            sqlite_conn.commit()
-            sqlite_conn.close()
-        except sqlite3.Error:
-            supabase.table("students").delete().eq("student_id", new_student_id).execute()
             flash("Something went wrong. Please try again.", "danger")
             return redirect(url_for("student.admission", enquiry_id=enquiry_id))
 
@@ -358,19 +326,6 @@ def edit(student_id):
         except APIError:
             flash("Something went wrong. Please try again.", "danger")
             return render_template("students/edit.html", student=student)
-
-        # Bridge: this mirror has zero remaining readers as of ADR-25 - kept
-        # only for the FK chain (memberships/payments' own SQLite inserts
-        # still reference student_id), pending Phase 10's removal call.
-        # See docs/MIRROR_TRACKER.md.
-        sqlite_conn = get_connection()
-        sqlite_conn.execute("""
-            UPDATE students
-            SET full_name=?, mobile=?, address=?, purpose=?, shift=?, status=?
-            WHERE student_id=? AND admin_id=?
-        """, (full_name, mobile, address, purpose, shift, status, student_id, admin_id))
-        sqlite_conn.commit()
-        sqlite_conn.close()
 
         flash("Student updated successfully.", "success")
         return redirect(url_for("student.view", student_id=student_id))

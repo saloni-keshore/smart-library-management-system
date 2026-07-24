@@ -4,6 +4,7 @@ import random
 import string
 
 from database.db import get_connection
+from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id,
@@ -120,11 +121,11 @@ def test_admin_b_cannot_edit_admin_a_student(app):
               "purpose": "x", "shift": "Morning", "status": "Active"},
         follow_redirects=True,
     )
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name FROM students WHERE student_id=?", (sid_a,))
-    assert cur.fetchone()["full_name"] != "HACKED"
-    conn.close()
+    # students now lives in Supabase only (ADR-29) - no SQLite mirror left
+    # to check.
+    supabase = get_supabase_client()
+    row = supabase.table("students").select("full_name").eq("student_id", sid_a).execute().data[0]
+    assert row["full_name"] != "HACKED"
 
 
 def test_admin_b_cannot_admit_against_admin_a_enquiry(app):
@@ -159,11 +160,17 @@ def test_admin_b_cannot_create_membership_for_admin_a_student(app):
         follow_redirects=True,
     )
     assert b"Student not found" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM memberships WHERE student_id=?", (sid_a,))
-    assert cur.fetchone()["c"] == 0
-    conn.close()
+    # memberships now lives in Supabase only (ADR-29) - no SQLite mirror
+    # left to check.
+    supabase = get_supabase_client()
+    count = (
+        supabase.table("memberships")
+        .select("membership_id", count="exact", head=True)
+        .eq("student_id", sid_a)
+        .execute()
+        .count
+    )
+    assert count == 0
 
 
 def test_admin_b_cannot_renew_admin_a_membership(app):
@@ -193,11 +200,11 @@ def test_admin_b_cannot_collect_payment_on_admin_a_membership(app):
     )
     assert b"Membership not found" in resp.data
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT paid_amount FROM memberships WHERE membership_id=?", (mid_a,))
-    assert cur.fetchone()["paid_amount"] == 500  # unchanged by B's attempt
-    conn.close()
+    # memberships now lives in Supabase only (ADR-29) - no SQLite mirror
+    # left to check.
+    supabase = get_supabase_client()
+    row = supabase.table("memberships").select("paid_amount").eq("membership_id", mid_a).execute().data[0]
+    assert row["paid_amount"] == 500  # unchanged by B's attempt
 
 
 def test_admin_b_lists_dont_leak_admin_a_data(app):
@@ -249,22 +256,20 @@ def test_admin_b_notifications_dont_include_admin_a_memberships(app):
 
     from datetime import date
     _full_pipeline(client_a, a["admin_id"], "111000006")
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE memberships SET end_date=? WHERE student_id IN (SELECT student_id FROM students WHERE admin_id=?)",
-        (date.today().isoformat(), a["admin_id"]),
-    )
-    conn.commit()
-    conn.close()
+    # memberships/students now live in Supabase only (ADR-29) - seed and
+    # read the data the notifications route actually reads.
+    supabase = get_supabase_client()
+    a_student_ids = [
+        row["student_id"]
+        for row in supabase.table("students").select("student_id").eq("admin_id", a["admin_id"]).execute().data
+    ]
+    supabase.table("memberships").update(
+        {"end_date": date.today().isoformat()}
+    ).in_("student_id", a_student_ids).execute()
 
     resp = client_b.get("/notifications/today")
     assert resp.status_code == 200
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name FROM students WHERE admin_id=?", (a["admin_id"],))
-    a_name = cur.fetchone()["full_name"]
-    conn.close()
+    a_name = supabase.table("students").select("full_name").eq("admin_id", a["admin_id"]).execute().data[0]["full_name"]
     assert a_name.encode() not in resp.data
 
 

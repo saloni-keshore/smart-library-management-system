@@ -58,16 +58,8 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
         follow_redirects=True,
     )
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT paid_amount, pending_amount FROM memberships WHERE membership_id=?", (mid,))
-    m = cur.fetchone()
-    assert m["paid_amount"] == 1000
-    assert m["pending_amount"] == 0
-
-    # TD-37 (resolved): the Supabase copy - the source of truth
-    # routes/membership.py's index() reads - must agree with the SQLite
-    # mirror checked above, not just the mirror alone.
+    # memberships now lives in Supabase only (ADR-29) - the source of truth
+    # routes/membership.py's index() reads.
     m_supabase = get_membership_by_id(mid)
     assert m_supabase["paid_amount"] == 1000
     assert m_supabase["pending_amount"] == 0

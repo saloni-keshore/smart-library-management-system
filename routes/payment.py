@@ -1,5 +1,3 @@
-import sqlite3
-
 from flask import (
     Blueprint,
     render_template,
@@ -11,7 +9,6 @@ from flask import (
 )
 from postgrest.exceptions import APIError
 
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 from database.payment_queries import record_payment, get_payments_for_admin
 
@@ -150,22 +147,7 @@ def collect(membership_id):
                 student=student
             )
 
-        # Bridge: this mirror has zero remaining readers as of ADR-25 (every
-        # consumer that used to JOIN memberships directly against SQLite has
-        # migrated to Supabase). As of 2026-07-24 (ADR-28), record_payment()
-        # below no longer writes SQLite payments at all either, so nothing
-        # in the SQLite FK graph still requires this memberships row to
-        # exist for a write to succeed - memberships is now a removal
-        # candidate itself, pending Phase 10's next removal call. See
-        # docs/MIRROR_TRACKER.md.
-        conn = get_connection()
         try:
-            conn.execute("""
-                UPDATE memberships
-                SET paid_amount=?, pending_amount=?
-                WHERE membership_id=?
-            """, (new_paid, new_pending, membership_id))
-
             receipt_number = record_payment(
                 admin_id,
                 membership_id=membership_id,
@@ -178,17 +160,10 @@ def collect(membership_id):
                 description=remarks or f"Pending fee payment - {membership['plan_name']}",
                 source="Payments"
             )
-
-            conn.commit()
-        except (sqlite3.Error, APIError):
-            # As of 2026-07-24 (ADR-28), record_payment() writes only
-            # Supabase and raises APIError (not sqlite3.Error) on failure -
-            # caught here alongside sqlite3.Error so a payments failure
-            # still rolls back the SQLite memberships mirror and reverts
-            # Supabase exactly as before.
-            conn.rollback()
+        except APIError:
             # Restore Supabase to its pre-payment values so the source of
-            # truth doesn't advance ahead of a rolled-back SQLite write.
+            # truth doesn't advance ahead of a failed payment write - same
+            # revert shape as before ADR-29 removed the SQLite mirror.
             supabase.table("memberships").update(
                 {"paid_amount": old_paid, "pending_amount": pending}
             ).eq("membership_id", membership_id).execute()
@@ -202,8 +177,6 @@ def collect(membership_id):
                 membership=membership,
                 student=student
             )
-        finally:
-            conn.close()
 
         flash(
             f"Payment of ₹{amount:.0f} collected successfully. Receipt No: {receipt_number}",

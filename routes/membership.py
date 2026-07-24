@@ -1,5 +1,3 @@
-import sqlite3
-
 from flask import (
     Blueprint,
     render_template,
@@ -11,7 +9,6 @@ from flask import (
 )
 from postgrest.exceptions import APIError
 
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 from database.payment_queries import record_payment
 from database.membership_settings_queries import get_membership_settings
@@ -175,15 +172,20 @@ def create(student_id):
         # auto-assigned identity value -- same reasoning as
         # routes/enquiries.py's add() (ADR-18) and routes/student.py's
         # admission() (ADR-19): Supabase's identity sequence was seeded
-        # once from a one-time data copy (ADR-15) and trails SQLite's
-        # autoincrement counter, which has kept climbing from ordinary (and
-        # test-suite) usage in every session since. Assign one past
-        # SQLite's current max and insert that same value into both.
-        sqlite_conn = get_connection()
-        next_id_row = sqlite_conn.execute(
-            "SELECT MAX(membership_id) AS m FROM memberships"
-        ).fetchone()
-        new_membership_id = (next_id_row["m"] or 0) + 1
+        # once from a one-time data copy (ADR-15) and trails ordinary
+        # usage. As of 2026-07-24 (ADR-29), computed from Supabase's own
+        # MAX(membership_id) - the SQLite mirror this used to read is gone.
+        next_id_response = (
+            supabase.table("memberships")
+            .select("membership_id")
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        new_membership_id = (
+            next_id_response.data[0]["membership_id"] + 1
+            if next_id_response.data else 1
+        )
 
         membership_row = {
             "membership_id": new_membership_id,
@@ -202,7 +204,6 @@ def create(student_id):
         try:
             supabase.table("memberships").insert(membership_row).execute()
         except APIError:
-            sqlite_conn.close()
             flash(
                 "Could not create this membership due to a database error. "
                 "Nothing was saved - please try again.",
@@ -213,27 +214,10 @@ def create(student_id):
                 plan_pricing=plan_pricing, admission_fee=admission_fee
             )
 
-        # Bridge: this mirror has zero remaining readers as of ADR-25 (every
-        # consumer that used to JOIN memberships directly against SQLite has
-        # migrated to Supabase). As of 2026-07-24 (ADR-28), record_payment()
-        # below no longer writes SQLite payments either, so nothing in the
-        # SQLite FK graph still requires this row to exist for a write to
-        # succeed - memberships is now a removal candidate itself, pending
-        # Phase 10's next removal call. See docs/MIRROR_TRACKER.md.
-        try:
-            sqlite_conn.execute("""
-                INSERT INTO memberships
-                (membership_id, student_id, plan_name, joining_date, duration_days, end_date,
-                 total_fee, paid_amount, pending_amount, remarks, membership_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                new_membership_id, student_id, plan_name, joining_date, duration_days, end_date,
-                total_fee, paid_amount, due_amount, remarks, "Active"
-            ))
+        receipt_number = None
 
-            receipt_number = None
-
-            if paid_amount > 0:
+        if paid_amount > 0:
+            try:
                 receipt_number = record_payment(
                     admin_id,
                     membership_id=new_membership_id,
@@ -246,27 +230,17 @@ def create(student_id):
                     description=remarks or f"Admission payment - {plan_name}",
                     source="Admission"
                 )
-
-            sqlite_conn.commit()
-            sqlite_conn.close()
-        except (sqlite3.Error, APIError):
-            # As of 2026-07-24 (ADR-28), record_payment() writes only
-            # Supabase and raises APIError (not sqlite3.Error) on failure -
-            # caught here alongside sqlite3.Error so a payments failure
-            # still rolls back the SQLite memberships mirror and the
-            # Supabase memberships insert exactly as before.
-            sqlite_conn.rollback()
-            sqlite_conn.close()
-            supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()
-            flash(
-                "Could not create this membership due to a database error. "
-                "Nothing was saved - please try again.",
-                "danger"
-            )
-            return render_template(
-                "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
-            )
+            except APIError:
+                supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()
+                flash(
+                    "Could not create this membership due to a database error. "
+                    "Nothing was saved - please try again.",
+                    "danger"
+                )
+                return render_template(
+                    "memberships/create.html", student=student,
+                    plan_pricing=plan_pricing, admission_fee=admission_fee
+                )
 
         if receipt_number:
             flash(
@@ -360,16 +334,23 @@ def renew(student_id):
                 "memberships/renew.html", student=student, plan_pricing=plan_pricing
             )
 
-        # Same explicit-id bridging as create() above (ADR-18/ADR-19/ADR-20).
-        sqlite_conn = get_connection()
-        next_id_row = sqlite_conn.execute(
-            "SELECT MAX(membership_id) AS m FROM memberships"
-        ).fetchone()
-        new_membership_id = (next_id_row["m"] or 0) + 1
+        # Same explicit-id bridging as create() above - as of 2026-07-24
+        # (ADR-29), computed from Supabase's own MAX(membership_id).
+        next_id_response = (
+            supabase.table("memberships")
+            .select("membership_id")
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        new_membership_id = (
+            next_id_response.data[0]["membership_id"] + 1
+            if next_id_response.data else 1
+        )
 
         # Capture which rows this expires so a failure partway through this
-        # request (either DB) can be rolled back without guessing which
-        # rows were live beforehand.
+        # request can be rolled back without guessing which rows were live
+        # beforehand.
         try:
             previously_active_response = (
                 supabase.table("memberships")
@@ -410,7 +391,6 @@ def renew(student_id):
                 supabase.table("memberships").update(
                     {"membership_status": "Active"}
                 ).in_("membership_id", previously_active_ids).execute()
-            sqlite_conn.close()
             flash(
                 "Could not renew this membership due to a database error. "
                 "Nothing was saved - please try again.",
@@ -420,29 +400,10 @@ def renew(student_id):
                 "memberships/renew.html", student=student, plan_pricing=plan_pricing
             )
 
-        # Bridge: same as create() above - mirror both writes into SQLite
-        # for routes/payment.py, routes/dashboard.py,
-        # routes/membership_distribution.py, and routes/notification.py.
-        try:
-            sqlite_conn.execute("""
-                UPDATE memberships
-                SET membership_status = 'Expired'
-                WHERE student_id=? AND membership_status = 'Active'
-            """, (student_id,))
+        receipt_number = None
 
-            sqlite_conn.execute("""
-                INSERT INTO memberships
-                (membership_id, student_id, plan_name, joining_date, duration_days, end_date,
-                 total_fee, paid_amount, pending_amount, remarks, membership_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                new_membership_id, student_id, plan_name, joining_date, duration_days, end_date,
-                total_fee, paid_amount, due_amount, remarks, "Active"
-            ))
-
-            receipt_number = None
-
-            if paid_amount > 0:
+        if paid_amount > 0:
+            try:
                 receipt_number = record_payment(
                     admin_id,
                     membership_id=new_membership_id,
@@ -455,28 +416,20 @@ def renew(student_id):
                     description=remarks or f"Membership renewal - {plan_name}",
                     source="Renewal"
                 )
-
-            sqlite_conn.commit()
-            sqlite_conn.close()
-        except (sqlite3.Error, APIError):
-            # As of 2026-07-24 (ADR-28), record_payment() writes only
-            # Supabase and raises APIError (not sqlite3.Error) on failure -
-            # caught here alongside sqlite3.Error, same reasoning as create().
-            sqlite_conn.rollback()
-            sqlite_conn.close()
-            supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()
-            if previously_active_ids:
-                supabase.table("memberships").update(
-                    {"membership_status": "Active"}
-                ).in_("membership_id", previously_active_ids).execute()
-            flash(
-                "Could not renew this membership due to a database error. "
-                "Nothing was saved - please try again.",
-                "danger"
-            )
-            return render_template(
-                "memberships/renew.html", student=student, plan_pricing=plan_pricing
-            )
+            except APIError:
+                supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()
+                if previously_active_ids:
+                    supabase.table("memberships").update(
+                        {"membership_status": "Active"}
+                    ).in_("membership_id", previously_active_ids).execute()
+                flash(
+                    "Could not renew this membership due to a database error. "
+                    "Nothing was saved - please try again.",
+                    "danger"
+                )
+                return render_template(
+                    "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                )
 
         if receipt_number:
             flash(

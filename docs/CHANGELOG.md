@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-24 — Removed the `memberships`/`students` SQLite mirror-writes (Phase 10, fourth and fifth mirrors fully removed)
+
+- **Feature:** Membership create/renew, Payment collection, Student admission/edit — internal data layer, no user-visible feature change except error-handling now catches a wider exception type in four call sites
+- **Files changed:** `routes/membership.py` (`create()`/`renew()` drop their SQLite `INSERT` calls and `sqlite_conn`/`get_connection`/`sqlite3` usage entirely; `membership_id` computed from Supabase's own `MAX`; `except sqlite3.Error:` blocks replaced with `except APIError:` wrapping only `record_payment()`), `routes/payment.py` (`collect()` same shape, drops `conn`/`get_connection`/`sqlite3`), `routes/student.py` (`admission()`/`edit()` drop their SQLite `INSERT`/`UPDATE` and `get_connection`/`sqlite3` usage; `student_id` computed from Supabase's own `MAX`), `tests/conftest.py` (`get_last_student_id()`/`get_last_membership_id()` rewritten from SQLite lookups to Supabase queries — nearly every test that creates a student or membership depends on these), `tests/test_08_cross_tenant_isolation.py` (4 tests rewritten from SQLite assertions/seeding to Supabase — checking the now-frozen SQLite mirror would have silently made these isolation checks tautological), `tests/test_09_full_workflow_chain.py` (1 assertion rewritten to Supabase-only)
+- **Why:** `payments`' SQLite mirror-write (ADR-28) was the last thing exercising `payments.membership_id`/`payments.student_id`'s SQLite FKs; `memberships`' own SQLite mirror-write (removed in this same slice) was the last thing exercising `memberships.student_id`'s SQLite FK. `students`/`memberships` are removed together, not one at a time, since splitting them would leave an intermediate state where one mirror is half-orphaned relative to the other
+- **Database changes:** None to the schema — SQLite stops receiving new `memberships`/`students` rows; both tables and their existing historical rows are untouched until Phase 11 removes SQLite entirely
+- **UI changes:** None functionally — a failure during membership creation/renewal/payment collection or student admission/edit still shows the same error flash and rolls back the same way, just triggered by `APIError` instead of `sqlite3.Error` in the rare failure case
+- **Future impact:** the `admins` bridge (`routes/auth.py`'s `register()`) now depends on only 1 table instead of 3 (`enquiries` — `audit_log` cleared by ADR-26, `students` cleared by this slice), and `enquiries`' own SQLite mirror-write is now the next removal candidate (its last FK dependent, `students`, is gone). See ADR-29 in docs/DECISIONS.md and the updated docs/MIRROR_TRACKER.md. Verified via the targeted suite (test_03/08/09) and the full pytest suite.
+
+---
+
 ## 2026-07-24 — Removed the `payments` SQLite mirror-write (Phase 10, third mirror fully removed)
 
 - **Feature:** Payment recording (Admission, Renewal, Collect Payment) — internal data layer, no user-visible feature change except error-handling now catches a wider exception type
