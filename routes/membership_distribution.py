@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, session, redirect
 from database.db import get_connection
 from database.cashbook_queries import get_pending_fees, get_total_fee_revenue
 from database.membership_queries import (
-    get_membership_counts, get_effective_status, DAYS_LEFT_SQL
+    get_membership_counts, get_memberships_for_admin, get_effective_status
 )
 from utils.charts import generate_membership_distribution_donut
 
@@ -27,31 +27,19 @@ def index():
 
     generate_membership_distribution_donut(admin_id)
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    # Total memberships
-    cursor.execute("""
-        SELECT COUNT(*) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-    """, (admin_id,))
-    total_memberships = cursor.fetchone()["total"]
+    # This admin's memberships (each row already carries full_name/mobile) -
+    # Supabase `students`/`memberships` (ADR-23) instead of the SQLite
+    # mirror. `payments` itself is not yet migrated (see
+    # docs/MIRROR_TRACKER.md), so each row's latest receipt/payment info
+    # below is still looked up from SQLite `payments` directly.
+    all_memberships = get_memberships_for_admin(admin_id)
+    total_memberships = len(all_memberships)
 
     # Plan-wise counts
-    cursor.execute("""
-        SELECT m.plan_name, COUNT(*) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-        GROUP BY m.plan_name
-    """, (admin_id,))
-
     plan_counts = {plan: 0 for plan in PLAN_ORDER}
-    for row in cursor.fetchall():
-        if row["plan_name"] in plan_counts:
-            plan_counts[row["plan_name"]] = row["total"]
+    for m in all_memberships:
+        if m["plan_name"] in plan_counts:
+            plan_counts[m["plan_name"]] += 1
 
     plan_percentages = {
         plan: (round(count * 100 / total_memberships) if total_memberships else 0)
@@ -64,64 +52,50 @@ def index():
     active_memberships = membership_counts["active"]
     expired_memberships = membership_counts["expired"]
 
-    # Full membership listing, with each row's most recent payment/receipt
-    cursor.execute(f"""
-        SELECT
-            m.membership_id,
-            s.student_id,
-            s.full_name,
-            s.mobile,
-            m.plan_name,
-            m.joining_date,
-            m.end_date,
-            m.total_fee,
-            m.paid_amount,
-            m.pending_amount,
-            m.membership_status,
-            {DAYS_LEFT_SQL} AS days_left,
-            (SELECT p.receipt_number FROM payments p
-                WHERE p.membership_id = m.membership_id
-                ORDER BY p.payment_id DESC LIMIT 1) AS receipt_number,
-            (SELECT p.payment_mode FROM payments p
-                WHERE p.membership_id = m.membership_id
-                ORDER BY p.payment_id DESC LIMIT 1) AS payment_mode,
-            (SELECT p.payment_date FROM payments p
-                WHERE p.membership_id = m.membership_id
-                ORDER BY p.payment_id DESC LIMIT 1) AS payment_date,
-            (SELECT p.amount_paid FROM payments p
-                WHERE p.membership_id = m.membership_id
-                ORDER BY p.payment_id DESC LIMIT 1) AS last_amount_paid
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-        ORDER BY m.membership_id DESC
-    """, (admin_id,))
+    # Each row's most recent payment/receipt - `payments` is still SQLite-
+    # only (out of scope for this analytics migration slice, see
+    # docs/MIRROR_TRACKER.md), so this stays a single batched SQLite lookup
+    # keyed by membership_id instead of one query per row.
+    membership_ids = [m["membership_id"] for m in all_memberships]
+    latest_payment_by_membership = {}
 
-    rows = cursor.fetchall()
-    conn.close()
+    if membership_ids:
+        conn = get_connection()
+        cursor = conn.cursor()
+        placeholders = ",".join("?" * len(membership_ids))
+        cursor.execute(f"""
+            SELECT membership_id, receipt_number, payment_mode, payment_date, amount_paid
+            FROM payments
+            WHERE membership_id IN ({placeholders})
+            ORDER BY payment_id DESC
+        """, membership_ids)
+        for row in cursor.fetchall():
+            latest_payment_by_membership.setdefault(row["membership_id"], row)
+        conn.close()
 
     memberships = []
-    for row in rows:
+    for m in sorted(all_memberships, key=lambda m: m["membership_id"], reverse=True):
 
-        status = get_effective_status(row["membership_status"], row["end_date"])
+        status = get_effective_status(m["membership_status"], m["end_date"])
+        last_payment = latest_payment_by_membership.get(m["membership_id"])
 
         memberships.append({
-            "membership_id": row["membership_id"],
-            "library_id": "LIB{:04d}".format(row["student_id"]),
-            "student_id": row["student_id"],
-            "full_name": row["full_name"],
-            "mobile": row["mobile"],
-            "plan_name": row["plan_name"],
-            "joining_date": row["joining_date"],
-            "end_date": row["end_date"],
-            "total_fee": row["total_fee"],
-            "paid_amount": row["paid_amount"],
-            "pending_amount": row["pending_amount"],
+            "membership_id": m["membership_id"],
+            "library_id": "LIB{:04d}".format(m["student_id"]),
+            "student_id": m["student_id"],
+            "full_name": m["full_name"],
+            "mobile": m["mobile"],
+            "plan_name": m["plan_name"],
+            "joining_date": m["joining_date"],
+            "end_date": m["end_date"],
+            "total_fee": m["total_fee"],
+            "paid_amount": m["paid_amount"],
+            "pending_amount": m["pending_amount"],
             "status": status,
-            "receipt_number": row["receipt_number"],
-            "payment_mode": row["payment_mode"],
-            "payment_date": row["payment_date"],
-            "last_amount_paid": row["last_amount_paid"],
+            "receipt_number": last_payment["receipt_number"] if last_payment else None,
+            "payment_mode": last_payment["payment_mode"] if last_payment else None,
+            "payment_date": last_payment["payment_date"] if last_payment else None,
+            "last_amount_paid": last_payment["amount_paid"] if last_payment else None,
         })
 
     # Quick Insights — derived read-only from the data already fetched above,

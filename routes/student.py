@@ -13,7 +13,7 @@ from flask import (
 from postgrest.exceptions import APIError
 
 from database.db import get_connection
-from database.membership_queries import EFFECTIVE_STATUS_SQL
+from database.membership_queries import get_memberships_for_admin, get_effective_status
 from database.supabase_client import get_supabase_client
 
 
@@ -63,36 +63,17 @@ def index():
     except APIError:
         students = []
 
-    # memberships stays SQLite (out of this session's scope) -- attach each
-    # student's latest membership + effective status the same way the old
-    # correlated-subquery LEFT JOIN did, merged in Python against the
-    # Supabase students list instead of a database-level join.
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(f"""
-        SELECT
-            s.student_id,
-            m.membership_id,
-            m.plan_name,
-            m.paid_amount,
-            m.pending_amount,
-            {EFFECTIVE_STATUS_SQL} AS membership_status
-
-        FROM students s
-
-        LEFT JOIN memberships m
-            ON m.membership_id = (
-                SELECT membership_id
-                FROM memberships
-                WHERE student_id = s.student_id
-                ORDER BY membership_id DESC
-                LIMIT 1
-            )
-
-        WHERE s.admin_id = ?
-    """, (admin_id,))
-    membership_by_student = {row["student_id"]: dict(row) for row in cursor.fetchall()}
-    conn.close()
+    # Attach each student's latest membership + effective status the same
+    # way the old correlated-subquery LEFT JOIN did, merged in Python
+    # against the Supabase students list - Supabase `students`/`memberships`
+    # (ADR-23) via database.membership_queries.get_memberships_for_admin(),
+    # instead of a SQLite database-level join.
+    memberships = get_memberships_for_admin(admin_id)
+    membership_by_student = {}
+    for m in memberships:
+        current = membership_by_student.get(m["student_id"])
+        if current is None or m["membership_id"] > current["membership_id"]:
+            membership_by_student[m["student_id"]] = m
 
     for student in students:
         m = membership_by_student.get(student["student_id"], {})
@@ -100,7 +81,9 @@ def index():
         student["plan_name"] = m.get("plan_name")
         student["paid_amount"] = m.get("paid_amount")
         student["pending_amount"] = m.get("pending_amount")
-        student["membership_status"] = m.get("membership_status")
+        student["membership_status"] = (
+            get_effective_status(m["membership_status"], m["end_date"]) if m else None
+        )
 
     return render_template("students/index.html", students=students)
 

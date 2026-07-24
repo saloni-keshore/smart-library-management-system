@@ -12,9 +12,10 @@ routes/dashboard.py, routes/membership.py and routes/membership_distribution.py
 docs/11_FUTURE_WORK.md). Everything here is that one definition, reused.
 """
 
+from datetime import date as _date
+
 from postgrest.exceptions import APIError
 
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 
 
@@ -42,11 +43,18 @@ def get_effective_status(membership_status, end_date):
     """Python-side equivalent of EFFECTIVE_STATUS_SQL, for rows already
     fetched (e.g. a single membership dict) instead of re-querying."""
 
-    from datetime import date as _date
-
     if membership_status == "Active" and end_date and str(end_date) < _date.today().isoformat():
         return "Expired"
     return membership_status
+
+
+def get_days_left(end_date):
+    """Python-side equivalent of DAYS_LEFT_SQL, for rows already fetched
+    from Supabase instead of a SQL expression evaluated in SQLite."""
+
+    if not end_date:
+        return None
+    return (_date.fromisoformat(str(end_date)) - _date.today()).days
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +94,79 @@ def get_active_membership(student_id):
 
 
 # ---------------------------------------------------------------------------
+# Cross-table reads (Supabase has no server-side JOIN in the client used
+# here, so every module below that used to run `memberships m JOIN students
+# s ON ... WHERE s.admin_id = ?` against SQLite now fetches this admin's
+# students and memberships separately and merges them in Python - the same
+# shape routes/student.py's index() already established for its own
+# students+memberships merge, ADR-19).
+# ---------------------------------------------------------------------------
+
+# Columns every current consumer of get_memberships_for_admin() needs off
+# the student side (Dashboard/Membership Distribution only need
+# full_name/mobile; Notifications also needs shift/purpose/join_date) -
+# selected together so one shared query serves all of them.
+_STUDENT_JOIN_COLUMNS = "student_id, full_name, mobile, shift, purpose, join_date"
+
+
+def get_admin_students(admin_id):
+    """This admin's students (id + the columns analytics consumers join
+    against - see _STUDENT_JOIN_COLUMNS), or []. Callers that need the full
+    student row should query Supabase `students` directly instead."""
+
+    supabase = get_supabase_client()
+
+    try:
+        response = (
+            supabase.table("students")
+            .select(_STUDENT_JOIN_COLUMNS)
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        return response.data
+    except APIError:
+        return []
+
+
+def get_memberships_for_admin(admin_id):
+    """Every membership belonging to this admin's students, each row
+    enriched with that student's full_name/mobile/shift/purpose/join_date -
+    the Python-side equivalent of `memberships m JOIN students s ON
+    m.student_id = s.student_id WHERE s.admin_id = ?`. Used by Dashboard,
+    Membership Distribution, Notifications and Business Intelligence, which
+    all read this same join.
+    """
+
+    students = get_admin_students(admin_id)
+    if not students:
+        return []
+
+    students_by_id = {s["student_id"]: s for s in students}
+
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("memberships")
+            .select("*")
+            .in_("student_id", list(students_by_id.keys()))
+            .execute()
+        )
+        memberships = response.data
+    except APIError:
+        memberships = []
+
+    for m in memberships:
+        student = students_by_id.get(m["student_id"], {})
+        m["full_name"] = student.get("full_name")
+        m["mobile"] = student.get("mobile")
+        m["shift"] = student.get("shift")
+        m["purpose"] = student.get("purpose")
+        m["join_date"] = student.get("join_date")
+
+    return memberships
+
+
+# ---------------------------------------------------------------------------
 # Counts (shared by Dashboard and Membership Distribution)
 # ---------------------------------------------------------------------------
 
@@ -94,29 +175,25 @@ def get_membership_counts(admin_id):
 
     Same query Dashboard and Membership Distribution each ran separately
     (identical WHERE logic, just split across 1 vs 2 SELECTs) - now one
-    source of truth for both.
+    source of truth for both. Reads Supabase `students`/`memberships`
+    (ADR-23) instead of the SQLite mirror.
     """
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    memberships = get_memberships_for_admin(admin_id)
+    today = _date.today().isoformat()
 
-    cursor.execute("""
-        SELECT
-            COUNT(DISTINCT CASE
-                WHEN m.membership_status = 'Active' AND m.end_date >= DATE('now')
-                THEN m.student_id END) AS active_total,
-            COUNT(DISTINCT CASE
-                WHEN m.membership_status = 'Active' AND m.end_date < DATE('now')
-                THEN m.student_id END) AS expired_total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-    """, (admin_id,))
+    active_students = set()
+    expired_students = set()
 
-    row = cursor.fetchone()
-    conn.close()
+    for m in memberships:
+        if m["membership_status"] != "Active":
+            continue
+        if m["end_date"] and m["end_date"] >= today:
+            active_students.add(m["student_id"])
+        elif m["end_date"] and m["end_date"] < today:
+            expired_students.add(m["student_id"])
 
-    return {"active": row["active_total"], "expired": row["expired_total"]}
+    return {"active": len(active_students), "expired": len(expired_students)}
 
 
 # ---------------------------------------------------------------------------

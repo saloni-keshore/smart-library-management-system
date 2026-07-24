@@ -14,49 +14,49 @@ routes/auth.py                 → database.supabase_client.get_supabase_client 
                                 → database.db.get_connection   (register() ONLY — mirror-inserts the same new admin
                                   into SQLite too, since enquiries/students/library_settings/membership_settings/
                                   audit_log still enforce a SQLite FK to admins.admin_id; TD-35, temporary bridge)
-routes/dashboard.py            → database.db.get_connection   (students, memberships, payments, enquiries —
-                                  memberships is Supabase-backed as of ADR-20/ADR-21, but this read stays against
-                                  the SQLite mirror, which routes/membership.py's create()/renew() and
-                                  routes/payment.py's collect() both keep current)
-                                → utils.charts (generate_revenue_chart, generate_membership_chart)
+routes/dashboard.py            → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-23 —
+                                  total-students/total-enquiries counts, source-of-truth Supabase reads)
+                                → database.membership_queries (get_membership_counts, get_memberships_for_admin,
+                                  get_admin_students, get_days_left — as of 2026-07-23, ADR-23, replacing the
+                                  raw SQLite JOINs and DAYS_LEFT_SQL this route used before; no SQLite dependency
+                                  left in this route)
+                                → utils.charts (generate_revenue_chart — still SQLite, payments unmigrated;
+                                  generate_membership_chart — Supabase, ADR-23)
                                 → database.cashbook_categories (constants only)
-                                → database.cashbook_queries (get_pending_fees, get_total_fee_revenue - added
-                                  2026-07-21, replacing two inline SUM() queries that duplicated Cashbook's own)
-                                → database.membership_queries (get_membership_counts, DAYS_LEFT_SQL - added
-                                  2026-07-21, replacing an inline COUNT(DISTINCT CASE...) query and a raw
-                                  julianday() expression - see TD-6)
+                                → database.cashbook_queries (get_pending_fees — Supabase, ADR-23;
+                                  get_total_fee_revenue/get_today_fee_collection — still SQLite, payments
+                                  unmigrated)
 routes/enquiries.py            → database.supabase_client.get_supabase_client   (enquiries table, Supabase/
                                   PostgreSQL — as of 2026-07-23, ADR-18; was database.db.get_connection until
-                                  this cutover; source of truth for index()/edit()/view())
-                                → database.db.get_connection   (SQLite mirror-write in add()/edit()/delete() —
-                                  temporary bridge since routes/payment.py/routes/dashboard.py/
-                                  routes/membership_distribution.py/routes/notification.py/etc. still JOIN
-                                  students directly against SQLite; also used read-only in index()/view() to
-                                  look up students' enquiry_id → student_id map)
+                                  this cutover; source of truth for index()/edit()/view(); as of ADR-23, also
+                                  used for index()'s/view()'s students lookup, previously SQLite)
+                                → database.db.get_connection   (SQLite mirror-write in add()/edit()/delete()
+                                  only, as of ADR-23 — temporary bridge since routes/payment.py's index()/
+                                  routes/setting.py's backup functions/database.payment_queries' receipt-fallback
+                                  branch still JOIN students directly against SQLite)
 routes/student.py              → database.supabase_client.get_supabase_client   (students table, Supabase/
                                   PostgreSQL — as of 2026-07-23, ADR-19; was database.db.get_connection until
                                   this cutover; source of truth for index()/admission()/view()/edit(); also
                                   reads/writes enquiries there directly in admission(), closing TD-36)
-                                → database.db.get_connection   (SQLite mirror-write in admission()/edit() —
-                                  temporary bridge since routes/payment.py/routes/dashboard.py/
-                                  routes/membership_distribution.py/routes/notification.py/routes/setting.py's
-                                  backup functions/database.bi_queries/cashbook_queries/membership_queries all
-                                  still JOIN students directly against SQLite (routes/membership.py migrated
-                                  off this list 2026-07-23, ADR-20 — its own student lookups now go through
-                                  Supabase too); also used read-only in index()/view() for memberships/payments —
-                                  memberships is Supabase-backed as of ADR-20 too, but this read stays against
-                                  the SQLite mirror, which routes/membership.py keeps current; payments stays
-                                  SQLite)
-                                → database.membership_queries.EFFECTIVE_STATUS_SQL (added 2026-07-21 - TD-6)
-routes/membership_distribution.py → database.db.get_connection (memberships, students, payments)
-                                → utils.charts.generate_membership_distribution_donut
-                                → database.cashbook_queries (get_pending_fees, get_total_fee_revenue - added
-                                  2026-07-21, replacing a Python-side sum() over the page's fetched rows)
-                                → database.membership_queries (get_membership_counts, get_effective_status,
-                                  DAYS_LEFT_SQL - added 2026-07-21, replacing two standalone COUNT queries plus
-                                  an inline is_active boolean - see TD-6)
-routes/notification.py         → database.db.get_connection   (memberships, students)
-                                → database.membership_queries.DAYS_LEFT_SQL (added 2026-07-21)
+                                → database.db.get_connection   (SQLite mirror-write in admission()/edit(), and
+                                  view()'s membership/payment lookups — payments is unmigrated; as of ADR-23,
+                                  index()'s own membership merge no longer uses this)
+                                → database.membership_queries (get_memberships_for_admin, get_effective_status —
+                                  as of 2026-07-23, ADR-23, replacing the raw SQLite self-join index() used before)
+routes/membership_distribution.py → database.supabase_client (via database.membership_queries, ADR-23 —
+                                  students/memberships reads for everything except each row's last-payment
+                                  columns)
+                                → database.db.get_connection (as of 2026-07-23, ADR-23 — now only the batched
+                                  payments lookup for receipt_number/payment_mode/payment_date/last_amount_paid,
+                                  payments unmigrated)
+                                → utils.charts.generate_membership_distribution_donut (Supabase, ADR-23)
+                                → database.cashbook_queries (get_pending_fees, get_total_fee_revenue)
+                                → database.membership_queries (get_membership_counts, get_memberships_for_admin,
+                                  get_effective_status — as of 2026-07-23, ADR-23, replacing two raw SQLite
+                                  JOINs and DAYS_LEFT_SQL)
+routes/notification.py         → database.membership_queries (get_memberships_for_admin, get_days_left — as of
+                                  2026-07-23, ADR-23, replacing database.db.get_connection/DAYS_LEFT_SQL; this
+                                  route has no SQLite dependency left)
 routes/membership_analytics.py → (no DB access at all - redirects to membership_distribution.index, fixed 2026-07-22)
 ```
 
@@ -68,11 +68,9 @@ routes/membership.py           → database.supabase_client.get_supabase_client 
                                   this cutover; source of truth for index()/create()/renew(); also reads
                                   students there directly (Supabase, ADR-19) instead of the SQLite mirror)
                                 → database.db.get_connection   (SQLite mirror-write in create()/renew() —
-                                  temporary bridge since routes/dashboard.py/routes/membership_distribution.py/
-                                  routes/notification.py/routes/student.py's view()/database.cashbook_queries'
-                                  get_pending_fees()/database.bi_queries all still JOIN memberships directly
-                                  against SQLite (routes/payment.py migrated off this list 2026-07-23, ADR-21 —
-                                  its collect() now writes Supabase directly too, closing TD-37))
+                                  temporary bridge since routes/student.py's view() (the one remaining
+                                  memberships-mirror reader, ADR-23) still JOINs memberships directly against
+                                  SQLite)
                                 → database.payment_queries.record_payment (added 2026-07-22, replacing a direct
                                   database.cashbook_queries.insert_income_entry call + an inline receipt-number
                                   formula duplicated across create()/renew()/payment.collect() - TD-22, ADR-13;
@@ -87,10 +85,9 @@ routes/payment.py              → database.supabase_client.get_supabase_client 
                                   also reads students there directly (Supabase, ADR-19) to verify ownership)
                                 → database.db.get_connection   (index()'s own SQL for payments/students, unchanged
                                   and unmigrated; SQLite mirror-write of the same paid_amount/pending_amount
-                                  update in collect() — temporary bridge since routes/dashboard.py/
-                                  routes/membership_distribution.py/routes/notification.py/routes/student.py's
-                                  view()/database.cashbook_queries' get_pending_fees()/database.bi_queries all
-                                  still JOIN memberships directly against SQLite)
+                                  update in collect() — temporary bridge since routes/student.py's view() (the
+                                  one remaining memberships-mirror reader, ADR-23) still JOINs memberships
+                                  directly against SQLite)
                                 → database.payment_queries.record_payment (added 2026-07-22 - see routes/membership.py
                                   note above, same fix; still SQLite-only, unaffected by ADR-21)
 routes/cashbook.py              → database.cashbook_queries (insert_transaction, get_total_income/expense,
@@ -128,20 +125,26 @@ database/cashbook_queries.py   → database.audit_queries.log_entry   (SQLite mi
                                   insert_transaction(), best-effort mirror write for insert_income_entry() —
                                   see routes/membership.py's/routes/payment.py's cards for why the latter can't
                                   be strict; payment_id never sent to Supabase, TD-38)
+                                → database.membership_queries.get_memberships_for_admin (as of 2026-07-23,
+                                  ADR-23 — get_pending_fees() only, Supabase students/memberships)
                                 → database.db.get_connection   (SQLite mirror read/write — every cashbook write's
-                                  mirror row, plus get_pending_fees()/get_today_fee_collection()/
-                                  get_total_fee_revenue(), unchanged, reading memberships/payments/students not
-                                  cashbook)
+                                  mirror row, plus get_today_fee_collection()/get_total_fee_revenue(), unchanged,
+                                  reading payments/students not cashbook)
 database/bi_queries.py         → database.cashbook_queries (get_monthly_income, get_monthly_expense,
                                    get_income_category_totals, get_expense_category_totals,
                                    get_pending_fees, get_total_fee_revenue, get_recent_transactions — all now
                                    Supabase-backed for the cashbook-table ones, as of ADR-22)
+                                → database.membership_queries.get_memberships_for_admin (as of 2026-07-23,
+                                  ADR-23 — replaces database.db.get_connection for its three membership-side
+                                  functions; this module has no SQLite dependency left)
 database/audit_queries.py      → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
                                   audit_log table, source of truth for get_recent_audit_log(); log_entry()
                                   itself is unchanged — takes a cursor, doesn't open its own connection, SQLite
                                   mirror-write only)
 database/membership_settings_queries.py → database.db.get_connection only
-database/membership_queries.py → database.db.get_connection only (added 2026-07-21 - see TD-6/TD-7)
+database/membership_queries.py → database.supabase_client.get_supabase_client only (as of 2026-07-23, ADR-23 —
+                                  this module has no SQLite dependency left at all; get_membership_counts()
+                                  moved to Supabase, joining get_active_membership() which already was, ADR-20)
 database/payment_queries.py    → database.cashbook_queries.insert_income_entry (added 2026-07-22 - see TD-22, ADR-13;
                                    generate_receipt_number() reads/writes library_settings directly via the caller's
                                    conn, no separate connection; unaffected by ADR-22 — still SQLite-only itself,
@@ -171,7 +174,7 @@ routes/dashboard.py               → utils.charts.generate_revenue_chart
 routes/membership_distribution.py → utils.charts.generate_membership_distribution_donut
 ```
 
-`utils/charts.py` itself imports `database.db.get_connection` directly — it is not a pure function of data passed in, it queries the DB on its own.
+`utils/charts.py` itself is not a pure function of data passed in — it queries the DB on its own. As of 2026-07-23 (ADR-23), `generate_membership_chart`/`generate_membership_distribution_donut` import `database.membership_queries.get_memberships_for_admin` (Supabase); `generate_revenue_chart` still imports `database.db.get_connection` directly (SQLite, `payments` unmigrated) — the two chart functions in this file no longer share a single backend.
 
 ## Template include/extend graph (high level)
 

@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 
 from database.db import get_connection
+from database.membership_queries import get_memberships_for_admin
 
 
 def _smooth_curve(x, y, samples_per_segment=30):
@@ -60,6 +61,14 @@ def _format_currency_short(value, _pos=None):
 
 
 def generate_revenue_chart(admin_id):
+    """Monthly revenue line chart, from `payments` JOIN `students`.
+
+    Still reads SQLite: `payments` has no Supabase-authoritative copy yet
+    (it is not one of the Phase 6 analytics-migration tables - see
+    docs/MIRROR_TRACKER.md's "Non-mirror unmigrated tables" section), so
+    there is nothing to read from Supabase for this chart yet. Revisit once
+    `payments` itself is migrated.
+    """
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -200,41 +209,19 @@ def generate_revenue_chart(admin_id):
 # ==========================================
 
 def generate_membership_chart(admin_id):
+    """Reads Supabase `students`/`memberships` (ADR-23) via
+    database.membership_queries.get_memberships_for_admin() instead of the
+    SQLite mirror."""
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    memberships = get_memberships_for_admin(admin_id)
 
-    cursor.execute("""
-        SELECT
-            m.plan_name,
-            COUNT(*) AS total
+    counts = {}
+    for m in memberships:
+        counts[m["plan_name"]] = counts.get(m["plan_name"], 0) + 1
 
-        FROM memberships m
-
-        JOIN students s
-            ON s.student_id = m.student_id
-
-        WHERE
-            s.admin_id = ?
-
-        GROUP BY
-            m.plan_name
-
-        ORDER BY
-            total DESC
-    """, (admin_id,))
-
-    data = cursor.fetchall()
-
-    conn.close()
-
-    labels = []
-    sizes = []
-
-    for row in data:
-
-        labels.append(row["plan_name"])
-        sizes.append(row["total"])
+    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    labels = [plan for plan, _ in ranked]
+    sizes = [total for _, total in ranked]
 
     fig, ax = plt.subplots(figsize=(3.6, 3.6), dpi=180)
 
@@ -377,36 +364,19 @@ PLAN_CHART_FALLBACK_COLOR = "#94a3b8"
 
 
 def generate_membership_distribution_donut(admin_id):
+    """Reads Supabase `students`/`memberships` (ADR-23) via
+    database.membership_queries.get_memberships_for_admin() instead of the
+    SQLite mirror."""
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    memberships = get_memberships_for_admin(admin_id)
 
-    cursor.execute("""
-        SELECT
-            m.plan_name,
-            COUNT(*) AS total
+    counts = {}
+    for m in memberships:
+        counts[m["plan_name"]] = counts.get(m["plan_name"], 0) + 1
 
-        FROM memberships m
-
-        JOIN students s
-            ON s.student_id = m.student_id
-
-        WHERE
-            s.admin_id = ?
-
-        GROUP BY
-            m.plan_name
-
-        ORDER BY
-            total DESC
-    """, (admin_id,))
-
-    data = cursor.fetchall()
-
-    conn.close()
-
-    labels = [row["plan_name"] for row in data]
-    sizes = [row["total"] for row in data]
+    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    labels = [plan for plan, _ in ranked]
+    sizes = [total for _, total in ranked]
     total = sum(sizes)
 
     fig, ax = plt.subplots(figsize=(5.4, 5.4), dpi=170)

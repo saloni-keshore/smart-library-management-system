@@ -12,9 +12,8 @@ returning convention used across cashbook_queries.py and the rest of the
 database layer.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
-from database.db import get_connection
 from database.cashbook_queries import (
     get_monthly_income,
     get_monthly_expense,
@@ -24,6 +23,7 @@ from database.cashbook_queries import (
     get_expense_category_totals,
     get_recent_transactions,
 )
+from database.membership_queries import get_memberships_for_admin
 
 
 # ---------------------------------------------------------------------------
@@ -53,72 +53,51 @@ def last_n_months(n=6):
 # ---------------------------------------------------------------------------
 
 def get_monthly_new_memberships(admin_id):
-    """New memberships per month, keyed by joining month."""
+    """New memberships per month, keyed by joining month. Reads Supabase
+    `students`/`memberships` (ADR-23) via
+    database.membership_queries.get_memberships_for_admin() instead of the
+    SQLite mirror."""
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    memberships = get_memberships_for_admin(admin_id)
 
-    cursor.execute("""
-        SELECT
-            strftime('%Y-%m', m.joining_date) AS month,
-            COUNT(*) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-        GROUP BY month
-        ORDER BY month
-    """, (admin_id,))
+    totals = {}
+    for m in memberships:
+        if not m["joining_date"]:
+            continue
+        month = m["joining_date"][:7]
+        totals[month] = totals.get(month, 0) + 1
 
-    rows = cursor.fetchall()
-    conn.close()
-
-    return {row["month"]: row["total"] for row in rows}
+    return dict(sorted(totals.items()))
 
 
 def get_membership_retention(admin_id):
-    """Total vs currently-active memberships, used as a retention signal."""
+    """Total vs currently-active memberships, used as a retention signal.
+    Reads Supabase `students`/`memberships` (ADR-23)."""
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    memberships = get_memberships_for_admin(admin_id)
+    today = date.today().isoformat()
 
-    cursor.execute("""
-        SELECT
-            COUNT(*) AS total,
-            SUM(
-                CASE WHEN m.membership_status = 'Active'
-                     AND m.end_date >= DATE('now')
-                THEN 1 ELSE 0 END
-            ) AS active
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-    """, (admin_id,))
+    active = sum(
+        1 for m in memberships
+        if m["membership_status"] == "Active" and m["end_date"] and m["end_date"] >= today
+    )
 
-    row = cursor.fetchone()
-    conn.close()
-
-    return {"total": row["total"] or 0, "active": row["active"] or 0}
+    return {"total": len(memberships), "active": active}
 
 
 def get_upcoming_expiries(admin_id, days=7):
-    """Count of active memberships expiring within the next `days` days."""
+    """Count of active memberships expiring within the next `days` days.
+    Reads Supabase `students`/`memberships` (ADR-23)."""
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    memberships = get_memberships_for_admin(admin_id)
+    today = date.today().isoformat()
+    cutoff = (date.today() + timedelta(days=days)).isoformat()
 
-    cursor.execute("""
-        SELECT COUNT(*) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-        AND m.membership_status = 'Active'
-        AND m.end_date BETWEEN DATE('now') AND DATE('now', ?)
-    """, (admin_id, f"+{days} days"))
-
-    total = cursor.fetchone()["total"]
-    conn.close()
-
-    return total
+    return sum(
+        1 for m in memberships
+        if m["membership_status"] == "Active"
+        and m["end_date"] and today <= m["end_date"] <= cutoff
+    )
 
 
 # ---------------------------------------------------------------------------

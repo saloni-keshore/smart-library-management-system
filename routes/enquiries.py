@@ -62,17 +62,24 @@ def index():
     except APIError:
         enquiries = []
 
-    # students stays SQLite (out of this session's scope) -- attach
-    # student_id per enquiry the same way the old LEFT JOIN did, so
-    # "Admitted" rows still link to their student record.
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT enquiry_id, student_id FROM students WHERE admin_id = ?",
-        (admin_id,)
-    )
-    student_by_enquiry = {row["enquiry_id"]: row["student_id"] for row in cursor.fetchall()}
-    conn.close()
+    # Attach student_id per enquiry the same way the old LEFT JOIN did, so
+    # "Admitted" rows still link to their student record - Supabase
+    # `students` (ADR-19) instead of the SQLite mirror (ADR-23).
+    try:
+        students_response = (
+            supabase.table("students")
+            .select("enquiry_id, student_id")
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        student_rows = students_response.data
+    except APIError:
+        student_rows = []
+
+    student_by_enquiry = {
+        row["enquiry_id"]: row["student_id"]
+        for row in student_rows if row["enquiry_id"] is not None
+    }
 
     for enquiry in enquiries:
         enquiry["student_id"] = student_by_enquiry.get(enquiry["enquiry_id"])
@@ -300,13 +307,17 @@ def view(enquiry_id):
         flash("Enquiry not found.", "danger")
         return redirect(url_for("enquiry.index"))
 
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT student_id FROM students WHERE enquiry_id=? AND admin_id=?",
-        (enquiry_id, admin_id)
-    )
-    student = cursor.fetchone()
-    conn.close()
+    # Supabase `students` (ADR-19) instead of the SQLite mirror (ADR-23).
+    try:
+        student_response = (
+            supabase.table("students")
+            .select("student_id")
+            .eq("enquiry_id", enquiry_id)
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        student = student_response.data[0] if student_response.data else None
+    except APIError:
+        student = None
 
     return render_template("enquiries/view.html", enquiry=enquiry, student=student)

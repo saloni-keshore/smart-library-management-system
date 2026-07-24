@@ -7,7 +7,7 @@ Before removing any mirror, re-grep the current codebase.
 Do not rely solely on ADRs or previous dependency reports, as they may become outdated after later migrations.
 
 
-This file exists to answer one question at any point during the incremental Supabase migration (ADR-16…ADR-22 in [DECISIONS.md](DECISIONS.md)): **which SQLite tables/rows are temporary write-synced mirrors of a Supabase-authoritative table, who still reads/writes each mirror, and exactly what has to happen before that mirror can be deleted.**
+This file exists to answer one question at any point during the incremental Supabase migration (ADR-16…ADR-23 in [DECISIONS.md](DECISIONS.md)): **which SQLite tables/rows are temporary write-synced mirrors of a Supabase-authoritative table, who still reads/writes each mirror, and exactly what has to happen before that mirror can be deleted.**
 
 It is a **living document** — update it in the same session as every migration slice that creates, shrinks, or removes a mirror, not after the fact. Treat drift between this file and the actual source as a bug, the same standard [README.md](README.md)'s maintenance policy applies to the rest of `docs/`.
 
@@ -45,9 +45,9 @@ Consequence: a mirror can only be deleted once **every** table downstream of it 
 | Mirror table | Source of truth since | Readers remaining | FK dependents still requiring it | Status |
 |---|---|---|---|---|
 | [`admins`](#admins-existence-only-bridge) | Supabase, ADR-16 (2026-07-23) | None (existence-only) | `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` (7) | **Open** |
-| [`enquiries`](#enquiries) | Supabase, ADR-18 (2026-07-23) | `routes/dashboard.py` (1) | `students.enquiry_id` | **Open** |
-| [`students`](#students) | Supabase, ADR-19 (2026-07-23) | 11 modules/functions (see below) | `memberships.student_id`, `payments.student_id` | **Open** |
-| [`memberships`](#memberships) | Supabase, ADR-20 (2026-07-23) | 7 modules/functions (see below) | `payments.membership_id` | **Open** |
+| [`enquiries`](#enquiries) | Supabase, ADR-18 (2026-07-23) | None (0, since ADR-23) | `students.enquiry_id` | **Open** |
+| [`students`](#students) | Supabase, ADR-19 (2026-07-23) | 4 modules/functions (see below), down from 11 (ADR-23) | `memberships.student_id`, `payments.student_id` | **Open** |
+| [`memberships`](#memberships) | Supabase, ADR-20 (2026-07-23) | `routes/student.py`'s `view()` (1), down from 7 (ADR-23) | `payments.membership_id` | **Open** |
 | [`cashbook`](#cashbook) | Supabase, ADR-22 (2026-07-23) | `database/migrate_backfill_cashbook_payments.py` (reconciliation script, not a live route) (1) | `audit_log.entry_id` | **Open** |
 | [`audit_log`](#audit_log) | Supabase, ADR-22 (2026-07-23) | None (existence-only for the SQLite copy — see below) | none | **Open** |
 
@@ -85,24 +85,24 @@ Consequence: a mirror can only be deleted once **every** table downstream of it 
 **Columns mirror-synced:** `enquiry_id` (explicit, computed as SQLite `MAX(enquiry_id) + 1`, not Supabase's identity column — see ADR-18), `admin_id`, `full_name`, `mobile`, `purpose`, `preferred_shift`, `followup_date`, `remarks`, `demo_done`.
 **Column deliberately *not* mirror-synced:** `status` — `routes/student.py`'s `admission()` writes `status='Admitted'` to **Supabase only** (TD-36, `Resolved` via ADR-19). The SQLite mirror's `status` column is stale/frozen at whatever `add()` last wrote and is read by nothing.
 
-**Current readers (SQLite):**
-- `routes/dashboard.py`'s `dashboard()` — `SELECT COUNT(*) FROM enquiries WHERE admin_id = ?` for the "Total Enquiries" KPI. The only reader of this mirror's *rows*.
+**Current readers (SQLite):** None (since ADR-23) — `routes/dashboard.py`'s enquiry count moved to a Supabase `count="exact", head=True` query.
 
 **Current writers (SQLite):**
 - `routes/enquiries.py`'s `add()` (mirror-insert, explicit `enquiry_id`), `edit()` (mirror-update, not best-effort), `delete()` (best-effort mirror-delete, swallows `sqlite3.Error` if an already-admitted student's `students.enquiry_id` FK blocks it — see TD-36's row in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) for that specific leftover-row edge case).
 
 **Why the mirror still exists:**
-- **Read-side:** `routes/dashboard.py`'s enquiry count (above) is unmigrated.
+- **Read-side:** none — zero readers as of ADR-23.
 - **FK-side:** `students.enquiry_id` is a real SQLite FK. `routes/student.py`'s `admission()` inserts a SQLite `students` mirror row (ADR-19) that references `enquiry_id` — that insert requires the `enquiries` row to already exist in SQLite. (Note: `admission()` itself no longer *reads* the enquiries mirror — as of ADR-19 it reads/writes the `enquiries` row it needs directly against Supabase — but its SQLite `students` insert still needs the SQLite `enquiries` row to exist for the FK to resolve.)
 
 **Exact removal conditions (both required):**
-1. **Read-side:** migrate `routes/dashboard.py`'s enquiry count to Supabase.
-2. **FK-side:** the `students` mirror (below) must stop inserting rows with a real `enquiry_id` FK reference — i.e., either `students`' own mirror is fully removed (see its section), or `students.enquiry_id`'s FK constraint is dropped/relaxed.
+1. **Read-side:** already done (ADR-23) — zero readers remain.
+2. **FK-side:** the `students` mirror (below) must stop inserting rows with a real `enquiry_id` FK reference — i.e., either `students`' own mirror is fully removed (see its section), or `students.enquiry_id`'s FK constraint is dropped/relaxed. This is the only thing still blocking this mirror's removal.
 
 **Change history:**
 - 2026-07-23 (ADR-18): mirror introduced — needed as an ongoing two-way sync (not a one-shot bridge like `admins`'), since `admission()` (at the time) read live enquiry field values from SQLite, not just row existence.
 - 2026-07-23 (ADR-19): `status` column's writer moved to Supabase-only, closing TD-36. `admission()` stopped reading this mirror's field values (`full_name`/`mobile`/`purpose`/`preferred_shift`) — it now reads Supabase directly. Mirror itself (row existence + non-`status` columns) remained required, for the two reasons listed above.
 - 2026-07-23 (post-ADR-22 full-codebase re-grep): re-verified against source — `routes/dashboard.py` is still the only production reader of SQLite `enquiries`; no additional reader surfaced (unlike `students`/`memberships`, see their sections). List unchanged.
+- 2026-07-23 (ADR-23): `routes/dashboard.py`'s enquiry count migrated to Supabase (`.select("enquiry_id", count="exact", head=True).eq("admin_id", admin_id)`) — this mirror's read-side condition is now fully satisfied. Still blocked purely on the FK-side (`students` mirror).
 
 ---
 
@@ -112,37 +112,32 @@ Consequence: a mirror can only be deleted once **every** table downstream of it 
 
 **Columns mirror-synced:** every column — `student_id` (explicit, `MAX(student_id) + 1`, same reasoning as `enquiries.enquiry_id`), `admin_id`, `enquiry_id`, `full_name`, `mobile`, `address`, `id_proof`, `purpose`, `shift`, `join_date`, `status`. Unlike `enquiries`, there is no held-back column — `admission()`/`edit()` write both databases in full, since `students.status` has no split-brain risk analogous to `enquiries.status` (nothing else writes it).
 
-**Current readers (SQLite)** — re-verified directly against source on 2026-07-23 (post-ADR-22 audit), by grepping every `.py` file outside `tests/`/`migrate_*.py` for `FROM students`/`JOIN students`, not by trusting this file's own prior list:
-- `routes/payment.py`'s `index()` — `payments p INNER JOIN students s`.
-- `routes/dashboard.py`'s `dashboard()` — total-students count, upcoming-expiries `JOIN students`, recent-admissions `JOIN students`.
-- `routes/membership_distribution.py`'s `index()` — `memberships m JOIN students s` (twice).
-- `routes/notification.py`'s `get_notification_summary()` — `memberships m JOIN students s`.
-- `routes/setting.py`'s `backup_export_csv()` — `SELECT * FROM students WHERE admin_id = ?`; `backup_create()` copies the entire `library.db` file (a coarser, non-query form of consuming this mirror — see TD-32 for the unrelated cross-tenant issue in that same route).
-- `routes/enquiries.py`'s `index()`/`view()` (`SELECT enquiry_id, student_id FROM students WHERE admin_id = ?`, read-only, for the `enquiry_id → student_id` map) and `delete()` (`SELECT student_id FROM students WHERE enquiry_id=? AND admin_id=?`, to explain an FK-blocked delete).
-- `database/bi_queries.py` — `get_monthly_new_memberships()`, `get_membership_retention()`, `get_upcoming_expiries()` (all three `JOIN students`).
-- `database/cashbook_queries.py` — `get_pending_fees()`, `get_today_fee_collection()`, `get_total_fee_revenue()` (all three `JOIN students`).
-- `database/membership_queries.py` — `get_membership_counts()` (`JOIN students`), called by `routes/dashboard.py` and `routes/membership_distribution.py`.
-- **`utils/charts.py`** — **newly surfaced by this re-grep, not previously named in this file**: `generate_revenue_chart(admin_id)` (`payments p JOIN students s`, called from `routes/dashboard.py`) and `generate_membership_chart(admin_id)`/`generate_membership_distribution_donut(admin_id)` (both `memberships m JOIN students s`, called from `routes/dashboard.py` and `routes/membership_distribution.py` respectively). Prior summaries attributed these reads narratively to "`routes/dashboard.py`"/"`routes/membership_distribution.py`" without naming that the actual SQL lives in a third file those routes call into — migrating `routes/dashboard.py`'s own queries would **not** stop `utils/charts.py`'s independent SQLite reads; both must move together.
-- **`database/payment_queries.py`** — **newly surfaced by this re-grep**: `generate_receipt_number()`'s no-Library-Profile-yet fallback branch (`SELECT COUNT(*) ... FROM payments p JOIN students s ON s.student_id = p.student_id WHERE s.admin_id = ?`) — only reachable for an admin who hasn't saved a Library Profile, but a real, executable SQLite read of this mirror, not a comment or a dead branch.
-- `routes/student.py`'s own `index()` — reads the student list from Supabase, but *separately* runs `FROM students s LEFT JOIN memberships m ON ...` **against SQLite** to build the per-student latest-membership merge (only `m.*`/`s.student_id` are consumed — `s.student_id` purely as the Python merge key, no other `students` column is read back). This means `routes/student.py` depends on the SQLite `students` mirror still existing even for its *own*, already-migrated page — not previously called out explicitly as a `students`-table dependency in this file (it was described only as "a SQLite `memberships` query").
+**Current readers (SQLite)** — re-verified directly against source on 2026-07-23 (post-ADR-23 re-grep), by grepping every `.py` file outside `tests/`/`migrate_*.py` for `FROM students`/`JOIN students`:
+- `routes/payment.py`'s `index()` — `payments p INNER JOIN students s`. Still SQLite: `payments` is unmigrated.
+- `routes/setting.py`'s `backup_export_csv()` — `SELECT * FROM students WHERE admin_id = ?`; `backup_create()` copies the entire `library.db` file (a coarser, non-query form of consuming this mirror — see TD-32 for the unrelated cross-tenant issue in that same route). Not part of the ADR-23 analytics slice (Settings-owned route) — still SQLite.
+- `database/payment_queries.py`'s `generate_receipt_number()` — its no-Library-Profile-yet fallback branch (`SELECT COUNT(*) ... FROM payments p JOIN students s ON s.student_id = p.student_id WHERE s.admin_id = ?`) — still SQLite: needs `payments`.
+- `utils/charts.py`'s `generate_revenue_chart()` — `payments p JOIN students s`, called from `routes/dashboard.py`. Still SQLite: needs `payments`. (Its sibling functions, `generate_membership_chart()`/`generate_membership_distribution_donut()`, migrated to Supabase in this same slice — see below.)
+
+**Migrated to Supabase by ADR-23 (2026-07-23), no longer readers of this mirror:** `routes/dashboard.py` (total-students count, upcoming-expiries, recent-admissions — now via `database.membership_queries.get_admin_students()`/`get_memberships_for_admin()`), `routes/membership_distribution.py`'s `index()` (total/plan-wise counts and the listing's non-payment columns), `routes/notification.py`'s `get_notification_summary()`, `database/bi_queries.py` (`get_monthly_new_memberships()`/`get_membership_retention()`/`get_upcoming_expiries()`), `database/cashbook_queries.py`'s `get_pending_fees()`, `database/membership_queries.py`'s `get_membership_counts()`, `utils/charts.py`'s `generate_membership_chart()`/`generate_membership_distribution_donut()` (its third chart function, `generate_revenue_chart()`, is unchanged/still SQLite — needs `payments`), `routes/enquiries.py`'s `index()`/`view()`/`delete()` (all three now query Supabase `students` directly), and `routes/student.py`'s own `index()` self-join (now via `get_memberships_for_admin()`).
 
 **Not** a reader: `routes/membership.py` — migrated off this list by ADR-20 (its own student lookups go through Supabase). `routes/payment.py`'s `collect()` — migrated off this list by ADR-21 (its ownership check now reads Supabase `students`); only `routes/payment.py`'s sibling function `index()` still reads the mirror.
 
 **Current writers (SQLite):** `routes/student.py`'s `admission()` (mirror-insert, explicit `student_id`), `edit()` (mirror-update, not best-effort).
 
 **Why the mirror still exists:**
-- **Read-side:** the 11 modules/functions above (widened from the previously-tracked 9 by this re-grep's discovery of `utils/charts.py` and `database/payment_queries.py`), none migrated.
+- **Read-side:** the 4 modules/functions above (down from 11 pre-ADR-23), all but one gated on `payments` migrating (`routes/setting.py`'s backup functions are the one exception — gated on Settings migrating instead, unrelated to `payments`).
 - **FK-side:** `memberships.student_id` and `payments.student_id` are both real SQLite FKs. `routes/membership.py`'s `create()`/`renew()` insert SQLite `memberships` mirror rows (ADR-20) referencing `student_id`; `database/payment_queries.py`'s `record_payment()` (called from both `routes/membership.py` and `routes/payment.py`) inserts `payments` rows referencing `student_id` directly, on every single payment. `payments` is unmigrated and will keep needing this indefinitely until it's migrated too.
 
 **Exact removal conditions (both required):**
-1. **Read-side:** migrate all 11 listed consumers (`routes/payment.py`'s `index()`, `routes/dashboard.py`, `routes/membership_distribution.py`, `routes/notification.py`, `routes/setting.py`'s backup functions, `routes/enquiries.py`'s read-only lookups, `database/bi_queries.py`, `database/cashbook_queries.py`, `database/membership_queries.py`, `utils/charts.py`'s three chart functions, `database/payment_queries.py`'s receipt-fallback branch, and `routes/student.py`'s own `index()` self-join) to read Supabase instead.
+1. **Read-side:** migrate the 4 remaining listed consumers (`routes/payment.py`'s `index()`, `database/payment_queries.py`'s receipt-fallback branch, `utils/charts.py`'s `generate_revenue_chart()` — all three gated on `payments`; `routes/setting.py`'s backup functions — gated on Settings migrating) to read Supabase instead.
 2. **FK-side:** the `memberships` mirror must stop requiring `student_id` to exist in SQLite (see its own removal conditions — itself blocked on `payments`), **and** `payments` itself must be migrated to Supabase (removing its own SQLite `student_id` FK insert) or have that FK dropped.
 
 **Change history:**
 - 2026-07-23 (ADR-19): mirror introduced, widest fan-out found so far (8 modules at the time). Closed TD-36 at the source (`admission()`'s `enquiries.status` write moved to Supabase). `enquiries` mirror confirmed still required, independent of this migration.
 - 2026-07-23 (ADR-20): `routes/membership.py` migrated off the reader list (its own student lookups moved to Supabase).
 - 2026-07-23 (ADR-21): `routes/payment.py`'s `collect()` migrated off the reader list (ownership check moved to Supabase); `routes/payment.py`'s `index()` remains a reader. Re-verifying the full list against source (not against ADR-19's original prose) also surfaced `routes/setting.py`'s `backup_export_csv()`/`backup_create()` and `routes/enquiries.py`'s read-only lookups explicitly, which prior summaries had described narratively but this file now lists exhaustively.
-- 2026-07-23 (post-ADR-22 full-codebase re-grep): widened from 9 to 11 tracked consumers — `utils/charts.py` (3 chart functions, called from `routes/dashboard.py`/`routes/membership_distribution.py` but doing their own independent SQL, not routed through either route's own query calls) and `database/payment_queries.py`'s `generate_receipt_number()` fallback branch were both real, executable SQLite readers that no prior version of this file named explicitly. Also documented `routes/student.py`'s own `index()` self-join against SQLite `students`, previously described only as a `memberships` read. No removal condition changed as a result (the mirror was already blocked on all the same downstream tables) — this is a completeness correction, exactly the kind of gap this file's own maintenance rule (re-grep, don't trust prior prose) exists to catch.
+- 2026-07-23 (post-ADR-22 full-codebase re-grep): widened from 9 to 11 tracked consumers — `utils/charts.py` (3 chart functions) and `database/payment_queries.py`'s `generate_receipt_number()` fallback branch were both real, executable SQLite readers that no prior version of this file named explicitly. Also documented `routes/student.py`'s own `index()` self-join against SQLite `students`, previously described only as a `memberships` read. No removal condition changed as a result — a completeness correction.
+- 2026-07-23 (ADR-23): shrank from 11 to 4 tracked consumers in one slice — `routes/dashboard.py`, `routes/membership_distribution.py`, `routes/notification.py`, `database/bi_queries.py`, `database/cashbook_queries.py`'s `get_pending_fees()`, `database/membership_queries.py`'s `get_membership_counts()`, two of `utils/charts.py`'s three chart functions, `routes/enquiries.py`'s read-only lookups, and `routes/student.py`'s own `index()` self-join were all migrated to Supabase in this slice, via a new shared helper (`database.membership_queries.get_memberships_for_admin()`). The 4 remaining readers are gated on either `payments` migrating (`routes/payment.py`'s `index()`, `database/payment_queries.py`'s receipt-fallback branch, `utils/charts.py`'s `generate_revenue_chart()`) or Settings migrating (`routes/setting.py`'s backup functions) — see ADR-23 in [DECISIONS.md](DECISIONS.md).
 
 ---
 
@@ -152,31 +147,28 @@ Consequence: a mirror can only be deleted once **every** table downstream of it 
 
 **Columns mirror-synced:** every column, from two different writers — `routes/membership.py`'s `create()`/`renew()` write the full row (`membership_id`, explicit `MAX(membership_id) + 1`; `student_id`, `plan_name`, `joining_date`, `duration_days`, `end_date`, `total_fee`, `paid_amount`, `pending_amount`, `remarks`, `membership_status`); `routes/payment.py`'s `collect()` writes only `paid_amount`/`pending_amount` on an existing row (it never inserts a new membership row).
 
-**Current readers (SQLite)** — re-verified directly against source on 2026-07-23 (post-ADR-22 audit):
-- `routes/dashboard.py`'s `dashboard()` — upcoming-expiries `JOIN memberships`, recent-admissions `LEFT JOIN memberships`; also `database/membership_queries.py`'s `get_membership_counts()` (`JOIN memberships`).
-- `routes/membership_distribution.py`'s `index()` — full membership listing (`memberships m JOIN students s`), plus `get_membership_counts()`.
-- `routes/notification.py`'s `get_notification_summary()` — `memberships m JOIN students s`.
-- `routes/student.py`'s `view()` — `SELECT * FROM memberships WHERE student_id=? ORDER BY membership_id DESC LIMIT 1` (the Student detail page's membership card). Separately, `routes/student.py`'s own `index()` also reads `memberships` directly (`LEFT JOIN memberships` against the SQLite mirror, see `students`' section above) — two independent reads of this mirror from the same file.
-- `database/cashbook_queries.py`'s `get_pending_fees()` — `SUM(memberships.pending_amount)`, feeding Dashboard/Membership Distribution/Cashbook/the BI health score's collection component (ADR-11).
-- `database/bi_queries.py` — `get_monthly_new_memberships()`, `get_membership_retention()`, `get_upcoming_expiries()` (all three `JOIN memberships`).
-- **`utils/charts.py`** — **newly surfaced by this re-grep, not previously named in this file**: `generate_membership_chart(admin_id)` (called from `routes/dashboard.py`) and `generate_membership_distribution_donut(admin_id)` (called from `routes/membership_distribution.py`), both `memberships m JOIN students s`. Same gap as `students`' section above — these are a third file's own SQL, not something migrating `routes/dashboard.py`/`routes/membership_distribution.py`'s own queries would close.
+**Current readers (SQLite):**
+- `routes/student.py`'s `view()` — `SELECT * FROM memberships WHERE student_id=? ORDER BY membership_id DESC LIMIT 1` (the Student detail page's membership card). The only remaining reader as of ADR-23.
+
+**Migrated to Supabase by ADR-23 (2026-07-23), no longer readers of this mirror:** `routes/dashboard.py` (upcoming-expiries, recent-admissions), `database/membership_queries.py`'s `get_membership_counts()`, `routes/membership_distribution.py`'s `index()` (full membership listing's non-payment columns, plus `get_membership_counts()`), `routes/notification.py`'s `get_notification_summary()`, `routes/student.py`'s own `index()` (its separate self-join, distinct from `view()` above, which remains), `database/cashbook_queries.py`'s `get_pending_fees()`, `database/bi_queries.py` (`get_monthly_new_memberships()`/`get_membership_retention()`/`get_upcoming_expiries()`), and `utils/charts.py`'s `generate_membership_chart()`/`generate_membership_distribution_donut()` — all now read Supabase `students`/`memberships` via the new shared `database.membership_queries.get_memberships_for_admin()` helper.
 
 **Not** a reader: `routes/payment.py`'s `collect()` — as of ADR-21 it reads the membership from Supabase, not SQLite, before updating either. `routes/payment.py`'s `index()` never touches `memberships` at all (only `payments`/`students`).
 
 **Current writers (SQLite):** `routes/membership.py`'s `create()`/`renew()` (full mirror), `routes/payment.py`'s `collect()` (`paid_amount`/`pending_amount` only, added ADR-21).
 
 **Why the mirror still exists:**
-- **Read-side:** the 7 modules/functions above (widened from the previously-tracked 6 by this re-grep's discovery of `utils/charts.py`), plus the shared `database/membership_queries.py`'s `get_membership_counts()` two of them call.
+- **Read-side:** `routes/student.py`'s `view()` alone (down from 7 pre-ADR-23) — not migrated in this slice because it renders the raw membership row plus its full payment history from SQLite `payments` (unmigrated), rather than the `get_memberships_for_admin()` shape the rest of this slice used.
 - **FK-side:** `payments.membership_id` is a real SQLite FK. `database/payment_queries.py`'s `record_payment()` inserts a `payments` row on every membership creation/renewal/collection, referencing `membership_id` — this fires from both `routes/membership.py` and `routes/payment.py`, on every payment, and will keep requiring the SQLite `memberships` row to exist until `payments` itself is migrated.
 
 **Exact removal conditions (both required):**
-1. **Read-side:** migrate `routes/dashboard.py`, `routes/membership_distribution.py`, `routes/notification.py`, `routes/student.py`'s `view()` **and** `index()`, `database/cashbook_queries.py`'s `get_pending_fees()`, `database/bi_queries.py` (its three membership-retention/expiry functions), and `utils/charts.py`'s `generate_membership_chart()`/`generate_membership_distribution_donut()` to read Supabase instead.
+1. **Read-side:** migrate `routes/student.py`'s `view()` to read Supabase instead — the one remaining consumer.
 2. **FK-side:** `payments` must be migrated to Supabase (removing its SQLite `membership_id` FK insert) or that FK must be dropped. Since `database/payment_queries.py`'s `record_payment()` is shared by both `routes/membership.py` and `routes/payment.py`, migrating `payments` is a change to both routes, not one.
 
 **Change history:**
 - 2026-07-23 (ADR-20): mirror introduced. `routes/payment.py`'s `collect()`, `routes/dashboard.py`, `routes/membership_distribution.py`, `routes/notification.py` named as remaining readers — this list was **incomplete** (see ADR-21's correction below).
 - 2026-07-23 (ADR-21): `routes/payment.py`'s `collect()` migrated off the reader list and onto the writer list for `paid_amount`/`pending_amount` (closing TD-37). Re-verifying the dependency graph directly against source (not against ADR-20's prose) found ADR-20's reader list had missed `routes/student.py`'s `view()`, `database/cashbook_queries.py`'s `get_pending_fees()`, and `database/bi_queries.py` — all three added to this file's tracked list, none of them touched by ADR-21, all still `Open`.
 - 2026-07-23 (post-ADR-22 full-codebase re-grep): widened from 6 to 7 tracked consumers — `utils/charts.py`'s `generate_membership_chart()`/`generate_membership_distribution_donut()` were real, executable SQLite readers not previously named (same class of gap as `students`' section), and `routes/student.py`'s own `index()` self-join was clarified as a second, independent `memberships` read distinct from `view()`. No removal condition changed (still blocked on `payments`) — a completeness correction, not a new blocker.
+- 2026-07-23 (ADR-23): shrank from 7 to 1 tracked consumer in one slice — every reader except `routes/student.py`'s `view()` migrated to Supabase via the new shared `get_memberships_for_admin()` helper (see ADR-23 in [DECISIONS.md](DECISIONS.md)). `routes/student.py`'s `view()` is now the single remaining reader and the natural next follow-up — it also reads SQLite `payments` for the same student, so migrating it fully is gated on `payments` too, same as this mirror's own FK-side condition.
 
 ---
 
@@ -241,33 +233,33 @@ These have **no Supabase copy at all** — they are not mirrors, but they are ex
 
 Migrating `payments` is the single highest-leverage next migration for this file: it simultaneously helps close the FK-side of `memberships`, (transitively, once `students.student_id`'s reference through `payments` is gone) `students`, and lets `cashbook`'s Supabase mirror finally carry a real `payment_id` for automatic entries (closing TD-38, and letting `insert_income_entry()` adopt the strict Supabase-first shape, closing TD-39 too). `cashbook`/`audit_log` are no longer listed here — as of ADR-22 they're both Supabase-sourced mirrors themselves, tracked in their own sections above, not gating tables for something else.
 
-## Removal priority: which mirror goes first after "the analytics migrations"?
+## Removal priority: state after the analytics migration (ADR-23)
 
-"The analytics migrations" is read here as the natural next grouped slice: `database/bi_queries.py`, `routes/dashboard.py`, `routes/membership_distribution.py`, `routes/notification.py`, `utils/charts.py` (all three chart functions), and `database/cashbook_queries.py`'s three fee-revenue functions (`get_pending_fees`/`get_today_fee_collection`/`get_total_fee_revenue`) all cutting over to Supabase reads together — they're the largest shared block of remaining consumers across `enquiries`/`students`/`memberships`, and none of them owns a write path of its own (unlike Settings/Enquiries/Students/Payment), so migrating them is pure read-side work.
+The analytics migration slice (`database/bi_queries.py`, `routes/dashboard.py`, `routes/membership_distribution.py`, `routes/notification.py`, `utils/charts.py`'s two membership chart functions, and `database/cashbook_queries.py`'s `get_pending_fees()`, plus `routes/enquiries.py`'s read-only lookups and `routes/student.py`'s own `index()` self-join) is now **done** (ADR-23, 2026-07-23) — this section previously analyzed it as a hypothetical "next slice"; it's now actual history, updated below against the real post-slice state.
 
-Working through each of the 6 active mirrors' **both** conditions (read-side and FK-side — a mirror needs both clear, not just one) against that hypothetical:
+Working through each of the 6 active mirrors' **both** conditions (read-side and FK-side — a mirror needs both clear, not just one):
 
-| Mirror | Read-side after analytics migrations | FK-side after analytics migrations | Removable? |
+| Mirror | Read-side after ADR-23 | FK-side after ADR-23 | Removable? |
 |---|---|---|---|
 | `admins` | Already 0 (unaffected either way) | Unchanged — still needs all 7 bridge tables clear (none are analytics-related) | No |
-| `enquiries` | Drops to **0** (`routes/dashboard.py` was its only reader) | Unchanged — still needs `students`' own mirror gone, which is nowhere close (see below) | No — FK-side is the blocker, and it's a much bigger lift than analytics |
-| `students` | Still **≥4** non-analytics readers remain: `routes/setting.py`'s backup functions, `routes/enquiries.py`'s read-only lookups, `database/payment_queries.py`'s receipt-fallback branch, `routes/payment.py`'s `index()`, and `routes/student.py`'s own `index()` self-join (that page belongs to the Students module itself, not analytics) | Unchanged — still needs `payments` migrated | No — read-side alone rules it out |
-| `memberships` | Drops to **1**: only `routes/student.py`'s `view()` remains (a single function in the Students module, not analytics) | Unchanged — still needs `payments` migrated (shared with `students`) | Not fully, but closest on the read-side |
+| `enquiries` | **0** (`routes/dashboard.py` was its only reader, migrated) | Unchanged — still needs `students`' own mirror gone, which is nowhere close (see below) | No — FK-side is the blocker |
+| `students` | Down to **4**: `routes/setting.py`'s backup functions, `database/payment_queries.py`'s receipt-fallback branch, `routes/payment.py`'s `index()`, `utils/charts.py`'s `generate_revenue_chart()` — all four gated on `payments` except `routes/setting.py`'s backup functions (gated on Settings) | Unchanged — still needs `payments` migrated | No — read-side alone still rules it out |
+| `memberships` | Down to **1**: only `routes/student.py`'s `view()` remains | Unchanged — still needs `payments` migrated (shared with `students`) | Not fully, but closest on the read-side |
 | `cashbook` | Already effectively 0 (only `database/migrate_backfill_cashbook_payments.py`, a dormant script) — unaffected by analytics either way | Unchanged — needs `audit_log`'s mirror gone | No |
 | `audit_log` | Already 0 — unaffected | Unchanged — needs `cashbook`'s mirror gone **and** the `admins` bridge cleared | No |
 
-**Conclusion:** no mirror becomes actually removable purely from the analytics migrations — every mirror's FK-side condition depends on a table the analytics slice never touches (`payments` for `students`/`memberships`, the `admins` bridge's 4 remaining Settings tables for `cashbook`/`audit_log`). But **`memberships` is clearly the closest** on the read-side: it would drop from 7 tracked consumers to a single one (`routes/student.py`'s `view()`), a one-function follow-up rather than a new module. `enquiries` is the only mirror that would reach **zero** readers from the analytics slice alone, but its FK-side is gated on `students`' mirror — which the analytics slice barely dents (still ≥4 non-analytics readers) — so `enquiries` can't actually be deleted next despite having no reads left.
+**Conclusion:** as predicted, no mirror became actually removable purely from the analytics migration — every mirror's FK-side condition depends on a table the analytics slice never touched (`payments` for `students`/`memberships`, the `admins` bridge's 4 remaining Settings tables for `cashbook`/`audit_log`). `memberships` is now the closest to fully removable on the read-side (a single function, `routes/student.py`'s `view()`, away from zero). `enquiries` is at zero readers already, but its FK-side is still gated on `students`' mirror, which the analytics slice narrowed but didn't clear (4 non-analytics readers remain, all gated on `payments` or Settings).
 
 **Practical recommendation, in order:**
-1. Do the analytics migration slice (`bi_queries.py`/`dashboard.py`/`membership_distribution.py`/`notification.py`/`charts.py`/`cashbook_queries.py`'s fee functions). This leaves `memberships` one function away from zero readers and `enquiries` at zero readers (though not yet deletable).
-2. Migrate `routes/student.py`'s `view()` (the one remaining `memberships` reader) — small, single-function follow-up.
-3. Migrate `payments` (the actual highest-leverage move, per the table above) — this is what finally clears the FK-side for both `memberships` and (transitively) `students`, and lets `cashbook` carry a real `payment_id` (TD-38/TD-39).
-4. Once `payments` is migrated and `students`' remaining non-analytics readers (Settings backup, Enquiries lookup, Payment's own `index()`/receipt-fallback) are cleared, `students` — and, transitively, `enquiries` — become removable.
+1. ~~Do the analytics migration slice~~ — **done** (ADR-23, 2026-07-23). Left `memberships` one function away from zero readers and `enquiries` at zero readers (though not yet deletable).
+2. Migrate `routes/student.py`'s `view()` (the one remaining `memberships` reader) — small, single-function follow-up, though it also touches SQLite `payments` for that same student's payment history, so full closure still depends on item 3.
+3. Migrate `payments` (the actual highest-leverage move, per the table above) — this is what finally clears the FK-side for both `memberships` and (transitively) `students`, lets `cashbook` carry a real `payment_id` (TD-38/TD-39), and closes the remaining `students`-mirror readers gated on it (`routes/payment.py`'s `index()`, `database/payment_queries.py`'s receipt-fallback branch, `utils/charts.py`'s `generate_revenue_chart()`).
+4. Once `payments` is migrated and `students`' one remaining non-`payments` reader (`routes/setting.py`'s backup functions) is cleared, `students` — and, transitively, `enquiries` — become removable.
 5. Separately and in parallel, migrating `routes/setting.py`'s 4 remaining SQLite-only tables (`library_settings`/`membership_settings`/`backup_log`/`security_settings`) closes the `admins` bridge, which is what actually lets `cashbook`/`audit_log` (already at zero reads today) be deleted — this path is **independent of both the analytics slice and `payments`**, and is arguably the single fastest mirror-removal available right now, since it doesn't wait on anything read-side.
 
 ## Related reading
 
-- [DECISIONS.md](DECISIONS.md) — ADR-16 through ADR-22, the full reasoning behind each slice.
+- [DECISIONS.md](DECISIONS.md) — ADR-16 through ADR-23, the full reasoning behind each slice.
 - [11_FUTURE_WORK.md](11_FUTURE_WORK.md) — TD-34 (schema-drift risk), TD-35/TD-36/TD-37 (the three split-brain bugs each mirror slice risked, all now `Resolved`).
 - [09_DEPENDENCY_MAP.md](09_DEPENDENCY_MAP.md) — the literal import graph this file's "Current readers"/"Current writers" lists are derived from.
 - [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md) — full FK list per table.

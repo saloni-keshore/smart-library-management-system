@@ -5,8 +5,7 @@ from flask import (
     redirect
 )
 
-from database.db import get_connection
-from database.membership_queries import DAYS_LEFT_SQL
+from database.membership_queries import get_memberships_for_admin, get_days_left
 
 
 notification_bp = Blueprint(
@@ -47,53 +46,27 @@ CATEGORY_META = {
 def get_notification_summary(admin_id):
     """
     Fetch every membership expiring within the next 3 days (or already
-    expired) in a single query and bucket the results by category, so the
-    navbar dropdown and the full notifications page share one source of
-    truth and one query per page load.
+    expired) and bucket the results by category, so the navbar dropdown and
+    the full notifications page share one source of truth. Reads Supabase
+    `students`/`memberships` (ADR-23) via
+    database.membership_queries.get_memberships_for_admin() instead of the
+    SQLite mirror.
     """
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(f"""
-        SELECT
-            s.student_id,
-            s.full_name,
-            s.mobile,
-            s.shift,
-            s.purpose,
-            s.join_date,
-            s.status AS student_status,
-
-            m.membership_id,
-            m.plan_name,
-            m.joining_date,
-            m.end_date,
-            m.pending_amount,
-            m.membership_status,
-
-            {DAYS_LEFT_SQL} AS days_left
-
-        FROM memberships m
-
-        JOIN students s
-            ON s.student_id = m.student_id
-
-        WHERE
-            s.admin_id = ?
-            AND m.membership_status = 'Active'
-            AND m.end_date <= DATE('now', '+3 day')
-
-        ORDER BY m.end_date ASC
-    """, (admin_id,))
-
-    rows = cursor.fetchall()
-    conn.close()
+    memberships = get_memberships_for_admin(admin_id)
+    cutoff = 3
 
     buckets = {"today": [], "tomorrow": [], "three_days": [], "expired": []}
 
-    for row in rows:
-        days_left = row["days_left"]
+    for row in memberships:
+        if row["membership_status"] != "Active":
+            continue
+
+        days_left = get_days_left(row["end_date"])
+        if days_left is None or days_left > cutoff:
+            continue
+
+        row["days_left"] = days_left
 
         if days_left < 0:
             buckets["expired"].append(row)
@@ -101,8 +74,11 @@ def get_notification_summary(admin_id):
             buckets["today"].append(row)
         elif days_left == 1:
             buckets["tomorrow"].append(row)
-        elif days_left <= 3:
+        else:
             buckets["three_days"].append(row)
+
+    for bucket in buckets.values():
+        bucket.sort(key=lambda row: row["end_date"])
 
     counts = {key: len(items) for key, items in buckets.items()}
     counts["total"] = sum(counts.values())

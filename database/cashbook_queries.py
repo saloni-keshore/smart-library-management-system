@@ -44,6 +44,7 @@ from datetime import date
 from database.db import get_connection
 from database.audit_queries import log_entry
 from database.supabase_client import get_supabase_client
+from database.membership_queries import get_memberships_for_admin
 
 
 # ---------------------------------------------------------------------------
@@ -421,24 +422,13 @@ def get_pending_fees(admin_id):
     """
     Pending Fees comes from the Payments/Memberships module (the source of
     truth for what students still owe), not from Cashbook expenses. Reads
-    the SQLite `memberships`/`students` mirrors - out of scope for this
-    Cashbook/audit_log migration slice, unchanged.
+    Supabase `students`/`memberships` (ADR-23) via
+    database.membership_queries.get_memberships_for_admin() - the same
+    shared join every other analytics consumer of that pair now uses.
     """
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT IFNULL(SUM(m.pending_amount), 0) AS total
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-    """, (admin_id,))
-
-    total = cursor.fetchone()["total"]
-    conn.close()
-
-    return total
+    memberships = get_memberships_for_admin(admin_id)
+    return sum(m["pending_amount"] or 0 for m in memberships)
 
 
 def get_today_fee_collection(admin_id):

@@ -1,11 +1,14 @@
+from datetime import date, timedelta
+
 from flask import (
     Blueprint,
     render_template,
     session,
     redirect
 )
+from postgrest.exceptions import APIError
 
-from database.db import get_connection
+from database.supabase_client import get_supabase_client
 from utils.charts import ( generate_revenue_chart,
                            generate_membership_chart )
 from database.cashbook_categories import (
@@ -19,7 +22,9 @@ from database.cashbook_queries import (
     get_today_fee_collection
 )
 from database.notification_settings_queries import get_notification_settings_cached
-from database.membership_queries import get_membership_counts, DAYS_LEFT_SQL
+from database.membership_queries import (
+    get_membership_counts, get_memberships_for_admin, get_admin_students, get_days_left
+)
 
 
 dashboard_bp = Blueprint(
@@ -38,27 +43,36 @@ def dashboard():
     generate_revenue_chart(admin_id)
     generate_membership_chart(admin_id)
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    supabase = get_supabase_client()
 
-    # Total Students
-    cursor.execute("""
-        SELECT COUNT(*) AS total
-        FROM students
-        WHERE status = 'Active' AND admin_id = ?
-    """, (admin_id,))
-    total_students = cursor.fetchone()["total"]
+    # Total Students - Supabase `students` (ADR-19) instead of the SQLite
+    # mirror.
+    try:
+        total_students = (
+            supabase.table("students")
+            .select("student_id", count="exact", head=True)
+            .eq("admin_id", admin_id)
+            .eq("status", "Active")
+            .execute()
+        ).count or 0
+    except APIError:
+        total_students = 0
 
-    # Total Enquiries
-    cursor.execute("""
-        SELECT COUNT(*) AS total
-        FROM enquiries
-        WHERE admin_id = ?
-    """, (admin_id,))
-    total_enquiries = cursor.fetchone()["total"]
+    # Total Enquiries - Supabase `enquiries` (ADR-18) instead of the SQLite
+    # mirror.
+    try:
+        total_enquiries = (
+            supabase.table("enquiries")
+            .select("enquiry_id", count="exact", head=True)
+            .eq("admin_id", admin_id)
+            .execute()
+        ).count or 0
+    except APIError:
+        total_enquiries = 0
 
     # Active/Expired Memberships - shared with Membership Distribution's
-    # identical counts (see database/membership_queries.py).
+    # identical counts (see database/membership_queries.py). Reads Supabase
+    # `students`/`memberships` (ADR-23).
     membership_counts = get_membership_counts(admin_id)
     active_memberships = membership_counts["active"]
     expired_memberships = membership_counts["expired"]
@@ -75,66 +89,63 @@ def dashboard():
     # Fees above - see database/cashbook_queries.py)
     today_collection = get_today_fee_collection(admin_id)
 
+    # This admin's memberships (each row already carries full_name/mobile),
+    # reused below for both Upcoming Expiries and Recent Admissions instead
+    # of two separate SQL round-trips - Supabase `students`/`memberships`
+    # (ADR-23).
+    memberships = get_memberships_for_admin(admin_id)
+
     # Upcoming Expiries (next 7 days, nearest first)
-    cursor.execute(f"""
-        SELECT
-            s.student_id,
-            s.full_name,
-            m.end_date,
-            {DAYS_LEFT_SQL} AS days_left
-        FROM memberships m
-        JOIN students s ON m.student_id = s.student_id
-        WHERE s.admin_id = ?
-        AND m.membership_status = 'Active'
-        AND m.end_date >= DATE('now')
-        AND m.end_date <= DATE('now', '+7 days')
-        ORDER BY m.end_date ASC
-    """, (admin_id,))
-    expiry_rows = cursor.fetchall()
+    today_str = date.today().isoformat()
+    cutoff_str = (date.today() + timedelta(days=7)).isoformat()
+
+    expiring = sorted(
+        (
+            m for m in memberships
+            if m["membership_status"] == "Active"
+            and m["end_date"] and today_str <= m["end_date"] <= cutoff_str
+        ),
+        key=lambda m: m["end_date"]
+    )
 
     expiries = [
         {
-            "library_id": "LIB{:04d}".format(row["student_id"]),
-            "student_name": row["full_name"],
-            "end_date": row["end_date"],
-            "days_left": row["days_left"]
+            "library_id": "LIB{:04d}".format(m["student_id"]),
+            "student_name": m["full_name"],
+            "end_date": m["end_date"],
+            "days_left": get_days_left(m["end_date"])
         }
-        for row in expiry_rows[:5]
+        for m in expiring[:5]
     ]
-    expiries_total = len(expiry_rows)
+    expiries_total = len(expiring)
 
-    # Recent Admissions (latest 5, newest first)
-    cursor.execute("""
-        SELECT
-            s.student_id,
-            s.full_name,
-            s.join_date,
-            m.plan_name
-        FROM students s
-        LEFT JOIN memberships m ON m.membership_id = (
-            SELECT membership_id
-            FROM memberships
-            WHERE student_id = s.student_id
-            ORDER BY membership_id DESC
-            LIMIT 1
-        )
-        WHERE s.admin_id = ?
-        ORDER BY s.join_date DESC, s.student_id DESC
-        LIMIT 5
-    """, (admin_id,))
-    admission_rows = cursor.fetchall()
+    # Recent Admissions (latest 5, newest first) - Supabase `students`
+    # (ADR-19), each merged with its own latest membership from the list
+    # already fetched above (same "keep the highest membership_id per
+    # student" shape routes/student.py's index() uses, ADR-19).
+    all_students = get_admin_students(admin_id)
+
+    latest_membership_by_student = {}
+    for m in memberships:
+        current = latest_membership_by_student.get(m["student_id"])
+        if current is None or m["membership_id"] > current["membership_id"]:
+            latest_membership_by_student[m["student_id"]] = m
+
+    admission_rows = sorted(
+        all_students,
+        key=lambda s: (s["join_date"] or "", s["student_id"]),
+        reverse=True
+    )[:5]
 
     admissions = [
         {
-            "library_id": "LIB{:04d}".format(row["student_id"]),
-            "student_name": row["full_name"],
-            "plan": row["plan_name"] or "--",
-            "admission_date": row["join_date"]
+            "library_id": "LIB{:04d}".format(s["student_id"]),
+            "student_name": s["full_name"],
+            "plan": latest_membership_by_student.get(s["student_id"], {}).get("plan_name", "--") or "--",
+            "admission_date": s["join_date"]
         }
-        for row in admission_rows
+        for s in admission_rows
     ]
-
-    conn.close()
 
     notification_settings = get_notification_settings_cached(admin_id)
     dash_show_pending_fees = (
