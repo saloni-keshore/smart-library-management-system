@@ -98,6 +98,8 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 
 No `admin_id` column — isolation via `student_id`/`membership_id` join.
 
+**As of 2026-07-24 (ADR-25), Supabase became the source of truth for every read** (`routes/payment.py`'s `index()`, `routes/student.py`'s `view()`, `utils/charts.py`'s `generate_revenue_chart()`, `database/cashbook_queries.py`'s fee-revenue getters, `routes/membership_distribution.py`'s per-row receipt columns) via `database/payment_queries.py`. **As of 2026-07-24 (ADR-28), Supabase is also this table's only write target** — `record_payment()`'s SQLite `INSERT` was deleted outright (the third mirror-write fully removed in Phase 10), `payment_id` is now computed from Supabase's own `MAX(payment_id) + 1`, and the Supabase insert is **strict**: a failure raises `postgrest.exceptions.APIError`, caught by `routes/membership.py`'s `create()`/`renew()` and `routes/payment.py`'s `collect()` (their `except sqlite3.Error:` blocks were widened to `except (sqlite3.Error, APIError):`) so a payment failure still rolls back exactly as before. See ADR-28 in [DECISIONS.md](DECISIONS.md) and [MIRROR_TRACKER.md](MIRROR_TRACKER.md).
+
 ### `cashbook` (the financial ledger)
 Base columns from `CREATE TABLE`, extended later in the same `schema.sql` via inline `ALTER TABLE ADD COLUMN` statements:
 

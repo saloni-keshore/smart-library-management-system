@@ -215,9 +215,11 @@ def create(student_id):
 
         # Bridge: this mirror has zero remaining readers as of ADR-25 (every
         # consumer that used to JOIN memberships directly against SQLite has
-        # migrated to Supabase) - kept only because payments' own SQLite
-        # insert still references membership_id (FK chain), pending Phase
-        # 10's removal call. See docs/MIRROR_TRACKER.md.
+        # migrated to Supabase). As of 2026-07-24 (ADR-28), record_payment()
+        # below no longer writes SQLite payments either, so nothing in the
+        # SQLite FK graph still requires this row to exist for a write to
+        # succeed - memberships is now a removal candidate itself, pending
+        # Phase 10's next removal call. See docs/MIRROR_TRACKER.md.
         try:
             sqlite_conn.execute("""
                 INSERT INTO memberships
@@ -233,7 +235,6 @@ def create(student_id):
 
             if paid_amount > 0:
                 receipt_number = record_payment(
-                    sqlite_conn,
                     admin_id,
                     membership_id=new_membership_id,
                     student_id=student_id,
@@ -248,7 +249,12 @@ def create(student_id):
 
             sqlite_conn.commit()
             sqlite_conn.close()
-        except sqlite3.Error:
+        except (sqlite3.Error, APIError):
+            # As of 2026-07-24 (ADR-28), record_payment() writes only
+            # Supabase and raises APIError (not sqlite3.Error) on failure -
+            # caught here alongside sqlite3.Error so a payments failure
+            # still rolls back the SQLite memberships mirror and the
+            # Supabase memberships insert exactly as before.
             sqlite_conn.rollback()
             sqlite_conn.close()
             supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()
@@ -438,7 +444,6 @@ def renew(student_id):
 
             if paid_amount > 0:
                 receipt_number = record_payment(
-                    sqlite_conn,
                     admin_id,
                     membership_id=new_membership_id,
                     student_id=student_id,
@@ -453,7 +458,10 @@ def renew(student_id):
 
             sqlite_conn.commit()
             sqlite_conn.close()
-        except sqlite3.Error:
+        except (sqlite3.Error, APIError):
+            # As of 2026-07-24 (ADR-28), record_payment() writes only
+            # Supabase and raises APIError (not sqlite3.Error) on failure -
+            # caught here alongside sqlite3.Error, same reasoning as create().
             sqlite_conn.rollback()
             sqlite_conn.close()
             supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()

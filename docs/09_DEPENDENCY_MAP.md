@@ -69,13 +69,14 @@ routes/membership.py           → database.supabase_client.get_supabase_client 
                                   this cutover; source of truth for index()/create()/renew(); also reads
                                   students there directly (Supabase, ADR-19) instead of the SQLite mirror)
                                 → database.db.get_connection   (SQLite mirror-write in create()/renew() — a
-                                  mirror at zero readers as of ADR-25, kept for the FK chain (payments' own
-                                  SQLite insert still references memberships) until Phase 10 makes the removal
-                                  call)
+                                  mirror at zero readers as of ADR-25, and as of ADR-28 also zero remaining FK
+                                  dependents (payments' own SQLite insert is gone) - a removal candidate itself,
+                                  pending Phase 10's next removal call)
                                 → database.payment_queries.record_payment (added 2026-07-22, replacing a direct
                                   database.cashbook_queries.insert_income_entry call + an inline receipt-number
                                   formula duplicated across create()/renew()/payment.collect() - TD-22, ADR-13;
-                                  as of 2026-07-24 (ADR-25), SQLite primary + Supabase best-effort mirror)
+                                  as of 2026-07-24 (ADR-28), Supabase-only and strict - create()/renew()'s
+                                  except sqlite3.Error widened to except (sqlite3.Error, APIError))
                                 → database.membership_settings_queries.get_membership_settings (added 2026-07-21 - TD-7;
                                   Supabase as of 2026-07-24, ADR-24)
                                 → database.membership_queries (get_effective_status, get_active_membership —
@@ -88,11 +89,12 @@ routes/payment.py              → database.supabase_client.get_supabase_client 
                                 → database.payment_queries.get_payments_for_admin (as of 2026-07-24, ADR-25 —
                                   index()'s Supabase payments/students read, replacing raw SQL)
                                 → database.db.get_connection   (SQLite mirror-write of paid_amount/pending_amount
-                                  in collect() only — a mirror at zero readers as of ADR-25, kept for the FK
-                                  chain until Phase 10 makes the removal call)
+                                  in collect() only — a mirror at zero readers as of ADR-25, and as of ADR-28
+                                  also zero remaining FK dependents - a removal candidate itself, pending Phase
+                                  10's next removal call)
                                 → database.payment_queries.record_payment (added 2026-07-22 - see routes/membership.py
-                                  note above, same fix; as of 2026-07-24 (ADR-25), SQLite primary + Supabase
-                                  best-effort mirror)
+                                  note above, same fix; as of 2026-07-24 (ADR-28), Supabase-only and strict -
+                                  collect()'s except sqlite3.Error widened to except (sqlite3.Error, APIError))
 routes/cashbook.py              → database.cashbook_queries (insert_transaction, get_total_income/expense,
                                    get_today_income/expense, get_pending_fees, get_monthly_income/expense,
                                    get_income_category_totals, get_expense_category_totals,
@@ -159,11 +161,10 @@ database/payment_queries.py    → database.cashbook_queries.insert_income_entry
                                   get_payments_for_admin())
                                 → database.supabase_client.get_supabase_client, postgrest.exceptions.APIError
                                   (ADR-24 for generate_receipt_number()'s library_settings read/advance - TD-40
-                                  still open there; ADR-25 for get_payments_for_admin()'s read and
-                                  record_payment()'s best-effort payments mirror-write - TD-41). Still SQLite:
-                                  _receipt_number_taken()'s uniqueness check (deliberate, needs the immediately-
-                                  consistent primary write) and record_payment()'s own SQLite payments insert
-                                  (primary, unchanged)
+                                  still open there; ADR-25/ADR-28 for get_payments_for_admin()'s read and
+                                  record_payment()'s Supabase payments insert, strict as of ADR-28). As of
+                                  2026-07-24 (ADR-28): zero SQLite dependency left at all -
+                                  _receipt_number_taken()'s uniqueness check moved to Supabase too
 database/settings_queries.py   → database.supabase_client.get_supabase_client, postgrest.exceptions.APIError
                                   (as of 2026-07-24, ADR-24 — no SQLite dependency left; also exports _now_iso()/
                                   _normalize_timestamps(), imported by receipt_settings_queries.py/

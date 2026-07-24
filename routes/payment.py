@@ -152,9 +152,12 @@ def collect(membership_id):
 
         # Bridge: this mirror has zero remaining readers as of ADR-25 (every
         # consumer that used to JOIN memberships directly against SQLite has
-        # migrated to Supabase) - kept only because payments' own SQLite
-        # insert below still references membership_id (FK chain), pending
-        # Phase 10's removal call. See docs/MIRROR_TRACKER.md.
+        # migrated to Supabase). As of 2026-07-24 (ADR-28), record_payment()
+        # below no longer writes SQLite payments at all either, so nothing
+        # in the SQLite FK graph still requires this memberships row to
+        # exist for a write to succeed - memberships is now a removal
+        # candidate itself, pending Phase 10's next removal call. See
+        # docs/MIRROR_TRACKER.md.
         conn = get_connection()
         try:
             conn.execute("""
@@ -164,7 +167,6 @@ def collect(membership_id):
             """, (new_paid, new_pending, membership_id))
 
             receipt_number = record_payment(
-                conn,
                 admin_id,
                 membership_id=membership_id,
                 student_id=student["student_id"],
@@ -178,7 +180,12 @@ def collect(membership_id):
             )
 
             conn.commit()
-        except sqlite3.Error:
+        except (sqlite3.Error, APIError):
+            # As of 2026-07-24 (ADR-28), record_payment() writes only
+            # Supabase and raises APIError (not sqlite3.Error) on failure -
+            # caught here alongside sqlite3.Error so a payments failure
+            # still rolls back the SQLite memberships mirror and reverts
+            # Supabase exactly as before.
             conn.rollback()
             # Restore Supabase to its pre-payment values so the source of
             # truth doesn't advance ahead of a rolled-back SQLite write.

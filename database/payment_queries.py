@@ -13,15 +13,15 @@ As of 2026-07-24 (ADR-25), Supabase `payments` is the source of truth for
 every *read* (`routes/payment.py`'s `index()`, `utils/charts.py`'s
 `generate_revenue_chart()`, `database/cashbook_queries.py`'s
 `get_today_fee_collection()`/`get_total_fee_revenue()`, etc. - see
-docs/MIRROR_TRACKER.md). `record_payment()` here still writes SQLite as the
-primary path, unchanged, and best-effort mirrors the identical row into
-Supabase afterward - the same shape ADR-22 established for
-`database/cashbook_queries.py`'s `insert_income_entry()`, for the same
-reason: this function is called mid-transaction, on a connection
-`routes/membership.py`/`routes/payment.py` opened, own, and roll back
-themselves, and giving them a new caught exception type would expand this
-slice's scope back into those two files. See TD-41 in
-docs/11_FUTURE_WORK.md for the narrower staleness window this leaves.
+docs/MIRROR_TRACKER.md). As of 2026-07-24 (ADR-28, Phase 10 - the third
+mirror-write fully removed), Supabase is also this table's only *write*
+target - `record_payment()` no longer touches SQLite at all, and its
+Supabase insert is strict (raises on failure), not best-effort: its callers
+(`routes/membership.py`'s `create()`/`renew()`, `routes/payment.py`'s
+`collect()`) now catch `postgrest.exceptions.APIError` alongside
+`sqlite3.Error` around this call, so a payment failure still rolls back
+cleanly exactly as it did before - see those routes' own comments and
+ADR-28 in docs/DECISIONS.md.
 """
 
 from datetime import date
@@ -33,15 +33,53 @@ from database.membership_queries import get_admin_students
 from database.supabase_client import get_supabase_client
 
 
-def _receipt_number_taken(cursor, receipt_number):
-    cursor.execute(
-        "SELECT 1 FROM payments WHERE receipt_number = ?",
-        (receipt_number,)
+def _receipt_number_taken(supabase, receipt_number):
+    resp = (
+        supabase.table("payments")
+        .select("payment_id")
+        .eq("receipt_number", receipt_number)
+        .limit(1)
+        .execute()
     )
-    return cursor.fetchone() is not None
+    return bool(resp.data)
 
 
-def generate_receipt_number(conn, admin_id):
+def _max_claimed_sequence(supabase, prefix):
+    """Highest `{prefix}-NNNNN` sequence number already claimed by *any*
+    admin, or None if none exist yet.
+
+    As of 2026-07-24 (ADR-28), `_receipt_number_taken()`'s uniqueness loops
+    below query Supabase (a real network round trip per check) instead of
+    local SQLite - a linear scan starting from a fixed floor (1001) is no
+    longer safe once thousands of receipts share the same default "LIB"
+    prefix, since the loop would need one round trip per already-claimed
+    number before reaching a free one (confirmed live: 1281 sequential
+    checks, 161 seconds, for a single fresh admin's first receipt). Both
+    call sites below seed their starting point from this function's result
+    instead, so the uniqueness loop only ever runs for the rare *actual*
+    collision, not to walk past everything already claimed. Sequence
+    numbers are zero-padded to a fixed width (%05d), so an ORDER BY on the
+    text column itself sorts identically to numeric order - no need to
+    fetch and parse every row to find the max.
+    """
+
+    resp = (
+        supabase.table("payments")
+        .select("receipt_number")
+        .like("receipt_number", f"{prefix}-%")
+        .order("receipt_number", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not resp.data:
+        return None
+    try:
+        return int(resp.data[0]["receipt_number"].split("-")[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def generate_receipt_number(admin_id):
     """Allocate this admin's next receipt number, advancing the persisted
     counter (Supabase `library_settings.next_receipt_number`, ADR-24).
 
@@ -61,17 +99,22 @@ def generate_receipt_number(conn, admin_id):
     claimed (by any admin) keeps every allocated receipt number actually
     unique while leaving the common, non-colliding case unchanged.
 
-    The counter advance is a separate Supabase write, no longer inside the
-    same SQLite transaction as the `payments` row it's issued for (`payments`
-    itself is still SQLite, unmigrated) - if that SQLite transaction rolls
-    back after this returns, the counter has already advanced and won't roll
-    back with it. This narrows, but doesn't remove, the original design's own
-    non-atomicity (the receipt-number availability check below was never
-    itself race-free against a concurrent request either) - see TD-40 in
-    docs/11_FUTURE_WORK.md.
+    As of 2026-07-24 (ADR-28), the uniqueness check (`_receipt_number_taken`)
+    queries Supabase directly (was SQLite before, deliberately, back when
+    Supabase was only a best-effort mirror that could lag - now that
+    Supabase is the only copy of `payments`, checking anywhere else would be
+    checking stale data). Both branches first call `_max_claimed_sequence()`
+    to seed their starting point from the true global max for this prefix,
+    rather than blindly starting from `next_receipt_number`/1001 and walking
+    the uniqueness-check loop forward one network round trip at a time past
+    every already-claimed number - see that function's docstring for the
+    161-second live reproduction that made this necessary. The counter
+    advance is still a separate Supabase write, not wrapped in the same
+    transaction as the `payments` insert it's issued for - see TD-40 in
+    docs/11_FUTURE_WORK.md for the narrow non-atomicity this leaves
+    (unchanged by ADR-28).
     """
 
-    cursor = conn.cursor()
     supabase = get_supabase_client()
     settings_response = (
         supabase.table("library_settings")
@@ -84,8 +127,11 @@ def generate_receipt_number(conn, admin_id):
     if settings is not None:
         prefix = settings["receipt_prefix"] or "LIB"
         number = settings["next_receipt_number"] or 1001
+        max_claimed = _max_claimed_sequence(supabase, prefix)
+        if max_claimed is not None and max_claimed + 1 > number:
+            number = max_claimed + 1
 
-        while _receipt_number_taken(cursor, f"{prefix}-{number:05d}"):
+        while _receipt_number_taken(supabase, f"{prefix}-{number:05d}"):
             number += 1
 
         supabase.table("library_settings").update(
@@ -94,9 +140,10 @@ def generate_receipt_number(conn, admin_id):
         return f"{prefix}-{number:05d}"
 
     prefix = "LIB"
-    sequence = 1001 + len(get_payments_for_admin(admin_id, prefix=prefix))
+    max_claimed = _max_claimed_sequence(supabase, prefix)
+    sequence = (max_claimed + 1) if max_claimed is not None else 1001
 
-    while _receipt_number_taken(cursor, f"{prefix}-{sequence:05d}"):
+    while _receipt_number_taken(supabase, f"{prefix}-{sequence:05d}"):
         sequence += 1
 
     return f"{prefix}-{sequence:05d}"
@@ -141,7 +188,6 @@ def get_payments_for_admin(admin_id, prefix=None):
 
 
 def record_payment(
-    conn,
     admin_id,
     membership_id,
     student_id,
@@ -154,52 +200,46 @@ def record_payment(
     source
 ):
     """Insert one `payments` row and its matching automatic Cashbook Income
-    entry, atomically on the caller's already-open connection/transaction.
+    entry.
 
     Returns the generated receipt_number. Caller is still responsible for
-    any membership-row update (paid_amount/pending_amount) and for
-    conn.commit()/conn.close().
+    any membership-row update (paid_amount/pending_amount) and for its own
+    SQLite mirror transaction (`memberships` isn't migrated yet - see
+    docs/MIRROR_TRACKER.md).
 
-    SQLite is the primary write, unchanged from before ADR-25 - `payment_id`
-    is computed explicitly (SQLite `MAX(payment_id) + 1`, the same pattern
-    ADR-18/19/20/22 use for `enquiry_id`/`student_id`/`membership_id`/
-    `entry_id`) rather than left to SQLite's `AUTOINCREMENT`, so the exact
-    same id can be used for the best-effort Supabase mirror-write below.
+    As of 2026-07-24 (ADR-28), Supabase is the only store - `payment_id` is
+    computed explicitly (Supabase `MAX(payment_id) + 1`, the same pattern
+    ADR-18/19/20/22/27 use for `enquiry_id`/`student_id`/`membership_id`/
+    `entry_id`) rather than left to an auto-increment sequence, and the
+    `payments` insert is strict: a failure raises `postgrest.exceptions.
+    APIError` past this function, for the caller to catch and roll back -
+    unlike the old SQLite-primary/Supabase-best-effort shape, there is no
+    fallback store left to silently keep the payment in.
     """
 
-    cursor = conn.cursor()
-    receipt_number = generate_receipt_number(conn, admin_id)
+    supabase = get_supabase_client()
+    receipt_number = generate_receipt_number(admin_id)
 
-    next_id_row = cursor.execute("SELECT IFNULL(MAX(payment_id), 0) AS m FROM payments").fetchone()
-    payment_id = next_id_row["m"] + 1
+    next_id_row = (
+        supabase.table("payments")
+        .select("payment_id")
+        .order("payment_id", desc=True)
+        .limit(1)
+        .execute()
+    )
+    payment_id = (next_id_row.data[0]["payment_id"] + 1) if next_id_row.data else 1
     payment_date = date.today().isoformat()
 
-    cursor.execute("""
-        INSERT INTO payments
-        (payment_id, membership_id, student_id, receipt_number, payment_mode,
-         amount_paid, payment_date, remarks)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        payment_id, membership_id, student_id, receipt_number,
-        payment_mode, amount, payment_date, remarks
-    ))
-
-    try:
-        supabase = get_supabase_client()
-        supabase.table("payments").insert({
-            "payment_id": payment_id,
-            "membership_id": membership_id,
-            "student_id": student_id,
-            "receipt_number": receipt_number,
-            "payment_mode": payment_mode,
-            "amount_paid": amount,
-            "payment_date": payment_date,
-            "remarks": remarks,
-        }).execute()
-    except APIError:
-        # Best-effort mirror only - see module docstring (TD-41) for why
-        # this must never block the caller's own SQLite transaction.
-        pass
+    supabase.table("payments").insert({
+        "payment_id": payment_id,
+        "membership_id": membership_id,
+        "student_id": student_id,
+        "receipt_number": receipt_number,
+        "payment_mode": payment_mode,
+        "amount_paid": amount,
+        "payment_date": payment_date,
+        "remarks": remarks,
+    }).execute()
 
     insert_income_entry(
         admin_id,
@@ -208,7 +248,7 @@ def record_payment(
         description=description,
         amount=amount,
         payment_method=payment_mode,
-        entry_date=date.today().isoformat(),
+        entry_date=payment_date,
         source=source,
         payment_id=payment_id
     )

@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-24 — Removed the `payments` SQLite mirror-write (Phase 10, third mirror fully removed)
+
+- **Feature:** Payment recording (Admission, Renewal, Collect Payment) — internal data layer, no user-visible feature change except error-handling now catches a wider exception type
+- **Files changed:** `database/payment_queries.py` (`record_payment()` drops its SQLite `INSERT` and `conn` parameter, payment_id computed from Supabase's own `MAX`, the Supabase insert made strict instead of best-effort; `_receipt_number_taken()`/`generate_receipt_number()` switch their uniqueness check from SQLite to Supabase, `generate_receipt_number()` also drops its `conn` parameter; new `_max_claimed_sequence()` helper — see the performance fix below), `routes/membership.py` (`create()`/`renew()` call `record_payment()` without `conn`, widen `except sqlite3.Error:` to `except (sqlite3.Error, APIError):`, update stale "Bridge:" comments), `routes/payment.py` (`collect()` same two changes)
+- **Why:** `cashbook`'s SQLite mirror-write (ADR-27) was the last thing that would have required a `payments` row to exist in SQLite for a downstream FK — with that gone, only `record_payment()`'s own SQLite insert remained, a pure write-path decision
+- **Database changes:** None to the schema — SQLite stops receiving new `payments` rows; the table and its existing historical rows are untouched until Phase 11 removes SQLite entirely
+- **UI changes:** None functionally — a payment failure still shows the same "Could not record this payment" flash and rolls back the same way, just triggered by `APIError` instead of `sqlite3.Error` in the rare failure case
+- **Future impact:** unlike `insert_income_entry()` (ADR-27, best-effort, TD-43), `record_payment()`'s Supabase write is strict and its 3 callers now catch the right exception type — this is a genuine reliability improvement, not new debt. `memberships`'/`students`' SQLite mirror-writes are now removal candidates (nothing downstream requires them for a write's FK to resolve anymore). TD-40 (receipt-counter/payment-insert non-atomicity) remains open — see its updated note in docs/11_FUTURE_WORK.md. See ADR-28 in docs/DECISIONS.md and the updated docs/MIRROR_TRACKER.md. **Also fixes a critical performance bug this exact change surfaced (TD-44, `Resolved`, same slice):** `generate_receipt_number()`'s no-Library-Profile fallback always started counting from a fixed floor (1001) regardless of how many `"LIB-"` receipts were already claimed globally — harmless against fast local SQLite, but once the uniqueness check moved to Supabase (this same change), a single fresh admin's first receipt allocation could take minutes (reproduced live: 161 seconds against 1281 already-claimed receipts). New `_max_claimed_sequence()` finds the true starting point in one query instead of walking every claimed number one network round trip at a time — verified the same case now takes 0.72 seconds. Verified via the full pytest suite (test_03/04/09 dropped from 30+ minutes with cascading failures to 9m20s clean).
+
+---
+
 ## 2026-07-24 — Removed the `cashbook` SQLite mirror-write (Phase 10, second mirror fully removed)
 
 - **Feature:** Cashbook ledger (manual entries, automatic Income entries from Membership/Payment) — internal data layer, no user-visible feature change
