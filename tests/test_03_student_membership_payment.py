@@ -209,18 +209,16 @@ def test_membership_create_success_with_payment(logged_in_client):
     assert m["pending_amount"] == 0
     assert m["total_fee"] == 1000
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
-    assert cur.fetchone()["c"] == 1
+    supabase = get_supabase_client()
+    payment_rows = supabase.table("payments").select("*").eq("membership_id", mid).execute().data
+    assert len(payment_rows) == 1
+    payment_id = payment_rows[0]["payment_id"]
 
-    # cashbook.payment_id reconciliation deliberately stays on the SQLite
-    # mirror - payments is still SQLite-only, so Supabase's cashbook never
-    # gets a real payment_id (its FK to payments would reject it). See
-    # ADR-22 / TD-38 in docs/11_FUTURE_WORK.md.
-    cur.execute("SELECT COUNT(*) AS c FROM cashbook WHERE payment_id IN (SELECT payment_id FROM payments WHERE membership_id=?)", (mid,))
-    assert cur.fetchone()["c"] == 1
-    conn.close()
+    # cashbook.payment_id now round-trips through Supabase too (ADR-25,
+    # closes TD-38's common case) - payments itself migrated to Supabase,
+    # so cashbook's FK to it can resolve.
+    cashbook_rows = supabase.table("cashbook").select("*").eq("payment_id", payment_id).execute().data
+    assert len(cashbook_rows) == 1
 
 
 def test_membership_create_with_partial_due(logged_in_client):
@@ -272,11 +270,9 @@ def test_membership_create_zero_pay_full_due_no_payment_row(logged_in_client):
     assert b"Membership created successfully" in resp.data
     assert b"Receipt No:" not in resp.data
     mid = get_last_membership_id(sid)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
-    assert cur.fetchone()["c"] == 0
-    conn.close()
+    supabase = get_supabase_client()
+    payment_rows = supabase.table("payments").select("payment_id").eq("membership_id", mid).execute().data
+    assert len(payment_rows) == 0
 
 
 def test_membership_create_for_nonexistent_student(logged_in_client):
@@ -540,11 +536,9 @@ def test_receipt_numbers_are_unique_across_multiple_payments(logged_in_client):
     for amt in ("100", "100", "100"):
         client.post(f"/payments/collect/{mid}", data={"amount_paid": amt, "payment_mode": "Cash"}, follow_redirects=True)
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT receipt_number FROM payments WHERE membership_id=?", (mid,))
-    receipts = [r["receipt_number"] for r in cur.fetchall()]
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("payments").select("receipt_number").eq("membership_id", mid).execute().data
+    receipts = [r["receipt_number"] for r in rows]
     assert len(receipts) == len(set(receipts))
     assert len(receipts) == 4  # 1 from create + 3 collects
 

@@ -13,7 +13,7 @@ from postgrest.exceptions import APIError
 
 from database.db import get_connection
 from database.supabase_client import get_supabase_client
-from database.payment_queries import record_payment
+from database.payment_queries import record_payment, get_payments_for_admin
 
 
 payment_bp = Blueprint(
@@ -31,19 +31,12 @@ def index():
 
     admin_id = session["admin_id"]
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT p.*, s.full_name
-        FROM payments p
-        INNER JOIN students s ON p.student_id = s.student_id
-        WHERE s.admin_id = ?
-        ORDER BY p.payment_id DESC
-    """, (admin_id,))
-
-    payments = cursor.fetchall()
-    conn.close()
+    # Supabase `payments`/`students` (ADR-25) instead of the SQLite mirror.
+    payments = sorted(
+        get_payments_for_admin(admin_id),
+        key=lambda p: p["payment_id"],
+        reverse=True
+    )
 
     return render_template("payments/index.html", payments=payments)
 

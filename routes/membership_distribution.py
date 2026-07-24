@@ -1,11 +1,11 @@
 from datetime import date, timedelta
 
 from flask import Blueprint, render_template, session, redirect
-from database.db import get_connection
 from database.cashbook_queries import get_pending_fees, get_total_fee_revenue
 from database.membership_queries import (
     get_membership_counts, get_memberships_for_admin, get_effective_status
 )
+from database.payment_queries import get_payments_for_admin
 from utils.charts import generate_membership_distribution_donut
 
 membership_distribution_bp = Blueprint(
@@ -52,26 +52,12 @@ def index():
     active_memberships = membership_counts["active"]
     expired_memberships = membership_counts["expired"]
 
-    # Each row's most recent payment/receipt - `payments` is still SQLite-
-    # only (out of scope for this analytics migration slice, see
-    # docs/MIRROR_TRACKER.md), so this stays a single batched SQLite lookup
-    # keyed by membership_id instead of one query per row.
-    membership_ids = [m["membership_id"] for m in all_memberships]
+    # Each row's most recent payment/receipt - Supabase `payments` (ADR-25)
+    # via database.payment_queries.get_payments_for_admin(), one fetch for
+    # the whole page instead of one query per row.
     latest_payment_by_membership = {}
-
-    if membership_ids:
-        conn = get_connection()
-        cursor = conn.cursor()
-        placeholders = ",".join("?" * len(membership_ids))
-        cursor.execute(f"""
-            SELECT membership_id, receipt_number, payment_mode, payment_date, amount_paid
-            FROM payments
-            WHERE membership_id IN ({placeholders})
-            ORDER BY payment_id DESC
-        """, membership_ids)
-        for row in cursor.fetchall():
-            latest_payment_by_membership.setdefault(row["membership_id"], row)
-        conn.close()
+    for p in sorted(get_payments_for_admin(admin_id), key=lambda p: p["payment_id"], reverse=True):
+        latest_payment_by_membership.setdefault(p["membership_id"], p)
 
     memberships = []
     for m in sorted(all_memberships, key=lambda m: m["membership_id"], reverse=True):

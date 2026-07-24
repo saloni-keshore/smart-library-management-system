@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-24 — Migrated Payments (`payments`) from SQLite to Supabase, and fixed a pre-existing Supabase parity gap in enquiries/students/memberships
+
+- **Feature:** Payments, plus every downstream reader of `payments` (Dashboard's revenue chart, Membership Distribution's receipt column, Business Intelligence via Cashbook's fee-revenue totals, Student detail page)
+- **Files changed:** `database/payment_queries.py` (`record_payment()` dual-write, new `get_payments_for_admin()`), `database/cashbook_queries.py` (`get_today_fee_collection()`/`get_total_fee_revenue()` rewritten, `insert_income_entry()` now sends `payment_id` to Supabase), `routes/payment.py` (`index()`), `routes/student.py` (`view()`), `routes/membership_distribution.py` (per-row payment enrichment), `utils/charts.py` (`generate_revenue_chart()`), `database/migrate_backfill_mirror_parity.py` (new), `tests/test_03_student_membership_payment.py`, `tests/test_09_full_workflow_chain.py`
+- **Why:** continue the incremental SQLite → Supabase migration (ADR-16…ADR-24) — `payments` was the last table gating both the `students` and `memberships` mirrors' remaining readers (docs/MIRROR_TRACKER.md's own "removal priority" analysis)
+- **Database changes:** None — no schema change. `database/migrate_backfill_mirror_parity.py` backfilled Supabase `enquiries`/`students`/`memberships`/`payments` to full SQLite parity (see below) before the code cutover
+- **UI changes:** None — every page renders identically; backend data-source change only, verified via the full test suite (251 passed, 1 expected skip)
+- **Future impact:** closed the `students` mirror's last 3 readers and the `memberships` mirror's last 1 reader (both now at zero query-based readers — see docs/MIRROR_TRACKER.md). Closed **TD-38**'s common case (`cashbook.payment_id` now round-trips through Supabase). Introduced **TD-41** (payments best-effort mirror staleness, same class as TD-39). **Also discovered and fixed TD-42**: Supabase `enquiries`/`students`/`memberships` were each missing a large block of rows (493/433/339 respectively) that predated their table's ADR-18/19/20 migration and were never copied by the original one-time bulk import (ADR-15) — every Supabase-backed page reading those tables had been silently incomplete since its own migration slice, undetected until this slice's `payments` backfill hit a foreign-key violation against a missing `memberships` row. See ADR-25 in docs/DECISIONS.md.
+
+---
+
 ## 2026-07-24 — Migrated Settings (library_settings/membership_settings/backup_log/security_settings) from SQLite to Supabase
 
 - **Feature:** Settings → Library Profile, Membership Settings, Receipt Settings, Notification Settings, Data & Backup, Security Settings

@@ -1,4 +1,6 @@
 import os
+from datetime import date
+
 import matplotlib
 matplotlib.use("Agg")
 import numpy as np
@@ -6,8 +8,8 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 
-from database.db import get_connection
 from database.membership_queries import get_memberships_for_admin
+from database.payment_queries import get_payments_for_admin
 
 
 def _smooth_curve(x, y, samples_per_segment=30):
@@ -61,45 +63,11 @@ def _format_currency_short(value, _pos=None):
 
 
 def generate_revenue_chart(admin_id):
-    """Monthly revenue line chart, from `payments` JOIN `students`.
+    """Monthly revenue line chart, from Supabase `payments`/`students`
+    (ADR-25) via database.payment_queries.get_payments_for_admin(), grouped
+    by calendar month for the current year in Python instead of SQL."""
 
-    Still reads SQLite: `payments` has no Supabase-authoritative copy yet
-    (it is not one of the Phase 6 analytics-migration tables - see
-    docs/MIRROR_TRACKER.md's "Non-mirror unmigrated tables" section), so
-    there is nothing to read from Supabase for this chart yet. Revisit once
-    `payments` itself is migrated.
-    """
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-
-        SELECT
-
-            strftime('%m', p.payment_date) AS month,
-
-            IFNULL(SUM(p.amount_paid),0) AS revenue
-
-        FROM payments p
-
-        JOIN students s
-
-            ON p.student_id = s.student_id
-
-        WHERE s.admin_id = ?
-
-            AND strftime('%Y', p.payment_date) = strftime('%Y', 'now')
-
-        GROUP BY month
-
-        ORDER BY month
-
-    """, (admin_id,))
-
-    data = cursor.fetchall()
-
-    conn.close()
+    payments = get_payments_for_admin(admin_id)
 
     months = [
         "Jan","Feb","Mar","Apr",
@@ -107,13 +75,15 @@ def generate_revenue_chart(admin_id):
         "Sep","Oct","Nov","Dec"
     ]
 
+    current_year = str(date.today().year)
     revenue = [0] * 12
 
-    for row in data:
-
-        month_index = int(row["month"]) - 1
-
-        revenue[month_index] = row["revenue"]
+    for p in payments:
+        payment_date = p["payment_date"]
+        if not payment_date or not payment_date.startswith(current_year):
+            continue
+        month_index = int(payment_date[5:7]) - 1
+        revenue[month_index] += p["amount_paid"] or 0
 
     line_color = "#2563eb"
     x_idx = np.arange(12)

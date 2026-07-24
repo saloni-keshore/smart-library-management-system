@@ -251,28 +251,32 @@ def view(student_id):
         flash("Student not found.", "danger")
         return redirect(url_for("student.index"))
 
-    # memberships/payments stay SQLite (out of this session's scope)
-    conn = get_connection()
-    cursor = conn.cursor()
+    # Supabase `memberships`/`payments` (ADR-23/ADR-25) instead of the
+    # SQLite mirror - this was the last SQLite read in this file.
+    try:
+        membership_response = (
+            supabase.table("memberships")
+            .select("*")
+            .eq("student_id", student_id)
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        membership = membership_response.data[0] if membership_response.data else None
+    except APIError:
+        membership = None
 
-    cursor.execute("""
-        SELECT * FROM memberships
-        WHERE student_id=?
-        ORDER BY membership_id DESC
-        LIMIT 1
-    """, (student_id,))
-    membership = cursor.fetchone()
-
-    cursor.execute("""
-        SELECT p.*
-        FROM payments p
-        INNER JOIN memberships m ON p.membership_id = m.membership_id
-        WHERE m.student_id=?
-        ORDER BY p.payment_id DESC
-    """, (student_id,))
-    payments = cursor.fetchall()
-
-    conn.close()
+    try:
+        payments_response = (
+            supabase.table("payments")
+            .select("*")
+            .eq("student_id", student_id)
+            .order("payment_id", desc=True)
+            .execute()
+        )
+        payments = payments_response.data
+    except APIError:
+        payments = []
 
     return render_template(
         "students/view.html",

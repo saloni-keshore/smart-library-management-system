@@ -31,20 +31,23 @@ Two different write shapes coexist here, deliberately:
   unhandled error in a file this migration isn't touching. See
   docs/MIRROR_TRACKER.md and TD-38/TD-39 in docs/11_FUTURE_WORK.md.
 
-`payment_id` is never sent to Supabase for automatic entries: Supabase's
-`cashbook.payment_id` has a real FK to `payments`, and `payments` is still
-SQLite-only (unmigrated) - sending a real payment_id there always fails
-with a foreign-key violation (verified live, Postgres error 23503). The
-SQLite mirror keeps the real payment_id, preserving today's
-payment-reconciliation ability there; see TD-38.
+As of 2026-07-24 (ADR-25), `payment_id` **is** sent to Supabase for
+automatic entries - `payments` itself migrated to Supabase (best-effort
+mirror, same shape as this function), closing the FK violation that
+previously made this impossible (TD-38, `Resolved`). If that payments
+mirror-write happened to fail moments earlier, this insert falls back to
+the same best-effort miss `insert_income_entry()` already risks - see
+TD-41.
 """
 
 from datetime import date
 
+from postgrest.exceptions import APIError
+
 from database.db import get_connection
 from database.audit_queries import log_entry
 from database.supabase_client import get_supabase_client
-from database.membership_queries import get_memberships_for_admin
+from database.membership_queries import get_memberships_for_admin, get_admin_students
 
 
 # ---------------------------------------------------------------------------
@@ -231,9 +234,14 @@ def insert_income_entry(
     see the module docstring for why the Supabase mirror-write below is
     best-effort rather than part of that same guarantee.
 
-    `payment_id` is still recorded in the SQLite mirror (preserving today's
-    reconciliation ability there) but never sent to Supabase - see the
-    module docstring for why.
+    As of 2026-07-24 (ADR-25, closing TD-38), `payment_id` is sent to
+    Supabase too, now that `payments` itself has a Supabase row (also
+    best-effort, via `database/payment_queries.py`'s `record_payment()`) -
+    Supabase's `cashbook.payment_id` FK can now resolve in the common case.
+    If that payments mirror-write happened to fail moments earlier, this
+    insert (both the `cashbook` and `audit_log` rows together) falls back
+    to the same best-effort miss the rest of this function already risks -
+    see TD-41 in docs/11_FUTURE_WORK.md.
     """
 
     cursor = conn.cursor()
@@ -270,6 +278,7 @@ def insert_income_entry(
             "entry_date": entry_date,
             "reference_id": reference_id,
             "source": source,
+            "payment_id": payment_id,
         }).execute()
         supabase.table("audit_log").insert({
             "admin_id": admin_id,
@@ -431,6 +440,34 @@ def get_pending_fees(admin_id):
     return sum(m["pending_amount"] or 0 for m in memberships)
 
 
+def _fetch_payments_for_admin(admin_id):
+    """This admin's payments - the Python-side equivalent of `payments p
+    JOIN students s ON p.student_id = s.student_id WHERE s.admin_id = ?`,
+    since PostgREST has no cross-table JOIN in the client this codebase
+    uses (same shape as get_memberships_for_admin()). Not imported from
+    database.payment_queries to avoid a circular import (that module
+    already imports this one for insert_income_entry()) - kept as a small,
+    local duplicate instead.
+    """
+
+    students = get_admin_students(admin_id)
+    if not students:
+        return []
+    student_ids = [s["student_id"] for s in students]
+
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("payments")
+            .select("*")
+            .in_("student_id", student_ids)
+            .execute()
+        )
+        return response.data
+    except APIError:
+        return []
+
+
 def get_today_fee_collection(admin_id):
     """
     Fee revenue collected today specifically - same "Payments, not all of
@@ -438,24 +475,13 @@ def get_today_fee_collection(admin_id):
     today's date. Distinct from get_today_income() (all of today's
     Cashbook income, including non-fee manual entries) for the same reason
     get_total_fee_revenue() is distinct from get_total_income() - see
-    ADR-11 in docs/DECISIONS.md. Reads SQLite `payments`/`students` -
-    both out of scope for this migration slice, unchanged.
+    ADR-11 in docs/DECISIONS.md. Reads Supabase `students`/`payments`
+    (ADR-25).
     """
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT IFNULL(SUM(p.amount_paid), 0) AS total
-        FROM payments p
-        JOIN students s ON p.student_id = s.student_id
-        WHERE s.admin_id = ? AND p.payment_date = DATE('now')
-    """, (admin_id,))
-
-    total = cursor.fetchone()["total"]
-    conn.close()
-
-    return total
+    today = date.today().isoformat()
+    payments = _fetch_payments_for_admin(admin_id)
+    return sum(p["amount_paid"] or 0 for p in payments if p["payment_date"] == today)
 
 
 def get_total_fee_revenue(admin_id):
@@ -468,25 +494,12 @@ def get_total_fee_revenue(admin_id):
     Deliberately narrower than get_total_income(): Cashbook's Income total
     also includes non-fee categories (Donation, Library Fine, Book Sale,
     Other Income), which aren't billable/collectible against a membership
-    and must not be blended into fee-collection metrics. Reads SQLite
-    `payments`/`students` - both out of scope for this migration slice,
-    unchanged.
+    and must not be blended into fee-collection metrics. Reads Supabase
+    `students`/`payments` (ADR-25).
     """
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT IFNULL(SUM(p.amount_paid), 0) AS total
-        FROM payments p
-        JOIN students s ON p.student_id = s.student_id
-        WHERE s.admin_id = ?
-    """, (admin_id,))
-
-    total = cursor.fetchone()["total"]
-    conn.close()
-
-    return total
+    payments = _fetch_payments_for_admin(admin_id)
+    return sum(p["amount_paid"] or 0 for p in payments)
 
 
 # ---------------------------------------------------------------------------

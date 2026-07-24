@@ -31,14 +31,10 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     create_membership(client, sid, paid_amount="600", due_amount="400")
     mid = get_last_membership_id(sid)
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
-    assert cur.fetchone()["c"] == 1
-    cur.execute("SELECT receipt_number, amount_paid FROM payments WHERE membership_id=?", (mid,))
-    payment_1 = cur.fetchone()
-    assert payment_1["amount_paid"] == 600
-    conn.close()
+    supabase = get_supabase_client()
+    payment_rows = supabase.table("payments").select("*").eq("membership_id", mid).execute().data
+    assert len(payment_rows) == 1
+    assert payment_rows[0]["amount_paid"] == 600
 
     # 4. Cashbook: exactly one automatic Income entry for this payment.
     # cashbook now lives in Supabase (ADR-22) - the automatic entry made by
@@ -76,9 +72,8 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     assert m_supabase["paid_amount"] == 1000
     assert m_supabase["pending_amount"] == 0
 
-    cur.execute("SELECT COUNT(*) AS c FROM payments WHERE membership_id=?", (mid,))
-    assert cur.fetchone()["c"] == 2
-    conn.close()
+    payment_rows = supabase.table("payments").select("payment_id").eq("membership_id", mid).execute().data
+    assert len(payment_rows) == 2
 
     assert len(get_cashbook_entries(admin_id, category="Membership Fee")) == 1
 
@@ -99,11 +94,8 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     assert resp.status_code == 200
 
     # 9. Receipt numbers are unique across both payments
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT receipt_number FROM payments WHERE membership_id=?", (mid,))
-    receipts = [r["receipt_number"] for r in cur.fetchall()]
-    conn.close()
+    receipt_rows = supabase.table("payments").select("receipt_number").eq("membership_id", mid).execute().data
+    receipts = [r["receipt_number"] for r in receipt_rows]
     assert len(receipts) == len(set(receipts)) == 2
 
     # 10. Notifications: this membership isn't expiring soon, so it must not
@@ -157,11 +149,8 @@ def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in
     )
     assert active_count == 1
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM payments p JOIN memberships m ON p.membership_id=m.membership_id WHERE m.student_id=?", (sid,))
-    assert cur.fetchone()["c"] == 2  # one payment per membership, none lost/duplicated
-    conn.close()
+    payment_rows = supabase.table("payments").select("payment_id").eq("student_id", sid).execute().data
+    assert len(payment_rows) == 2  # one payment per membership, none lost/duplicated
 
     admission_and_renewal = [
         e for e in get_cashbook_entries(admin_id)
@@ -187,37 +176,21 @@ def test_no_orphan_payments_or_cashbook_rows_after_full_run(logged_in_client):
     mid = get_last_membership_id(sid)
     client.post(f"/payments/collect/{mid}", data={"amount_paid": "200", "payment_mode": "Cash"}, follow_redirects=True)
 
-    conn = get_connection()
-    cur = conn.cursor()
+    supabase = get_supabase_client()
 
-    cur.execute("""
-        SELECT COUNT(*) AS c FROM payments p
-        LEFT JOIN memberships m ON p.membership_id = m.membership_id
-        WHERE m.membership_id IS NULL
-    """)
-    assert cur.fetchone()["c"] == 0
+    payment_rows = supabase.table("payments").select("payment_id, membership_id").eq("membership_id", mid).execute().data
+    assert len(payment_rows) > 0
+    membership_ids = {p["membership_id"] for p in payment_rows}
+    for m_id in membership_ids:
+        assert supabase.table("memberships").select("membership_id").eq("membership_id", m_id).execute().data
 
-    # payment_id reconciliation deliberately stays on the SQLite mirror, not
-    # Supabase: `payments` is still SQLite-only (unmigrated), and Supabase's
-    # cashbook.payment_id has a real FK to payments - insert_income_entry()
-    # never sends a real payment_id to Supabase (it would always violate
-    # that FK), so this specific linkage only exists in SQLite. See
-    # ADR-22 / TD-38 in docs/11_FUTURE_WORK.md.
-    cur.execute("""
-        SELECT COUNT(*) AS c FROM cashbook c
-        WHERE c.payment_id IS NOT NULL
-        AND c.payment_id NOT IN (SELECT payment_id FROM payments)
-    """)
-    assert cur.fetchone()["c"] == 0
-
-    # Every payment for this membership has a matching cashbook row via payment_id
-    cur.execute("SELECT payment_id FROM payments WHERE membership_id=?", (mid,))
-    payment_ids = [r["payment_id"] for r in cur.fetchall()]
+    # payment_id now round-trips through Supabase too (ADR-25, closes TD-38's
+    # common case) - every payment for this membership has a matching
+    # cashbook row via payment_id.
+    payment_ids = [p["payment_id"] for p in payment_rows]
     for pid in payment_ids:
-        cur.execute("SELECT COUNT(*) AS c FROM cashbook WHERE payment_id=?", (pid,))
-        assert cur.fetchone()["c"] == 1
-
-    conn.close()
+        cashbook_rows = supabase.table("cashbook").select("entry_id").eq("payment_id", pid).execute().data
+        assert len(cashbook_rows) == 1
 
 
 def test_receipt_numbers_globally_unique_across_two_fresh_admins(app):
@@ -253,9 +226,16 @@ def test_receipt_numbers_globally_unique_across_two_fresh_admins(app):
         assert b"Membership created successfully" in resp.data
         assert b"Receipt No:" in resp.data
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT receipt_number, COUNT(*) AS c FROM payments GROUP BY receipt_number HAVING c > 1")
-    dupes = cur.fetchall()
-    conn.close()
-    assert dupes == []
+    supabase = get_supabase_client()
+    all_receipts = []
+    start = 0
+    page_size = 1000
+    while True:
+        page = supabase.table("payments").select("receipt_number").range(start, start + page_size - 1).execute().data
+        all_receipts.extend(r["receipt_number"] for r in page)
+        if len(page) < page_size:
+            break
+        start += page_size
+
+    dupes = {r for r in all_receipts if all_receipts.count(r) > 1}
+    assert dupes == set()
