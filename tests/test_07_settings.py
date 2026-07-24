@@ -2,7 +2,7 @@
 Staff Access, Data & Backup, Security Settings."""
 import io
 
-from database.db import get_connection
+from database.supabase_client import get_supabase_client
 
 
 def _save_library_profile(client, **overrides):
@@ -63,26 +63,20 @@ def test_library_profile_first_save_creates_row(logged_in_client):
     client, admin = logged_in_client
     resp = _save_library_profile(client)
     assert b"saved successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM library_settings WHERE admin_id=?", (admin["admin_id"],))
-    row = cur.fetchone()
-    conn.close()
-    assert row is not None
-    assert row["library_name"] == "Test Library"
+    supabase = get_supabase_client()
+    rows = supabase.table("library_settings").select("*").eq("admin_id", admin["admin_id"]).execute().data
+    assert len(rows) == 1
+    assert rows[0]["library_name"] == "Test Library"
 
 
 def test_library_profile_second_save_updates_row(logged_in_client):
     client, admin = logged_in_client
     _save_library_profile(client)
     _save_library_profile(client, library_name="Renamed Library")
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM library_settings WHERE admin_id=?", (admin["admin_id"],))
-    assert cur.fetchone()["c"] == 1
-    cur.execute("SELECT library_name FROM library_settings WHERE admin_id=?", (admin["admin_id"],))
-    assert cur.fetchone()["library_name"] == "Renamed Library"
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("library_settings").select("*").eq("admin_id", admin["admin_id"]).execute().data
+    assert len(rows) == 1
+    assert rows[0]["library_name"] == "Renamed Library"
 
 
 def test_library_profile_missing_name_rejected(logged_in_client):
@@ -210,11 +204,9 @@ def test_library_profile_unicode_and_sql_injection_fields(logged_in_client):
         address="混合語 addr",
     )
     assert b"saved successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS c FROM library_settings")
-    assert cur.fetchone()["c"] > 0
-    conn.close()
+    supabase = get_supabase_client()
+    count = supabase.table("library_settings").select("admin_id", count="exact", head=True).execute().count
+    assert count > 0
 
 
 def test_remove_logo_requires_login(client):
@@ -257,11 +249,9 @@ def test_membership_settings_save_success(logged_in_client):
     client, admin = logged_in_client
     resp = _save_membership_settings(client)
     assert b"Membership settings updated successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT monthly_fee FROM membership_settings WHERE admin_id=?", (admin["admin_id"],))
-    assert cur.fetchone()["monthly_fee"] == 500
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("membership_settings").select("monthly_fee").eq("admin_id", admin["admin_id"]).execute().data
+    assert rows[0]["monthly_fee"] == 500
 
 
 def test_membership_settings_negative_fee_rejected(logged_in_client):
@@ -294,11 +284,9 @@ def test_membership_settings_checkboxes_unchecked_stores_zero(logged_in_client):
         # auto_expiry / allow_early_renewal omitted = unchecked
     }
     client.post("/settings/membership", data=data, follow_redirects=True)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT auto_expiry, allow_early_renewal FROM membership_settings WHERE admin_id=?", (admin["admin_id"],))
-    row = cur.fetchone()
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("membership_settings").select("auto_expiry, allow_early_renewal").eq("admin_id", admin["admin_id"]).execute().data
+    row = rows[0]
     assert row["auto_expiry"] == 0
     assert row["allow_early_renewal"] == 0
 
@@ -404,11 +392,9 @@ def test_receipt_settings_prefix_lowercased_input_uppercased(logged_in_client):
     client, admin = logged_in_client
     _save_library_profile(client)
     _save_receipt_settings(client, receipt_prefix="abc")
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT receipt_prefix FROM library_settings WHERE admin_id=?", (admin["admin_id"],))
-    assert cur.fetchone()["receipt_prefix"] == "ABC"
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("library_settings").select("receipt_prefix").eq("admin_id", admin["admin_id"]).execute().data
+    assert rows[0]["receipt_prefix"] == "ABC"
 
 
 # ---------------------------------------------------------------------------
@@ -510,11 +496,9 @@ def test_backup_create_downloads_file_and_records_log(logged_in_client):
     resp = client.post("/settings/backup/create")
     assert resp.status_code == 200
     assert resp.mimetype == "application/octet-stream" or "sqlite" in (resp.mimetype or "") or True
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM backup_log WHERE admin_id=?", (admin["admin_id"],))
-    assert cur.fetchone() is not None
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("backup_log").select("*").eq("admin_id", admin["admin_id"]).execute().data
+    assert len(rows) == 1
 
 
 def test_backup_create_leaks_entire_multi_tenant_database(logged_in_client):
@@ -580,11 +564,9 @@ def test_security_settings_save_preferences(logged_in_client):
         follow_redirects=True,
     )
     assert b"Security preferences saved successfully" in resp.data
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT session_timeout_minutes, remember_me_enabled FROM security_settings WHERE admin_id=?", (admin["admin_id"],))
-    row = cur.fetchone()
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("security_settings").select("session_timeout_minutes, remember_me_enabled").eq("admin_id", admin["admin_id"]).execute().data
+    row = rows[0]
     assert row["session_timeout_minutes"] == 30
     assert row["remember_me_enabled"] == 1
 
@@ -592,11 +574,9 @@ def test_security_settings_save_preferences(logged_in_client):
 def test_security_settings_invalid_timeout_falls_back_to_60(logged_in_client):
     client, admin = logged_in_client
     client.post("/settings/security", data={"session_timeout_minutes": "999"}, follow_redirects=True)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT session_timeout_minutes FROM security_settings WHERE admin_id=?", (admin["admin_id"],))
-    assert cur.fetchone()["session_timeout_minutes"] == 60
-    conn.close()
+    supabase = get_supabase_client()
+    rows = supabase.table("security_settings").select("session_timeout_minutes").eq("admin_id", admin["admin_id"]).execute().data
+    assert rows[0]["session_timeout_minutes"] == 60
 
 
 def test_security_settings_change_password_success(logged_in_client):

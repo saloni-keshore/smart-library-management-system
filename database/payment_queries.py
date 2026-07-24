@@ -13,6 +13,7 @@ that ever creates a payment now goes through record_payment() here instead.
 from datetime import date
 
 from database.cashbook_queries import insert_income_entry
+from database.supabase_client import get_supabase_client
 
 
 def _receipt_number_taken(cursor, receipt_number):
@@ -25,9 +26,7 @@ def _receipt_number_taken(cursor, receipt_number):
 
 def generate_receipt_number(conn, admin_id):
     """Allocate this admin's next receipt number, advancing the persisted
-    counter (library_settings.next_receipt_number) in the same transaction
-    as the payment it's issued for - if that transaction rolls back, the
-    number is never consumed.
+    counter (Supabase `library_settings.next_receipt_number`, ADR-24).
 
     Falls back to a count-based LIB-01001... sequence (same pattern as
     Cashbook's own _generate_reference_id) when this admin hasn't created a
@@ -44,15 +43,26 @@ def generate_receipt_number(conn, admin_id):
     silently discarded the payment. Skipping forward past any number already
     claimed (by any admin) keeps every allocated receipt number actually
     unique while leaving the common, non-colliding case unchanged.
+
+    The counter advance is a separate Supabase write, no longer inside the
+    same SQLite transaction as the `payments` row it's issued for (`payments`
+    itself is still SQLite, unmigrated) - if that SQLite transaction rolls
+    back after this returns, the counter has already advanced and won't roll
+    back with it. This narrows, but doesn't remove, the original design's own
+    non-atomicity (the receipt-number availability check below was never
+    itself race-free against a concurrent request either) - see TD-40 in
+    docs/11_FUTURE_WORK.md.
     """
 
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT receipt_prefix, next_receipt_number "
-        "FROM library_settings WHERE admin_id = ?",
-        (admin_id,)
+    supabase = get_supabase_client()
+    settings_response = (
+        supabase.table("library_settings")
+        .select("receipt_prefix, next_receipt_number")
+        .eq("admin_id", admin_id)
+        .execute()
     )
-    settings = cursor.fetchone()
+    settings = settings_response.data[0] if settings_response.data else None
 
     if settings is not None:
         prefix = settings["receipt_prefix"] or "LIB"
@@ -61,11 +71,9 @@ def generate_receipt_number(conn, admin_id):
         while _receipt_number_taken(cursor, f"{prefix}-{number:05d}"):
             number += 1
 
-        cursor.execute(
-            "UPDATE library_settings SET next_receipt_number = ? "
-            "WHERE admin_id = ?",
-            (number + 1, admin_id)
-        )
+        supabase.table("library_settings").update(
+            {"next_receipt_number": number + 1}
+        ).eq("admin_id", admin_id).execute()
         return f"{prefix}-{number:05d}"
 
     prefix = "LIB"

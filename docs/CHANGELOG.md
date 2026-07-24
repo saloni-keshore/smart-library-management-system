@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-24 — Migrated Settings (library_settings/membership_settings/backup_log/security_settings) from SQLite to Supabase
+
+- **Feature:** Settings → Library Profile, Membership Settings, Receipt Settings, Notification Settings, Data & Backup, Security Settings
+- **Files changed:** `database/settings_queries.py`, `database/receipt_settings_queries.py`, `database/notification_settings_queries.py`, `database/membership_settings_queries.py`, `database/backup_queries.py`, `database/security_settings_queries.py`, `database/migrate_backfill_settings_to_supabase.py` (new), `database/payment_queries.py` (`generate_receipt_number()`'s `library_settings` read/advance), `routes/setting.py` (`backup_export_csv()`'s `students` read), `routes/auth.py` (comment only), `tests/test_07_settings.py`
+- **Why:** continue the incremental SQLite → Supabase migration (ADR-16…ADR-23) — these four tables were the only remaining fully-unmigrated dependents of `routes/auth.py`'s `register()` mirror-insert bridge (TD-35), and migrating them shrinks that bridge without waiting on `payments` (unlike every other open item in `docs/MIRROR_TRACKER.md`)
+- **Database changes:** None — no schema change. `database/migrate_backfill_settings_to_supabase.py` (new, one-time) upserted every SQLite row in these 4 tables into their already-existing (but stale) Supabase counterparts, keyed on `admin_id`, before the code cutover — see ADR-24
+- **UI changes:** None — every Settings sub-page renders identically; this is a backend data-source change only, verified via the full test suite (251 passed, 1 expected skip) plus `tests/test_07_settings.py` specifically (61 tests, all rewritten to assert against Supabase instead of SQLite where they previously read the database directly)
+- **Future impact:** unlike every prior migration slice, **no SQLite mirror was kept** for these four tables — they're leaf nodes in the FK graph, so there was nothing downstream requiring their SQLite row to keep existing. This shrank `register()`'s mirror-insert bridge (TD-35) from 7 FK dependents to 3 (`enquiries`/`students`/`audit_log`) in one slice — see the updated `docs/MIRROR_TRACKER.md`. Introduced **TD-40**: `generate_receipt_number()`'s counter-advance is now a separate Supabase write, no longer inside the same SQLite transaction as the `payments` row it's issued for — closes automatically once `payments` itself migrates (see ADR-24 in `docs/DECISIONS.md`)
+
+---
+
 ## 2026-07-23 — Migrated Analytics (Dashboard/Charts/Membership Distribution/Notifications/Business Intelligence) from SQLite to Supabase
 
 - **Feature:** Dashboard, Membership Distribution, Notifications, Business Intelligence — the analytics/reporting layer

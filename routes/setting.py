@@ -745,14 +745,19 @@ def backup_export_csv():
 
     admin_id = session["admin_id"]
 
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM students WHERE admin_id = ? ORDER BY student_id",
-        (admin_id,)
-    )
-    rows = cursor.fetchall()
-    conn.close()
+    # Supabase `students` (ADR-19) instead of the SQLite mirror (ADR-24).
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("students")
+            .select("*")
+            .eq("admin_id", admin_id)
+            .order("student_id")
+            .execute()
+        )
+        rows = response.data
+    except APIError:
+        rows = []
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -760,7 +765,7 @@ def backup_export_csv():
     if rows:
         writer.writerow(rows[0].keys())
         for row in rows:
-            writer.writerow(list(row))
+            writer.writerow(list(row.values()))
     else:
         writer.writerow([
             "student_id", "full_name", "mobile", "address", "id_proof",

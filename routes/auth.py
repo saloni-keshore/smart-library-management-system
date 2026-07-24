@@ -164,13 +164,16 @@ def register():
 
         new_admin_id = insert_response.data[0]["admin_id"]
 
-        # Bridge (TD-35): enquiries/students/audit_log/library_settings/
-        # membership_settings/backup_log/security_settings all still enforce a
-        # SQLite foreign key back to admins.admin_id (database/db.py sets
-        # PRAGMA foreign_keys = ON on every connection), so a brand-new admin
-        # who only exists in Supabase would fail every one of those inserts
-        # the moment they're used. Mirror the row into SQLite too, under the
+        # Bridge (TD-35): enquiries/students/audit_log still enforce a SQLite
+        # foreign key back to admins.admin_id (database/db.py sets PRAGMA
+        # foreign_keys = ON on every connection), so a brand-new admin who
+        # only exists in Supabase would fail every one of those inserts the
+        # moment they're used. Mirror the row into SQLite too, under the
         # same admin_id, until those modules are migrated to Supabase.
+        # library_settings/membership_settings/backup_log/security_settings
+        # no longer need this - as of 2026-07-24 (ADR-24) they're Supabase-
+        # only and never insert into SQLite at all, so their FK to
+        # admins.admin_id is never exercised by this app anymore.
         try:
             sqlite_conn = get_connection()
             sqlite_conn.execute(
