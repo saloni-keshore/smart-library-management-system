@@ -125,10 +125,7 @@ routes/report.py               → (no DB access — pure redirect)
 ## `database/` internal dependencies
 
 ```
-database/cashbook_queries.py   → database.audit_queries.log_entry   (SQLite mirror audit-write only, same
-                                                                       transaction as insert_transaction,
-                                                                       insert_income_entry, update_manual_transaction)
-                                → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
+database/cashbook_queries.py   → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
                                   cashbook table, source of truth for every read; primary write for
                                   insert_transaction(), best-effort mirror write for insert_income_entry() —
                                   see routes/membership.py's/routes/payment.py's cards for why the latter can't

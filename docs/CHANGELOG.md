@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-24 — Removed the `audit_log` SQLite mirror-write (Phase 10, first mirror fully removed)
+
+- **Feature:** Cashbook's Audit Trail — internal data layer only, no user-visible feature change
+- **Files changed:** `database/audit_queries.py` (`log_entry()` deleted), `database/cashbook_queries.py` (3 call sites + the now-unused import removed)
+- **Why:** the Phase 9 dependency audit (`docs/MIRROR_TRACKER.md`) confirmed every mirror in the app is at zero live read-side consumers as of ADR-25 — `audit_log` is the one genuine leaf in the SQLite FK graph (nothing references it), so it's the first mirror where the FK-side condition is independently satisfiable without waiting on any other table
+- **Database changes:** None to the schema — SQLite stops receiving new `audit_log` rows; the table and its existing historical rows are untouched until Phase 11 removes SQLite entirely
+- **UI changes:** None — Supabase has been the read source for the Audit Trail since ADR-22; this only stops a now-pointless SQLite write
+- **Future impact:** clears `cashbook`'s SQLite mirror's FK-side removal condition (`audit_log.entry_id`'s FK is no longer exercised by any insert) — `cashbook` is the next removal candidate. See ADR-26 in docs/DECISIONS.md and the updated docs/MIRROR_TRACKER.md. Verified via `tests/test_04_cashbook.py`/`test_09_full_workflow_chain.py` (45 passed) plus the full suite (251 passed, 1 expected skip)
+
+---
+
 ## 2026-07-24 — Migrated Payments (`payments`) from SQLite to Supabase, and fixed a pre-existing Supabase parity gap in enquiries/students/memberships
 
 - **Feature:** Payments, plus every downstream reader of `payments` (Dashboard's revenue chart, Membership Distribution's receipt column, Business Intelligence via Cashbook's fee-revenue totals, Student detail page)

@@ -1,25 +1,13 @@
 """
 Audit trail for every financial change made to the Cashbook ledger.
 
-Supabase's `audit_log` table is now the source of truth for reads (see
-docs/DECISIONS.md ADR-22). `log_entry()` stays a SQLite-only mirror-write,
-taking a cursor from an already-open connection so it still commits as
-part of the very same transaction as the Cashbook entry it describes -
-database/cashbook_queries.py calls it for every SQLite write, and writes
-the matching Supabase audit row itself (next to its own Supabase cashbook
-write), rather than this function doing both.
+Supabase's `audit_log` table is the source of truth (ADR-22) - as of
+2026-07-24 (Phase 10 mirror removal), it has no SQLite mirror at all.
+`database/cashbook_queries.py` writes the Supabase `audit_log` row directly
+for every cashbook write, next to its own Supabase `cashbook` write.
 """
 
 from database.supabase_client import get_supabase_client
-
-
-def log_entry(cursor, admin_id, entry_id, action, details):
-    """SQLite mirror-write only - see module docstring."""
-
-    cursor.execute("""
-        INSERT INTO audit_log (admin_id, entry_id, action, details)
-        VALUES (?, ?, ?, ?)
-    """, (admin_id, entry_id, action, details))
 
 
 def get_recent_audit_log(admin_id, limit=15):

@@ -56,8 +56,8 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 | [`students`](#students) | Supabase, ADR-19 (2026-07-23) | None (0, since ADR-25) | `memberships.student_id`, `payments.student_id` | **Open** |
 | [`memberships`](#memberships) | Supabase, ADR-20 (2026-07-23) | None (0, since ADR-25) | `payments.membership_id` | **Open** |
 | [`payments`](#payments) | Supabase, ADR-25 (2026-07-24) | None (0) | `cashbook.payment_id` (Supabase FK only — see below) | **Open** |
-| [`cashbook`](#cashbook) | Supabase, ADR-22 (2026-07-23) | `database/migrate_backfill_cashbook_payments.py` (reconciliation script, not a live route) (1) | `audit_log.entry_id` | **Open** |
-| [`audit_log`](#audit_log) | Supabase, ADR-22 (2026-07-23) | None (existence-only for the SQLite copy — see below) | none | **Open** |
+| [`cashbook`](#cashbook) | Supabase, ADR-22 (2026-07-23) | `database/migrate_backfill_cashbook_payments.py` (reconciliation script, not a live route) (1) | none (cleared, ADR-26) | **Open** — next removal candidate |
+| [`audit_log`](#audit_log--removed-2026-07-24-adr-26) | Supabase, ADR-22 (2026-07-23) | None | none | **Removed** (ADR-26) |
 
 `enquiries.status` and `admins.password` are **not** split anymore — both closed (TD-36 `Resolved` via ADR-19, TD-35 `Resolved` via ADR-17) — see each mirror's section for which columns still mirror-sync vs. which have a single Supabase-only writer.
 
@@ -222,40 +222,37 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 
 **Why the mirror still exists:**
 - **Read-side:** `database/migrate_backfill_cashbook_payments.py` (above) — a script, not a request-path reader, but still a real consumer of SQLite `cashbook` rows/columns (including `payment_id`) if ever re-run.
-- **FK-side:** `audit_log.entry_id` is a real SQLite FK to `cashbook.entry_id`. `database/audit_queries.py`'s `log_entry()` inserts a SQLite `audit_log` row on every single cashbook write (manual or automatic), referencing `entry_id` — that insert requires the SQLite `cashbook` row to already exist.
+- **FK-side:** none, as of 2026-07-24 (ADR-26) — `audit_log`'s SQLite mirror-write (`log_entry()`) was deleted outright, so `cashbook.entry_id`'s FK is no longer being exercised by any new insert. This mirror's SQLite write is now purely a **read-side** question (the dormant backfill script), not an FK-chain one.
 
-**Exact removal conditions (both required):**
-1. **Read-side:** confirm `database/migrate_backfill_cashbook_payments.py` will never be re-run against current data (or update it to read Supabase/SQLite's `payments` — whichever hasn't migrated yet — instead).
-2. **FK-side:** `audit_log`'s own SQLite mirror (below) must stop inserting rows with a real `entry_id` FK reference — i.e., either that mirror is fully removed, or `audit_log.entry_id`'s FK is dropped/relaxed.
+**Exact removal conditions:**
+1. **Read-side:** confirm `database/migrate_backfill_cashbook_payments.py` will never be re-run against current data (or update it to read Supabase `payments`/`cashbook` instead — both are Supabase-backed now, ADR-25). This is the **only** remaining condition — the FK-side is already clear.
 
 **Change history:**
 - 2026-07-23 (ADR-22): mirror introduced. Automatic entries (`insert_income_entry()`) keep the SQLite write as primary and best-effort mirror to Supabase, unlike every prior slice's "Supabase first, roll back on SQLite failure" shape — because that function's caller (`database/payment_queries.py`'s `record_payment()`, called from `routes/membership.py`/`routes/payment.py`) is out of scope and can't be given a new caught exception type. Manual entries (`insert_transaction()`, called directly from the in-scope `routes/cashbook.py`) do use the strict Supabase-first shape. Introduced TD-38 (`payment_id` can't round-trip through Supabase for automatic entries) and TD-39 (best-effort mirror can leave a narrow, bounded staleness window on Supabase after a transient failure).
 - 2026-07-23 (post-ADR-22 full-codebase re-grep): re-verified against source — `database/migrate_backfill_cashbook_payments.py` is confirmed the only remaining reader of raw SQLite `cashbook` anywhere outside `cashbook_queries.py`/tests (it is a one-time reconciliation script, not on the live request path). List unchanged.
-- 2026-07-24 (ADR-25): `payments` migrated to Supabase, letting `insert_income_entry()` start sending a real `payment_id` to Supabase `cashbook` (closing **TD-38**'s common case — best-effort, so a rare Supabase blip can still leave a gap here, tracked as **TD-41**). This mirror's own removal conditions are unchanged by ADR-25 — still gated on `audit_log`'s mirror.
+- 2026-07-24 (ADR-25): `payments` migrated to Supabase, letting `insert_income_entry()` start sending a real `payment_id` to Supabase `cashbook` (closing **TD-38**'s common case — best-effort, so a rare Supabase blip can still leave a gap here, tracked as **TD-41**). This mirror's own removal conditions were unchanged by ADR-25 — still gated on `audit_log`'s mirror at the time.
+- 2026-07-24 (ADR-26): `audit_log`'s SQLite mirror-write removed, clearing this mirror's FK-side condition entirely. Only the dormant backfill script's theoretical re-run risk remains — this mirror is now the **next removal candidate** in Phase 10.
 
 ---
 
-## `audit_log`
+## `audit_log` — **Removed** (2026-07-24, ADR-26)
 
 **Source of truth:** Supabase `audit_log` table, since ADR-22 (2026-07-23), for `database/audit_queries.py`'s `get_recent_audit_log()` — the only reader, called from `routes/cashbook.py`'s `index()` for the "Audit Trail" activity log.
 
-**SQLite mirror's role:** unlike `cashbook`, this mirror carries **every** column (there's no held-back field analogous to `payment_id`) but has **zero application-level readers** — `log_entry(cursor, ...)` (`database/audit_queries.py`) is a pure mirror-write, called from `cashbook_queries.py`'s `insert_transaction()`/`insert_income_entry()`/`update_manual_transaction()` on every cashbook write, same transaction. Nothing in the app ever reads the SQLite copy back.
+**SQLite mirror's role (historical):** unlike `cashbook`, this mirror carried **every** column (there was no held-back field analogous to `payment_id`) but had **zero application-level readers** — `log_entry(cursor, ...)` (`database/audit_queries.py`) was a pure mirror-write, called from `cashbook_queries.py`'s `insert_transaction()`/`insert_income_entry()`/`update_manual_transaction()` on every cashbook write, same transaction. Nothing in the app ever read the SQLite copy back.
 
-**Current readers (SQLite):** None.
+**Current readers (SQLite):** None (never had any).
 
-**Current writers (SQLite):** `database/audit_queries.py`'s `log_entry(cursor, admin_id, entry_id, action, details)` — called by every write path in `database/cashbook_queries.py` (unconditionally, not best-effort — the SQLite `audit_log` row is written in the same local transaction as the SQLite `cashbook` row it documents, exactly as before this migration).
+**Current writers (SQLite):** None — `log_entry()` and its three call sites were deleted outright in ADR-26, not just stopped-and-left-dead. `get_recent_audit_log()` (Supabase) is the only function left in `database/audit_queries.py`.
 
-**Why the mirror still exists:**
-- **Read-side:** none — already zero readers.
-- **FK-side:** `audit_log.admin_id` is a real SQLite FK to `admins.admin_id`, and `audit_log.entry_id` is a real SQLite FK to `cashbook.entry_id` — both still enforced (`PRAGMA foreign_keys = ON`, `database/db.py`), and `log_entry()` still fires on every single cashbook write. This is exactly the FK dependency `routes/auth.py`'s `register()` mirror-insert bridge (see `admins`' section above) exists for — migrating `audit_log` at the route/read level did **not** remove it from that bridge's dependent list (7 tables at the time, ADR-22; now 3 after ADR-24 dropped the 4 Settings tables), the same way migrating `enquiries`/`students` at the route level didn't remove them (ADR-18/19).
+**Why this mirror was removable first:** `audit_log` is a genuine leaf in the SQLite FK graph — nothing in `schema.sql` declares a foreign key against `audit_log` (its own two FKs, `admin_id → admins` and `entry_id → cashbook`, are *outgoing*, not incoming). The Phase 9 dependency audit confirmed every mirror in the app was already at zero read-side consumers by ADR-25; `audit_log` was the one place where the FK-side condition was also independently satisfiable, since removing its write doesn't require any *other* table's write to stop first.
 
-**Exact removal conditions (both required):**
-1. **Read-side:** none — already zero.
-2. **FK-side:** `cashbook`'s own SQLite mirror (above) must be fully removed, **and** the `admins` bridge's other FK dependents must clear too (see the `admins` section's own removal conditions — this table is one of its 7).
+**Consequence:** the SQLite `audit_log` table itself, and every row already in it, still physically exists (untouched, frozen) — Phase 11 (SQLite removal) drops the table along with the rest of the schema. `cashbook`'s SQLite mirror-write is now the next candidate: `audit_log.entry_id`'s FK to `cashbook.entry_id` is no longer being exercised by any new insert, so `cashbook`'s mirror-write is no longer required by anything downstream.
 
 **Change history:**
-- 2026-07-23 (ADR-22): mirror's *reads* moved to Supabase (`get_recent_audit_log()`); the mirror-write itself (`log_entry()`) is unchanged from before this migration, kept as a pure SQLite write with no application reader, purely to satisfy `cashbook.entry_id`'s and `admins.admin_id`'s SQLite FKs.
-- 2026-07-23 (post-ADR-22 full-codebase re-grep): re-verified against source — zero reads of raw SQLite `audit_log` anywhere outside `audit_queries.py` itself (which only writes it) and test files. List unchanged.
+- 2026-07-23 (ADR-22): mirror's *reads* moved to Supabase (`get_recent_audit_log()`); the mirror-write itself (`log_entry()`) was unchanged from before this migration, kept as a pure SQLite write with no application reader, purely to satisfy `cashbook.entry_id`'s and `admins.admin_id`'s SQLite FKs.
+- 2026-07-23 (post-ADR-22 full-codebase re-grep): re-verified against source — zero reads of raw SQLite `audit_log` anywhere outside `audit_queries.py` itself (which only wrote it) and test files. List unchanged.
+- 2026-07-24 (ADR-26): `log_entry()` and its three call sites in `database/cashbook_queries.py` deleted outright — the first mirror in this file to be fully removed, not just migrated. Verified via `tests/test_04_cashbook.py`/`test_09_full_workflow_chain.py` (45 passed) plus the full suite.
 
 ---
 

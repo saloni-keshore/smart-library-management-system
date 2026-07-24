@@ -38,7 +38,7 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | `migrate_notification_settings.py` | Adds 19 reminder-rule/channel/quiet-hours/dashboard-display columns to `library_settings` |
 | `migrate_backup_log.py` | Creates `backup_log` table, with a schema-compatibility guard |
 | `migrate_security_settings.py` | Creates `security_settings` table, with a schema-compatibility guard |
-| `audit_queries.py` | Read/write access to `audit_log` |
+| `audit_queries.py` | Read access to Supabase `audit_log` (`get_recent_audit_log`) — no SQLite mirror-write left as of ADR-26; `database/cashbook_queries.py` writes Supabase `audit_log` rows directly |
 | `bi_queries.py` | Business-intelligence aggregates (health score, growth, top categories, action items, timeline) |
 | `cashbook_categories.py` | Static category/payment-method constant lists (no DB access) |
 | `cashbook_queries.py` | Core cashbook ledger data-access layer (largest query module, 20 functions) |

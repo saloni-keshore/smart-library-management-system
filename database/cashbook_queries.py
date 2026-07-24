@@ -45,7 +45,6 @@ from datetime import date
 from postgrest.exceptions import APIError
 
 from database.db import get_connection
-from database.audit_queries import log_entry
 from database.supabase_client import get_supabase_client
 from database.membership_queries import get_memberships_for_admin, get_admin_students
 
@@ -203,8 +202,6 @@ def insert_transaction(
         "Cashbook Manual Entry"
     ))
 
-    log_entry(cursor, admin_id, entry_id, "Created", details)
-
     conn.commit()
     conn.close()
 
@@ -262,7 +259,6 @@ def insert_income_entry(
         f"Automatic Income of ₹{amount} recorded under '{category}' for "
         f"{person or 'N/A'} via {source} ({reference_id})"
     )
-    log_entry(cursor, admin_id, entry_id, "Auto-Created", details)
 
     try:
         supabase = get_supabase_client()
@@ -377,8 +373,6 @@ def update_manual_transaction(
         category, person, description, amount, payment_method, entry_date,
         entry_id, admin_id
     ))
-
-    log_entry(cursor, admin_id, entry_id, "Updated", details)
 
     conn.commit()
     conn.close()
