@@ -135,12 +135,14 @@ def add():
             flash("Something went wrong. Please try again.", "danger")
             return redirect(url_for("enquiry.add"))
 
-        # Bridge (TD-36): students.enquiry_id still enforces a real SQLite
-        # foreign key (database/db.py sets PRAGMA foreign_keys = ON), and
-        # routes/student.py's admission() reads this row straight from
-        # SQLite -- out of this session's scope. Mirror the new row into
-        # SQLite too, under the same explicit enquiry_id, until Students is
-        # migrated to Supabase (same shape as auth.py's register() bridge).
+        # Bridge: this mirror has zero remaining readers (routes/student.py's
+        # admission() reads/writes enquiries via Supabase directly, ADR-19).
+        # students.enquiry_id still enforces a real SQLite foreign key
+        # (database/db.py sets PRAGMA foreign_keys = ON), and
+        # routes/student.py's admission() still inserts a SQLite students
+        # mirror row referencing enquiry_id - so this mirror stays for the
+        # FK chain, pending Phase 10's removal call. See
+        # docs/MIRROR_TRACKER.md (same shape as auth.py's register() bridge).
         try:
             sqlite_conn.execute(
                 """

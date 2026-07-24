@@ -171,12 +171,11 @@ def admission(enquiry_id):
             flash("Something went wrong. Please try again.", "danger")
             return redirect(url_for("student.admission", enquiry_id=enquiry_id))
 
-        # Bridge: routes/membership.py, routes/payment.py, and several
-        # dashboard/report/notification queries still enforce a real
-        # SQLite foreign key to students.student_id and JOIN it directly
-        # (out of this session's scope). Mirror the new row into SQLite
-        # too, under the same explicit student_id, until those modules are
-        # migrated to Supabase.
+        # Bridge: this mirror has zero remaining readers as of ADR-25 (every
+        # consumer that used to JOIN students directly against SQLite has
+        # migrated to Supabase) - kept only because memberships/payments'
+        # own SQLite inserts still reference student_id (FK chain), pending
+        # Phase 10's removal call. See docs/MIRROR_TRACKER.md.
         try:
             sqlite_conn.execute(
                 """
@@ -360,11 +359,10 @@ def edit(student_id):
             flash("Something went wrong. Please try again.", "danger")
             return render_template("students/edit.html", student=student)
 
-        # Bridge: routes/membership.py, routes/payment.py, and several
-        # dashboard/report/notification queries still read this student's
-        # full_name/mobile/purpose/shift/status straight from the SQLite
-        # mirror (out of this session's scope) -- keep it in sync the same
-        # way routes/enquiries.py's edit() does.
+        # Bridge: this mirror has zero remaining readers as of ADR-25 - kept
+        # only for the FK chain (memberships/payments' own SQLite inserts
+        # still reference student_id), pending Phase 10's removal call.
+        # See docs/MIRROR_TRACKER.md.
         sqlite_conn = get_connection()
         sqlite_conn.execute("""
             UPDATE students

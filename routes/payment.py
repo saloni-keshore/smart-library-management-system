@@ -150,14 +150,11 @@ def collect(membership_id):
                 student=student
             )
 
-        # Bridge: routes/dashboard.py, routes/membership_distribution.py,
-        # routes/notification.py, routes/student.py's view(),
-        # database/cashbook_queries.py's get_pending_fees(), and
-        # database/bi_queries.py all still JOIN memberships directly against
-        # SQLite (out of this slice's scope). Mirror the same balance update
-        # there too, in the same transaction as the payments/cashbook/
-        # audit_log rows below, until those modules are migrated to
-        # Supabase.
+        # Bridge: this mirror has zero remaining readers as of ADR-25 (every
+        # consumer that used to JOIN memberships directly against SQLite has
+        # migrated to Supabase) - kept only because payments' own SQLite
+        # insert below still references membership_id (FK chain), pending
+        # Phase 10's removal call. See docs/MIRROR_TRACKER.md.
         conn = get_connection()
         try:
             conn.execute("""

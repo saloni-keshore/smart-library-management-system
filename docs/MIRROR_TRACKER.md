@@ -291,9 +291,27 @@ Working through each of the 7 active mirrors' **both** conditions (read-side and
 1. ~~Do the analytics migration slice~~ — **done** (ADR-23, 2026-07-23).
 2. ~~Migrate Settings~~ — **done** (ADR-24, 2026-07-24).
 3. ~~Migrate `payments`~~ — **done** (ADR-25, 2026-07-24). Closed every remaining reader in this file, and surfaced/fixed a pre-existing Supabase parity gap in `enquiries`/`students`/`memberships` (TD-42).
-4. Run the Phase 9 dependency audit directly against source (not against this file's own claims) to confirm every mirror really is read-side-closed.
-5. Remove SQLite mirror-writes in FK-safe order (Phase 10): `payments` (frees `memberships`/`students`' last FK dependent) → `memberships`/`students`/`enquiries` mirror-writes → `audit_log`/`cashbook` mirror-writes → `admins` bridge (`register()`'s mirror-insert) last, since it's downstream of all three remaining dependents.
+4. ~~Run the Phase 9 dependency audit directly against source~~ — **done**, see "Phase 9: Final Dependency Audit" below.
+5. Remove SQLite mirror-writes in FK-safe order (Phase 10) — **reverse** of the FK chain, starting from the table nothing else FKs to: `audit_log` (leaf — nothing FKs to it) → `cashbook` (once `audit_log` stops needing it) → `payments` (once `cashbook` stops needing a real `payment_id`) → `memberships`/`students` (once `payments` stops needing them) → `enquiries` (once `students` stops needing it) → `admins` bridge last (once `enquiries`/`students`/`audit_log` all stop writing SQLite).
 6. Once every mirror-write is gone, Phase 11 removes SQLite entirely.
+
+## Phase 9: Final Dependency Audit (2026-07-24, post-ADR-25)
+
+Verified directly against source — not against this file's own prior claims — by re-grepping every `.py` file in `routes/`/`database/`/`utils/` (excluding `database/migrate_*.py` and `database/migrate.py`, all one-time/historical scripts not on the live request path) for `sqlite3`, `get_connection()`, `SELECT`, `INSERT INTO`, `UPDATE`, `DELETE FROM`, `FROM`, `JOIN`.
+
+**Confirmed: zero raw `JOIN`/cross-table SQL reads remain anywhere in live code.** Every remaining SQLite access is one of exactly two kinds:
+
+| Table | Live SQLite readers | Live SQLite writers | Real SQLite FK dependents (from `schema.sql`) |
+|---|---|---|---|
+| `admins` | None | `routes/auth.py`'s `register()` (mirror-insert) | `enquiries.admin_id`, `students.admin_id`, `audit_log.admin_id`, `library_settings`/`membership_settings`/`backup_log`/`security_settings.admin_id` (last 4 tables no longer insert into SQLite at all, ADR-24, so don't actually exercise this FK anymore — only `enquiries`/`students`/`audit_log` do) |
+| `enquiries` | None | `routes/enquiries.py`'s `add()`/`edit()`/`delete()` (mirror-write) | `students.enquiry_id` |
+| `students` | None | `routes/student.py`'s `admission()`/`edit()` (mirror-write) | `memberships.student_id`, `payments.student_id` |
+| `memberships` | None | `routes/membership.py`'s `create()`/`renew()`, `routes/payment.py`'s `collect()` (mirror-write) | `payments.membership_id` |
+| `payments` | None (`database/payment_queries.py`'s `_receipt_number_taken()` reads SQLite `payments` for its uniqueness check — a correctness-critical internal check on the primary write path, not a stale mirror reader, see `payments`' section above) | `database/payment_queries.py`'s `record_payment()` (primary write, explicit `payment_id`) | `cashbook.payment_id` (**a real SQLite FK**, `schema.sql` line 142-143 — not just the Supabase FK documented earlier; automatic Cashbook entries write a real `payment_id` into the SQLite `cashbook` row, so this FK is actively exercised) |
+| `cashbook` | `database/migrate_backfill_cashbook_payments.py` (dormant one-time script, not on the live request path) | `database/cashbook_queries.py`'s `insert_transaction()`/`insert_income_entry()`/`update_manual_transaction()` (mirror-write) | `audit_log.entry_id` |
+| `audit_log` | None | `database/audit_queries.py`'s `log_entry()` (mirror-write) | None — leaf table, nothing in `schema.sql` FKs to `audit_log` |
+
+**Conclusion:** every mirror is at **zero live read-side consumers**. The only thing keeping any SQLite mirror-write alive is another mirror-write's own FK requirement, in a single connected chain: `admins` ← `enquiries`/`students`/`audit_log` ← `memberships` (via `students`) ← `payments` (via `students`/`memberships`) ← `cashbook` (via `payments.payment_id`) ← `audit_log` (via `cashbook.entry_id`). `audit_log` is the one table nothing downstream FKs to — it's the correct starting point for Phase 10, not `payments` (a prior draft of this section's "practical recommendation" had the order backwards; corrected here).
 
 ## Related reading
 

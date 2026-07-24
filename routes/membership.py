@@ -213,12 +213,11 @@ def create(student_id):
                 plan_pricing=plan_pricing, admission_fee=admission_fee
             )
 
-        # Bridge: routes/payment.py, routes/dashboard.py,
-        # routes/membership_distribution.py, and routes/notification.py
-        # still enforce a real SQLite foreign key to students.student_id
-        # and JOIN memberships directly (out of this session's scope).
-        # Mirror the new row into SQLite too, under the same explicit
-        # membership_id, until those modules are migrated to Supabase.
+        # Bridge: this mirror has zero remaining readers as of ADR-25 (every
+        # consumer that used to JOIN memberships directly against SQLite has
+        # migrated to Supabase) - kept only because payments' own SQLite
+        # insert still references membership_id (FK chain), pending Phase
+        # 10's removal call. See docs/MIRROR_TRACKER.md.
         try:
             sqlite_conn.execute("""
                 INSERT INTO memberships
