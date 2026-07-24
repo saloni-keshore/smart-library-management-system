@@ -27,15 +27,12 @@ routes/dashboard.py            → database.supabase_client.get_supabase_client 
                                   get_total_fee_revenue/get_today_fee_collection — Supabase, ADR-25; this
                                   route has no SQLite dependency left at all)
 routes/enquiries.py            → database.supabase_client.get_supabase_client   (enquiries table, Supabase/
-                                  PostgreSQL — as of 2026-07-23, ADR-18; was database.db.get_connection until
-                                  this cutover; source of truth for index()/edit()/view(); as of ADR-23, also
-                                  used for index()'s/view()'s students lookup, previously SQLite)
-                                → database.db.get_connection   (SQLite mirror-write in add()/edit()/delete()
-                                  only — a mirror at zero readers as of ADR-25, kept for the FK chain until
-                                  Phase 10 makes the removal call; routes/payment.py's index()/database.
-                                  payment_queries' receipt-fallback branch/utils.charts' revenue chart all
-                                  migrated to Supabase, ADR-25; routes/setting.py's backup_export_csv()
-                                  migrated off this list, ADR-24)
+                                  PostgreSQL — as of 2026-07-23, ADR-18, and as of 2026-07-24 (ADR-30) the only
+                                  store; source of truth for index()/edit()/view(); as of ADR-23, also used for
+                                  index()'s/view()'s students lookup, previously SQLite)
+                                (as of 2026-07-24, ADR-30: no database.db.get_connection dependency left at all -
+                                  add()/edit()/delete()'s SQLite mirror-writes were removed outright, the sixth
+                                  mirror fully removed in Phase 10)
 routes/student.py              → database.supabase_client.get_supabase_client   (students table, Supabase/
                                   PostgreSQL — as of 2026-07-23, ADR-19; source of truth for index()/admission()/
                                   view()/edit(), and as of 2026-07-24 (ADR-29) the only store; also reads/writes

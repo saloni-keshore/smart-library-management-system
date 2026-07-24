@@ -71,11 +71,11 @@ def test_admin_b_cannot_edit_admin_a_enquiry(app):
               "preferred_shift": "Morning", "followup_date": "2026-08-01", "remarks": "x"},
         follow_redirects=True,
     )
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT full_name FROM enquiries WHERE enquiry_id=?", (eid_a,))
-    assert cur.fetchone()["full_name"] == "Original Name A"
-    conn.close()
+    # enquiries now lives in Supabase only (ADR-30) - no SQLite mirror left
+    # to check.
+    supabase = get_supabase_client()
+    row = supabase.table("enquiries").select("full_name").eq("enquiry_id", eid_a).execute().data[0]
+    assert row["full_name"] == "Original Name A"
 
 
 def test_admin_b_cannot_delete_admin_a_enquiry(app):
@@ -88,11 +88,11 @@ def test_admin_b_cannot_delete_admin_a_enquiry(app):
     eid_a = get_last_enquiry_id(a["admin_id"])
 
     client_b.get(f"/enquiries/delete/{eid_a}", follow_redirects=True)
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM enquiries WHERE enquiry_id=?", (eid_a,))
-    assert cur.fetchone() is not None  # NOT deleted by B
-    conn.close()
+    # enquiries now lives in Supabase only (ADR-30) - no SQLite mirror left
+    # to check.
+    supabase = get_supabase_client()
+    row = supabase.table("enquiries").select("enquiry_id").eq("enquiry_id", eid_a).execute().data
+    assert row  # NOT deleted by B
 
 
 def test_admin_b_cannot_view_admin_a_student(app):

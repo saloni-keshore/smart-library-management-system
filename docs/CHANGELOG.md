@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-24 — Removed the `enquiries` SQLite mirror-write (Phase 10, sixth mirror fully removed — only the `admins` bridge is left)
+
+- **Feature:** Enquiry add/edit/delete — internal data layer, no user-visible feature change
+- **Files changed:** `routes/enquiries.py` (`add()`/`edit()`/`delete()` all drop their SQLite `INSERT`/`UPDATE`/`DELETE` calls and `sqlite3`/`get_connection` usage entirely; `enquiry_id` computed from Supabase's own `MAX`; a stale comment on `edit()` claiming `routes/student.py`'s `admission()` reads enquiry fields from SQLite — inaccurate since ADR-19 — corrected while removing the block it was attached to), `tests/conftest.py` (`get_last_enquiry_id()` rewritten from a SQLite lookup to a Supabase query), `tests/test_08_cross_tenant_isolation.py` (2 tests rewritten from SQLite assertions to Supabase)
+- **Why:** `students`' SQLite mirror-write (ADR-29) was the last thing exercising `students.enquiry_id`'s SQLite FK — with that gone, nothing required an `enquiries` row to exist in SQLite for a write to succeed
+- **Database changes:** None to the schema — SQLite stops receiving new `enquiries` rows; the table and its existing historical rows are untouched until Phase 11 removes SQLite entirely
+- **UI changes:** None — Supabase has been the read source for Enquiries since ADR-18
+- **Future impact:** the `admins` bridge (`routes/auth.py`'s `register()`) is now the **only** remaining mirror/bridge in the entire app — `enquiries`, its last FK dependent, is gone. Once `register()`'s SQLite mirror-insert is removed (Phase 10f), Phase 11 (full SQLite removal) can begin. See ADR-30 in docs/DECISIONS.md and the updated docs/MIRROR_TRACKER.md. Verified via targeted tests (test_02/03/08/09) and the full pytest suite.
+
+---
+
 ## 2026-07-24 — Removed the `memberships`/`students` SQLite mirror-writes (Phase 10, fourth and fifth mirrors fully removed)
 
 - **Feature:** Membership create/renew, Payment collection, Student admission/edit — internal data layer, no user-visible feature change except error-handling now catches a wider exception type in four call sites
