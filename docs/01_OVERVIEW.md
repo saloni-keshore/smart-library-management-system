@@ -9,21 +9,21 @@ It is **multi-tenant**: every logged-in admin only ever sees their own data. Iso
 ## Tech stack (actual, as installed)
 
 - **Backend:** Flask (`requirements.txt` pins only `Flask>=2.3.0` and `Werkzeug>=2.3.0`)
-- **Database:** SQLite, single file at `database/library.db`, accessed with the stdlib `sqlite3` module (no ORM) — **except** `admins`, `enquiries`, `students`, and `memberships`, which as of 2026-07-23 read/write Supabase (PostgreSQL) via the `supabase-py` client (`database/supabase_client.py`): `routes/auth.py` (login/register/forgot-password, ADR-16), `routes/setting.py`'s `security_settings()` password-change branch only (ADR-17), `routes/enquiries.py` (all of it, ADR-18), `routes/student.py` (all of it, ADR-19), `routes/membership.py` (all of it, ADR-20), and `routes/payment.py`'s `collect()` only (`memberships.paid_amount`/`pending_amount`, ADR-21); every other table/route, and the rest of `routes/setting.py`/`routes/payment.py` (its `index()`), is still SQLite. `routes/student.py`, `routes/enquiries.py`, `routes/membership.py`, and `routes/payment.py` all still keep a SQLite mirror in sync purely so `routes/dashboard.py`/`routes/membership_distribution.py`/`routes/notification.py`/etc. (all unmigrated) can keep JOINing `students`/`enquiries`/`memberships` directly. See ADR-16/ADR-17/ADR-18/ADR-19/ADR-20/ADR-21 in [DECISIONS.md](DECISIONS.md) for the incremental-migration plan, TD-35 (`Resolved`) for the closed `admins.password` split, TD-36 (`Resolved` as of ADR-19) for the `enquiries.status` split ADR-18 introduced, and TD-37 (`Resolved` as of ADR-21) for the `memberships.paid_amount`/`pending_amount` split ADR-20 introduced.
+- **Database:** Supabase (PostgreSQL), accessed via the `supabase-py` PostgREST client (`database/supabase_client.py`); no ORM, `.eq()`/`.in_()`-filtered queries in `database/*_queries.py` modules or inline in routes. **As of 2026-07-25 (ADR-32, Phase 11), Supabase is the only database in the app** — SQLite (`database/db.py`, `database/schema.sql`, and every `database/migrate_*.py` script) was removed entirely once the incremental table-by-table migration (ADR-16 through ADR-31, tracked in [DECISIONS.md](DECISIONS.md)) reached its last table (`admins`). See [DECISIONS.md](DECISIONS.md) for the full migration history and [MIRROR_TRACKER.md](MIRROR_TRACKER.md) for how each table's SQLite mirror was removed.
 - **Templates:** Jinja2 (bundled with Flask)
 - **Frontend:** Bootstrap 5.3.7 + Bootstrap Icons 1.11.3 (via CDN), Chart.js (client-side interactive charts), Google Fonts "Poppins"
 - **Server-rendered charts:** `matplotlib` + `numpy` (used by `utils/charts.py` to render PNGs saved to `static/charts/`)
 
 > **Known gap:** `matplotlib` and `numpy` are imported by `utils/charts.py` but are **not listed in `requirements.txt`**. A clean `pip install -r requirements.txt` will not have them, and the app will crash the first time a chart-generating route (dashboard, membership distribution) runs. See [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
 
-There is no ORM, no migrations framework (migrations are hand-written idempotent Python scripts, see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md)), no test suite (`tests/` is empty), and no build step for CSS/JS (plain hand-authored files served directly from `static/`).
+There is no ORM and no build step for CSS/JS (plain hand-authored files served directly from `static/`). Supabase's schema lives in `database/supabase_migration.sql`, hand-maintained (no migrations framework/runner) — see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md).
 
 ## Running it locally
 
 ```
 pip install -r requirements.txt
 pip install matplotlib numpy   # required by utils/charts.py but missing from requirements.txt
-python database/seed.py        # creates library.db from database/schema.sql if it doesn't exist
+# Set SUPABASE_URL / SUPABASE_SECRET_KEY (e.g. via .env) - see database/supabase_client.py
 python app.py                  # runs with debug=True on the Flask default port (5000)
 ```
 

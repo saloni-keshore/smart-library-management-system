@@ -2,7 +2,7 @@
 
 ## `utils/charts.py` — the only file in `utils/`
 
-Uses **matplotlib** (`matplotlib.use("Agg")` for headless rendering) and **numpy** — not PIL, not Chart.js server-side. Imports `get_connection` directly from `database.db` and queries the DB itself (routes don't pass data in; they just call the generator function and then render a template that points at the resulting static PNG).
+Uses **matplotlib** (`matplotlib.use("Agg")` for headless rendering) and **numpy** — not PIL, not Chart.js server-side. As of 2026-07-24 (ADR-25), reads via `database.membership_queries.get_memberships_for_admin()`/`database.payment_queries.get_payments_for_admin()` (both Supabase) instead of raw SQLite queries; has had no SQLite dependency of any kind since that cutover, well before Phase 11 (ADR-32) removed SQLite from the app entirely (routes don't pass data in; they just call the generator function and then render a template that points at the resulting static PNG).
 
 **Helpers:**
 - `_smooth_curve(x, y, samples_per_segment=30)` — Catmull-Rom spline interpolation so the revenue line chart curves smoothly while still passing exactly through each real monthly data point.
@@ -23,7 +23,7 @@ These exist in the repo but contain **zero files** (confirmed via directory list
 
 | Folder | Apparent original intent (per old, now-removed planning docs) | Current reality |
 |---|---|---|
-| `models/` | ORM-style model classes (Student, Payment, Admin, Alert) | No ORM is used anywhere; all persistence is raw SQL via `database/*_queries.py` and `database/db.py`. Nothing to put here under the current architecture unless an ORM migration is planned. |
+| `models/` | ORM-style model classes (Student, Payment, Admin, Alert) | No ORM is used anywhere; all persistence is via `database/*_queries.py` and inline `database/supabase_client.py` calls (PostgREST, not raw SQL, as of Phase 6-11's migration — see [DECISIONS.md](DECISIONS.md)). Nothing to put here under the current architecture unless an ORM migration is planned. |
 | `services/` | A business-logic layer separate from routes | Business logic currently lives directly in `routes/*.py` (validation, calculations) and `database/*_queries.py` (aggregation, e.g. `bi_queries.py`'s health-score math). No separate service layer exists. |
 | `reports/` | Generated PDF/Excel/CSV report output | No report-generation code exists anywhere in the project (no ReportLab/openpyxl/pandas usage found; `requirements.txt` only has Flask/Werkzeug). `routes/report.py` is a pure redirect shim to Business Intelligence. |
 | `tests/` | Unit/integration/DB tests | **No automated tests exist at all.** This is the most consequential empty folder — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md). |

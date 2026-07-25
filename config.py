@@ -18,7 +18,6 @@ class Config:
     ENABLE_SELF_SERVICE_PASSWORD_RESET = os.environ.get(
         "ENABLE_SELF_SERVICE_PASSWORD_RESET", "false"
     ).lower() == "true"
-    DATABASE_PATH = os.environ.get("DATABASE_PATH")
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 

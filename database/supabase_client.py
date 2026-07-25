@@ -1,10 +1,13 @@
-"""Shared Supabase (PostgREST) client for app code migrated off SQLite.
+"""Shared Supabase (PostgREST) client - the only database access layer in
+the app as of 2026-07-25 (ADR-32, Phase 11), now that SQLite has been
+removed entirely (see docs/DECISIONS.md).
 
 Reads SUPABASE_URL / SUPABASE_SECRET_KEY from the environment (via .env in
-development), the same variables test_supabase.py and
-database/migrate_to_supabase.py already use. Unlike database.db.get_connection()
-(a short-lived per-request SQLite connection), the Supabase client is a
-plain HTTP client wrapper, so a single instance is created once and reused.
+development), the same variables test_supabase.py used to set up. Unlike a
+short-lived per-request SQLite connection (the pattern this module
+replaced - see ADR-32 for what used to live in the now-deleted
+database/db.py), the Supabase client is a plain HTTP client wrapper, so a
+single instance is created once and reused.
 """
 
 import os

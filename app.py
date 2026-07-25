@@ -6,7 +6,6 @@ from pathlib import Path
 from flask import Flask, abort, render_template, request, session
 
 from config import DevelopmentConfig, ProductionConfig
-from database.db import initialize_database
 from utils.security import csrf_token, validate_csrf
 
 from routes.auth import auth_bp
@@ -60,7 +59,6 @@ def create_app(test_config=None):
     if not app.config.get("SECRET_KEY"):
         app.config["SECRET_KEY"] = "test-secret-key"
 
-    initialize_database()
     _configure_logging(app)
 
     app.register_blueprint(auth_bp)

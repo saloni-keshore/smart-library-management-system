@@ -220,7 +220,14 @@ def test_receipt_numbers_globally_unique_across_two_fresh_admins(app):
     start = 0
     page_size = 1000
     while True:
-        page = supabase.table("payments").select("receipt_number").range(start, start + page_size - 1).execute().data
+        page = (
+            supabase.table("payments")
+            .select("receipt_number")
+            .order("payment_id")
+            .range(start, start + page_size - 1)
+            .execute()
+            .data
+        )
         all_receipts.extend(r["receipt_number"] for r in page)
         if len(page) < page_size:
             break

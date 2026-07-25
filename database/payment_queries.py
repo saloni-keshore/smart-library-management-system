@@ -18,10 +18,12 @@ mirror-write fully removed), Supabase is also this table's only *write*
 target - `record_payment()` no longer touches SQLite at all, and its
 Supabase insert is strict (raises on failure), not best-effort: its callers
 (`routes/membership.py`'s `create()`/`renew()`, `routes/payment.py`'s
-`collect()`) now catch `postgrest.exceptions.APIError` alongside
-`sqlite3.Error` around this call, so a payment failure still rolls back
-cleanly exactly as it did before - see those routes' own comments and
-ADR-28 in docs/DECISIONS.md.
+`collect()`) catch `postgrest.exceptions.APIError` around this call, so a
+payment failure still rolls back cleanly. As of 2026-07-24 (ADR-29), those
+two routes' own SQLite writes were removed too, so this is now their only
+caught exception type around this call, not one caught alongside
+`sqlite3.Error` - see those routes' own comments and ADR-28/29 in
+docs/DECISIONS.md.
 """
 
 from datetime import date

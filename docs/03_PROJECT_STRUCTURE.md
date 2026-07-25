@@ -12,7 +12,7 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | `README.md` | **Empty (0 bytes)** — no project-level README exists | [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
 | `.claude/` | Claude Code local settings (`settings.local.json`) | |
 | `.agents/` | Empty directory, no files | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
-| `backups/` | Previously empty; as of 2026-07-21 holds manual DB backups written by `routes/setting.py`'s `backup_create()` (Settings → Data & Backup), named `library_backup_<admin_id>_<timestamp>.db` | [10_FEATURE_MODULES.md](10_FEATURE_MODULES.md) |
+| `backups/` | Previously empty; as of 2026-07-21 holds manual backups written by `routes/setting.py`'s `backup_create()` (Settings → Data & Backup), named `library_backup_<admin_id>_<timestamp>.json` as of 2026-07-25 (ADR-32 — was `.db`, a whole-file SQLite copy, before SQLite was removed) | [10_FEATURE_MODULES.md](10_FEATURE_MODULES.md) |
 | `models/` | Empty directory, no files (no ORM model classes exist anywhere in the project) | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
 | `reports/` | Empty directory, no files | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
 | `services/` | Empty directory, no files (no service layer exists; business logic lives directly in `routes/*.py` and `database/*_queries.py`) | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
@@ -22,21 +22,8 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 
 | Path | Purpose |
 |---|---|
-| `db.py` | `get_connection()` — the single shared SQLite connection factory |
-| `supabase_client.py` | `get_supabase_client()` — the single shared Supabase (PostgREST) client factory, used by `routes/auth.py` (ADR-16), `routes/setting.py`'s `security_settings()` password branch (ADR-17), `routes/enquiries.py` (ADR-18), `routes/student.py` (ADR-19), `routes/membership.py` (ADR-20), and `routes/payment.py`'s `collect()` (ADR-21), all as of 2026-07-23 |
-| `schema.sql` | Full DDL for every table (source of truth for a from-scratch DB) |
-| `seed.py` | Despite the name, does **not** insert sample data — runs `schema.sql` via `executescript()` to (re)create tables |
-| `migrate.py` | Multi-tenant retrofit: adds `admin_id` to `enquiries`/`students` |
-| `migrate_audit_log.py` | Creates `audit_log` table |
-| `migrate_transactions.py` | Creates a `transactions` table (⚠ shape differs from the one also defined in `schema.sql` — see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md)) |
-| `migrate_cashbook_ledger.py` | Adds `cashbook.reference_id` and `cashbook.source` columns |
-| `migrate_library_settings.py` | Creates `library_settings` table |
-| `migrate_settings_receipt_footer.py` | Adds `library_settings.receipt_footer` column |
-| `migrate_membership_setting.py` | Creates `membership_settings` table, with a schema-compatibility guard |
-| `migrate_receipt_settings.py` | Adds receipt numbering/branding/printing columns to `library_settings` |
-| `migrate_notification_settings.py` | Adds 19 reminder-rule/channel/quiet-hours/dashboard-display columns to `library_settings` |
-| `migrate_backup_log.py` | Creates `backup_log` table, with a schema-compatibility guard |
-| `migrate_security_settings.py` | Creates `security_settings` table, with a schema-compatibility guard |
+| `supabase_client.py` | `get_supabase_client()` — the single shared Supabase (PostgREST) client factory; as of 2026-07-25 (ADR-32) the app's **only** database access layer — `database/db.py` (the old SQLite connection factory), `database/schema.sql`, `database/seed.py`, `database/init_db.py`, and every `database/migrate_*.py` script were deleted outright once SQLite was removed entirely (see [DECISIONS.md](DECISIONS.md)) |
+| `supabase_migration.sql` | Full DDL for every table — the single, sole source of truth for the schema as of ADR-32 (previously paired with `schema.sql`, which no longer exists) |
 | `audit_queries.py` | Read access to Supabase `audit_log` (`get_recent_audit_log`) — no SQLite mirror-write left as of ADR-26; `database/cashbook_queries.py` writes Supabase `audit_log` rows directly |
 | `bi_queries.py` | Business-intelligence aggregates (health score, growth, top categories, action items, timeline) |
 | `cashbook_categories.py` | Static category/payment-method constant lists (no DB access) |

@@ -1,6 +1,6 @@
 # Database Schema
 
-Single SQLite file: `database/library.db`. Source of truth for a fresh DB is `database/schema.sql`, run via `database/seed.py`'s `initialize_database()`. `PRAGMA foreign_keys = ON;` is set at the top of `schema.sql` but is **not** set on regular per-request connections (`database/db.py`'s `get_connection()`), so FK enforcement is effectively inconsistent — see [02_ARCHITECTURE.md](02_ARCHITECTURE.md).
+**As of 2026-07-25 (ADR-32, Phase 11), Supabase (PostgreSQL) is the only database in the app.** Schema is defined in `database/supabase_migration.sql`, applied by hand (no migrations framework/runner). The SQLite file this section used to document (`database/library.db`, defined by the now-deleted `database/schema.sql`/`database/seed.py`/`database/db.py`) is gone from the app's code entirely — the tables below describe the final SQLite shape each table had before its own migration, kept for historical reference alongside each table's migration history; see [DECISIONS.md](DECISIONS.md) for the full ADR-16 through ADR-32 trail and [MIRROR_TRACKER.md](MIRROR_TRACKER.md) for per-table mirror-removal detail. Column shapes are identical between the two schemas per ADR-14.
 
 ## Tables
 
@@ -149,7 +149,7 @@ Rows are created two ways: `insert_transaction()` (manual, user-facing form) and
 | `description` | TEXT |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP |
 
-`database/migrate_transactions.py` separately does `CREATE TABLE IF NOT EXISTS transactions` with a **different** shape: PK named `transaction_id` (not `id`), an added `admin_id INTEGER NOT NULL FK → admins`, and `transaction_date DATE` (not `TEXT`). Because both use `IF NOT EXISTS`, whichever one runs first "wins" and the other becomes a silent no-op — the two files disagree on the table's actual shape depending on run order. **No route or query module currently reads/writes this table at all** (confirmed no `FROM transactions` / `INTO transactions` outside these two schema-definition files) — it appears to be superseded by `cashbook`. Flagged in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) as needing reconciliation or removal.
+`database/migrate_transactions.py` (deleted 2026-07-25, ADR-32) separately did `CREATE TABLE IF NOT EXISTS transactions` with a **different** shape: PK named `transaction_id` (not `id`), an added `admin_id INTEGER NOT NULL FK → admins`, and `transaction_date DATE` (not `TEXT`). Because both used `IF NOT EXISTS`, whichever one ran first "won" and the other became a silent no-op — the two files disagreed on the table's actual shape depending on run order; this was a SQLite-only, now-moot inconsistency, since neither script exists to run anymore. **No route or query module ever read/wrote this table at all** (confirmed no `FROM transactions` / `INTO transactions` outside these two now-deleted schema-definition files) — it was superseded by `cashbook`.
 
 ### `audit_log`
 | Column | Type | Notes |
@@ -240,7 +240,9 @@ Created by `database/migrate_security_settings.py`. Deliberately separate from `
 | `memberships`, `payments` | No `admin_id` column — isolated indirectly via `student_id → students.admin_id` |
 | `settings`, `transactions` | Not admin-scoped at all (unused/legacy tables) |
 
-## Migration scripts (all in `database/`, run manually/individually — no migration runner or version tracking)
+## Migration scripts (historical — all deleted 2026-07-25, ADR-32)
+
+**These files no longer exist in the repo.** They shaped SQLite's schema over time, before Supabase became the only database (Phase 11); kept here purely as a historical record of how each SQLite table reached the shape documented above. Supabase's schema is defined once, directly, in `database/supabase_migration.sql` — there is no equivalent incremental-migration history to document going forward, since Postgres's `ALTER TABLE` changes there (if any) haven't needed a script of their own yet.
 
 | Script | Effect | Idempotent? |
 |---|---|---|

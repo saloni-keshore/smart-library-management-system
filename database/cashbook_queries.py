@@ -25,12 +25,14 @@ Two different write shapes coexist here, deliberately:
   routes/membership.py and routes/payment.py, both out of scope for this
   migration slice) wraps id generation and both inserts in one bare
   except, swallowing any failure - the same best-effort contract this
-  function has had since ADR-22. Those two routes only catch sqlite3.Error
-  around record_payment() and can't be given a new caught exception type
-  without expanding this migration's scope back into those two files. As
-  of ADR-27, there is no SQLite fallback left: a Supabase outage during
-  this call means the automatic entry (and its audit-log row) for that one
-  payment is not recorded anywhere at all, not just left stale - see
+  function has had since ADR-22, kept deliberately even after those two
+  routes' own SQLite writes were removed (ADR-29): this function's own
+  caller chain is still out of scope, so widening its bare except into a
+  specific caught type would be new logic, not the mechanical one-line
+  except-clause change ADR-28/29 made at the route level. As of ADR-27,
+  there is no SQLite fallback left: a Supabase outage during this call
+  means the automatic entry (and its audit-log row) for that one payment
+  is not recorded anywhere at all, not just left stale - see
   docs/MIRROR_TRACKER.md and TD-43 in docs/11_FUTURE_WORK.md.
 
 As of 2026-07-24 (ADR-25), `payment_id` **is** sent to Supabase for
@@ -199,10 +201,11 @@ def insert_income_entry(
     cashbook's SQLite mirror-write removed), this writes only Supabase, and
     the whole thing (id generation plus both inserts) is best-effort,
     wrapped in one bare except - the same fire-and-forget contract this
-    function has had since ADR-22, preserved deliberately: those two routes
-    only catch sqlite3.Error around record_payment() and can't be given a
-    new caught exception type without expanding this migration's scope back
-    into those two files. Before ADR-27, a Supabase outage here only left
+    function has had since ADR-22, preserved deliberately even after those
+    two routes' own SQLite writes were removed (ADR-29): this function's
+    caller chain (record_payment(), itself called from those routes) is
+    still out of scope for turning this into a strict, propagating write.
+    Before ADR-27, a Supabase outage here only left
     the Supabase mirror stale (TD-39/TD-41) - the SQLite row still existed.
     As of ADR-27, there is no SQLite fallback left, so an outage now means
     the automatic Income entry (and its audit-log row) for that one payment

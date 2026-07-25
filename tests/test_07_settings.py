@@ -1,8 +1,10 @@
 """Settings: Library Profile, Membership/Receipt/Notification Settings,
 Staff Access, Data & Backup, Security Settings."""
 import io
+import json
 
 from database.supabase_client import get_supabase_client
+from tests.conftest import get_admin_by_username
 
 
 def _save_library_profile(client, **overrides):
@@ -495,50 +497,59 @@ def test_backup_create_downloads_file_and_records_log(logged_in_client):
     client, admin = logged_in_client
     resp = client.post("/settings/backup/create")
     assert resp.status_code == 200
-    assert resp.mimetype == "application/octet-stream" or "sqlite" in (resp.mimetype or "") or True
+    assert "json" in (resp.mimetype or "")
     supabase = get_supabase_client()
     rows = supabase.table("backup_log").select("*").eq("admin_id", admin["admin_id"]).execute().data
     assert len(rows) == 1
 
 
-def test_backup_create_leaks_entire_multi_tenant_database(logged_in_client):
-    """CRITICAL FINDING (not a test of intended behavior - documents an
-    active data-isolation defect): /settings/backup/create copies and
-    serves the ENTIRE shared database/library.db file, which contains every
-    other admin's students, mobiles, payments, and password hashes - not
-    just the requesting admin's own data, unlike every other admin-scoped
-    query in this app. See final QA report / new TD entry."""
-    client, admin = logged_in_client
-    from tests.conftest import make_enquiry
-    # Seed a distinguishable marker for *this* admin so we can prove the
-    # downloaded file contains rows beyond this admin's own scope.
-    resp = client.post("/settings/backup/create")
+def test_backup_create_scoped_to_own_admin_only(app):
+    """Regression test for TD-32 (Resolved via ADR-32): backup_create() used
+    to shutil.copy2 the entire shared SQLite file, leaking every other
+    admin's students/payments/password hashes. As of ADR-32 it's a
+    per-table Supabase export filtered by admin_id (memberships/payments
+    filtered via this admin's own student_ids) - this proves the fix by
+    seeding two admins and confirming admin A's backup contains none of
+    admin B's data, and no password hash for anyone."""
+    client_a = app.test_client()
+    client_b = app.test_client()
+    import random
+    import string
+
+    def _register_and_login_local(client, suffix):
+        creds = {
+            "full_name": f"Backup Test {suffix}",
+            "username": f"qa_backup_{suffix}",
+            "mobile": "9" + "".join(random.choices(string.digits, k=9)),
+            "email": f"backup_{suffix}@example.com",
+            "password": "BackupPass1",
+            "confirm_password": "BackupPass1",
+        }
+        client.post("/register", data=creds, follow_redirects=True)
+        client.post("/", data={"username": creds["username"], "password": creds["password"]}, follow_redirects=True)
+        return get_admin_by_username(creds["username"])
+
+    admin_a = _register_and_login_local(client_a, "a")
+    admin_b = _register_and_login_local(client_b, "b")
+
+    from tests.conftest import make_enquiry, get_last_enquiry_id, admit_student
+    make_enquiry(client_b, full_name="Admin B Private Student", mobile="9199999999")
+    eid_b = get_last_enquiry_id(admin_b["admin_id"])
+    admit_student(client_b, eid_b)
+
+    resp = client_a.post("/settings/backup/create")
     assert resp.status_code == 200
 
-    import sqlite3
-    import tempfile
-    import os
-    tmp_path = os.path.join(tempfile.gettempdir(), "qa_backup_leak_check.db")
-    with open(tmp_path, "wb") as f:
-        f.write(resp.data)
+    export = json.loads(resp.data)
+    tables = export["tables"]
 
-    conn = sqlite3.connect(tmp_path)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT admin_id FROM students")
-    admin_ids_in_backup = {row["admin_id"] for row in cur.fetchall()}
-    cur.execute("SELECT COUNT(*) AS c FROM admins")
-    total_admins_in_backup = cur.fetchone()["c"]
-    conn.close()
-    os.remove(tmp_path)
+    assert tables["admin_profile"]["admin_id"] == admin_a["admin_id"]
+    assert "password" not in tables["admin_profile"]
 
-    # This assertion documents the CURRENT (defective) behavior: the
-    # backup contains other admins' data and all admin accounts, not just
-    # this admin's own. If this assertion ever starts failing because the
-    # backup was scoped down to one admin, that's the bug being fixed -
-    # update/remove this test at that point.
-    assert total_admins_in_backup >= 1
-    assert admin["admin_id"] in admin_ids_in_backup or len(admin_ids_in_backup) >= 0
+    student_names = {row["full_name"] for row in tables["students"]}
+    assert "Admin B Private Student" not in student_names
+    for row in tables["students"] + tables["enquiries"]:
+        assert row["admin_id"] == admin_a["admin_id"]
 
 
 # ---------------------------------------------------------------------------

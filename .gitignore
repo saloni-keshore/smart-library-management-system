@@ -18,10 +18,13 @@ env/
 
 # SQLite data is operational data; keep it out of source control.
 database/*.db
-backups/*.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Manual backup exports (Settings -> Data & Backup) are operational data too.
+backups/*.db
+backups/*.json
 instance/
 
 # Runtime uploads can contain customer-provided documents.

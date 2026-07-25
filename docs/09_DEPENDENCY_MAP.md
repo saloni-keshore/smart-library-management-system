@@ -110,10 +110,10 @@ routes/setting.py              → database.settings_queries (get/save/create/up
                                 → database.backup_queries (Supabase, ADR-24), database.security_settings_queries
                                   (Supabase, ADR-24)
                                 → database.supabase_client.get_supabase_client (security_settings()'s password
-                                  branch, admins table, ADR-17; also backup_export_csv()'s students read, ADR-24)
-                                → database.db.get_connection (backup_create()'s whole-file SQLite copy and
-                                  data_backup()'s db_size display only, as of 2026-07-24 ADR-24 — every other
-                                  function in this file is Supabase-backed)
+                                  branch, admins table, ADR-17; backup_export_csv()'s students read, ADR-24; and
+                                  as of 2026-07-25 (ADR-32) backup_create()'s per-admin export too, via the new
+                                  _collect_admin_backup_data() helper — this file has zero SQLite dependency of
+                                  any kind now, the last one in the app to reach that state)
 routes/report.py               → (no DB access — pure redirect)
 ```
 

@@ -1,9 +1,9 @@
 import csv
 import io
+import json
 import os
 import re
 import secrets
-import sqlite3
 from datetime import datetime
 
 from flask import (
@@ -14,7 +14,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from postgrest.exceptions import APIError
 
-from database.db import get_connection, DATABASE_PATH
 from database.supabase_client import get_supabase_client
 from database.settings_queries import (
     get_library_settings, save_library_settings, clear_library_logo
@@ -268,14 +267,6 @@ def _build_notification_changes(existing, submitted):
             })
 
     return changes
-
-
-def _format_file_size(size_bytes):
-    size = float(size_bytes)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
-            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
-        size /= 1024
 
 
 SESSION_TIMEOUT_OPTIONS = {15: "15 minutes", 30: "30 minutes", 60: "60 minutes", 0: "Never"}
@@ -717,6 +708,51 @@ def staff_access():
 # Data & Backup
 # ==========================================================
 
+# Tables with a direct admin_id column - queried with .eq("admin_id", ...).
+# memberships/payments have no admin_id column (isolated indirectly via
+# student_id -> students.admin_id, see docs/04_DATABASE_SCHEMA.md), so
+# they're collected separately below.
+_BACKUP_DIRECT_TABLES = (
+    "enquiries", "students", "cashbook", "audit_log",
+    "library_settings", "membership_settings", "security_settings",
+)
+
+
+def _collect_admin_backup_data(admin_id):
+    """Every Supabase row belonging to this admin, table by table - the
+    Supabase-native replacement for the old whole-file SQLite snapshot
+    (ADR-32): there is no single database file left to copy, so the
+    backup is now a per-table export of this admin's own rows instead."""
+
+    supabase = get_supabase_client()
+    data = {}
+
+    admin_response = (
+        supabase.table("admins")
+        .select("admin_id, full_name, username, mobile, email, role, created_at")
+        .eq("admin_id", admin_id)
+        .execute()
+    )
+    data["admin_profile"] = admin_response.data[0] if admin_response.data else None
+
+    for table in _BACKUP_DIRECT_TABLES:
+        data[table] = supabase.table(table).select("*").eq("admin_id", admin_id).execute().data
+
+    student_ids = [row["student_id"] for row in data["students"]]
+    if student_ids:
+        data["memberships"] = (
+            supabase.table("memberships").select("*").in_("student_id", student_ids).execute().data
+        )
+        data["payments"] = (
+            supabase.table("payments").select("*").in_("student_id", student_ids).execute().data
+        )
+    else:
+        data["memberships"] = []
+        data["payments"] = []
+
+    return data
+
+
 @setting_bp.route("/backup")
 def data_backup():
 
@@ -725,13 +761,11 @@ def data_backup():
 
     admin_id = session["admin_id"]
 
-    db_size = _format_file_size(os.path.getsize(DATABASE_PATH)) if os.path.exists(DATABASE_PATH) else "Unknown"
     backup_info = get_backup_info(admin_id)
     backups_dir = os.path.join(current_app.root_path, "backups")
 
     return render_template(
         "settings/data_backup.html",
-        db_size=db_size,
         last_backup_at=backup_info["last_backup_at"] if backup_info else None,
         backup_location=backups_dir,
     )
@@ -793,18 +827,17 @@ def backup_create():
     backups_dir = os.path.join(current_app.root_path, "backups")
     os.makedirs(backups_dir, exist_ok=True)
 
-    backup_filename = f"library_backup_{admin_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    backup_filename = f"library_backup_{admin_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     backup_path = os.path.join(backups_dir, backup_filename)
 
-    # SQLite's backup API produces a consistent snapshot even while WAL mode
-    # has uncheckpointed writes; copying the database file does not.
-    source = get_connection()
-    target = sqlite3.connect(backup_path)
-    try:
-        source.backup(target)
-    finally:
-        target.close()
-        source.close()
+    export = {
+        "exported_at": datetime.now().isoformat(),
+        "admin_id": admin_id,
+        "tables": _collect_admin_backup_data(admin_id),
+    }
+    with open(backup_path, "w", encoding="utf-8") as backup_file:
+        json.dump(export, backup_file, indent=2, default=str)
+
     record_backup(admin_id, backup_filename)
 
     return send_file(backup_path, as_attachment=True, download_name=backup_filename)
