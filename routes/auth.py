@@ -1,5 +1,3 @@
-import sqlite3
-
 from flask import (
     Blueprint,
     current_app,
@@ -16,7 +14,6 @@ from werkzeug.security import (
 )
 from postgrest.exceptions import APIError
 
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 from utils.security import clear_rate_limit, rate_limited
 
@@ -150,7 +147,7 @@ def register():
 
             hashed_password = generate_password_hash(password)
 
-            insert_response = supabase.table("admins").insert({
+            supabase.table("admins").insert({
                 "full_name": full_name,
                 "username": username,
                 "mobile": mobile,
@@ -159,34 +156,6 @@ def register():
                 "role": "Admin",
             }).execute()
         except APIError:
-            flash("Something went wrong. Please try again.", "danger")
-            return redirect("/register")
-
-        new_admin_id = insert_response.data[0]["admin_id"]
-
-        # Bridge (TD-35): enquiries/students/audit_log still enforce a SQLite
-        # foreign key back to admins.admin_id (database/db.py sets PRAGMA
-        # foreign_keys = ON on every connection), so a brand-new admin who
-        # only exists in Supabase would fail every one of those inserts the
-        # moment they're used. Mirror the row into SQLite too, under the
-        # same admin_id, until those modules are migrated to Supabase.
-        # library_settings/membership_settings/backup_log/security_settings
-        # no longer need this - as of 2026-07-24 (ADR-24) they're Supabase-
-        # only and never insert into SQLite at all, so their FK to
-        # admins.admin_id is never exercised by this app anymore.
-        try:
-            sqlite_conn = get_connection()
-            sqlite_conn.execute(
-                """
-                INSERT INTO admins (admin_id, full_name, username, mobile, email, password, role)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (new_admin_id, full_name, username, mobile, email, hashed_password, "Admin")
-            )
-            sqlite_conn.commit()
-            sqlite_conn.close()
-        except sqlite3.Error:
-            supabase.table("admins").delete().eq("admin_id", new_admin_id).execute()
             flash("Something went wrong. Please try again.", "danger")
             return redirect("/register")
 

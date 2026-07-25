@@ -10,10 +10,10 @@ Which files import/call which. Two data-access styles coexist (see [02_ARCHITECT
 
 ```
 routes/auth.py                 → database.supabase_client.get_supabase_client   (admins table, Supabase/PostgreSQL —
-                                  as of 2026-07-23, ADR-16; was database.db.get_connection until this cutover)
-                                → database.db.get_connection   (register() ONLY — mirror-inserts the same new admin
-                                  into SQLite too, since enquiries/students/library_settings/membership_settings/
-                                  audit_log still enforce a SQLite FK to admins.admin_id; TD-35, temporary bridge)
+                                  as of 2026-07-23, ADR-16; was database.db.get_connection until this cutover; as of
+                                  2026-07-25, ADR-31, the ONLY store — no database.db.get_connection/sqlite3 left
+                                  in this file at all, the last of the app's seven mirrors/bridges to reach that
+                                  state)
 routes/dashboard.py            → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-23 —
                                   total-students/total-enquiries counts, source-of-truth Supabase reads)
                                 → database.membership_queries (get_membership_counts, get_memberships_for_admin,

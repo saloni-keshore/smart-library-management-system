@@ -1,12 +1,11 @@
 """End-to-end: Enquiry -> Admission -> Membership -> Payment -> Receipt ->
 Cashbook -> Dashboard -> BI -> Notifications -> Audit Log, verifying every
 downstream module updates exactly once and stays numerically consistent."""
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, get_enquiry_by_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id, get_membership_by_id,
-    get_cashbook_entries, get_audit_log_entries,
+    get_cashbook_entries, get_audit_log_entries, get_admin_by_username,
 )
 
 
@@ -201,10 +200,8 @@ def test_receipt_numbers_globally_unique_across_two_fresh_admins(app):
         }
         client.post("/register", data=creds, follow_redirects=True)
         client.post("/", data={"username": creds["username"], "password": creds["password"]}, follow_redirects=True)
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT admin_id FROM admins WHERE username=?", (creds["username"],))
-        return cur.fetchone()["admin_id"]
+        # admins now lives in Supabase only (ADR-31) - no SQLite mirror left.
+        return get_admin_by_username(creds["username"])["admin_id"]
 
     admin_a = _reg(client_a, "a")
     admin_b = _reg(client_b, "b")

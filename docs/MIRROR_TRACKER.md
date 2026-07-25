@@ -63,21 +63,19 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 
 ---
 
-## `admins` (existence-only bridge)
+## `admins` (existence-only bridge) — **Removed** (2026-07-25, ADR-31)
 
-**Source of truth:** Supabase `admins` table, since ADR-16 (2026-07-23). Every actual read (login, forgot-password, Security Settings' password change) goes to Supabase.
+**Source of truth:** Supabase `admins` table, since ADR-16 (2026-07-23). Every actual read (login, forgot-password, Security Settings' password change) goes to Supabase. As of ADR-31, it is also the only store — there is no SQLite copy receiving writes anymore.
 
-**SQLite mirror's role:** row *existence* only — the mirror row's column values (other than `admin_id`) are never read back by any route. It exists purely so a handful of other SQLite tables' `FOREIGN KEY (admin_id) REFERENCES admins(admin_id)` constraints resolve when those tables insert a row for a newly-registered admin.
+**SQLite mirror's role (historical):** row *existence* only — the mirror row's column values (other than `admin_id`) were never read back by any route. It existed purely so a handful of other SQLite tables' `FOREIGN KEY (admin_id) REFERENCES admins(admin_id)` constraints resolved when those tables inserted a row for a newly-registered admin.
 
 **Current readers:** None. No route or query module `SELECT`s from SQLite `admins` for any business logic.
 
-**Current writers:** `routes/auth.py`'s `register()` — inserts into Supabase first, then mirrors the identical row (`admin_id`, `full_name`, `username`, `mobile`, `email`, hashed `password`, `role`) into SQLite via `database.db.get_connection()`, rolling back the Supabase insert if the SQLite insert raises `sqlite3.Error`. `login()`/`forgot_password()` and `routes/setting.py`'s `security_settings()` password branch touch Supabase's `admins.password` only — they never write SQLite (TD-35, `Resolved` via ADR-17).
+**Current writers:** None — `routes/auth.py`'s `register()` had its SQLite mirror-insert deleted outright in ADR-31, along with the now-unused `sqlite3`/`database.db.get_connection` imports and the `insert_response`/`new_admin_id` variables that only existed to feed it. `login()`/`forgot_password()` and `routes/setting.py`'s `security_settings()` password branch still touch Supabase's `admins.password` only, unaffected (TD-35, `Resolved` via ADR-17).
 
-**Why the mirror still exists:** as of 2026-07-24 (ADR-30), **zero** tables enforce a real SQLite FK to `admins.admin_id` via an active insert anymore. `enquiries` was the last one (`routes/enquiries.py`'s `add()` mirror-insert) — its SQLite mirror-write was deleted outright in ADR-30. `students` and `audit_log` had already dropped off this list (ADR-29/ADR-26 respectively), and `library_settings`/`membership_settings`/`backup_log`/`security_settings` dropped off entirely in ADR-24 (no mirror kept at all). This bridge is now the **only** remaining mirror/bridge in the entire app with no FK dependents left — a pure read-side check away from full removal.
+**Why this bridge was removable:** `enquiries`' own SQLite mirror-write (ADR-30) was the last thing exercising any SQLite FK back to `admins.admin_id`. With that gone (following `audit_log` at ADR-26 and `students` at ADR-29), nothing in the SQLite FK graph required an `admins` row to exist for a write to succeed — this was the **last** mirror/bridge in the entire app.
 
-**Exact removal conditions (both required):**
-1. **Read-side:** none — already zero readers.
-2. **FK-side:** already clear as of ADR-30 — `enquiries`, the last dependent, no longer inserts into SQLite. `register()`'s mirror-insert into SQLite `admins` is now a pure write-path decision with **no downstream FK justification left at all** — the **next and final removal candidate** in Phase 10.
+**Exact removal conditions:** none remaining — fully removed. **This is the final entry in this file's "active mirror" tracking** — see the "Fully migrated, no mirror" note at the top: every table in the app is now either Supabase-only with no SQLite dependency, or (for `expenses`/`settings`/`transactions`) unused legacy tables never touched by the migration at all.
 
 **Change history:**
 - 2026-07-23 (ADR-16): bridge introduced — `register()`'s Supabase-only write broke 7 tables' SQLite FK on the very next admin who touched any of them (74 test failures caught this).
@@ -86,7 +84,8 @@ This closed 4 of the `admins` bridge's original 7 FK dependents in one slice —
 - 2026-07-24 (ADR-24): `library_settings`/`membership_settings`/`backup_log`/`security_settings` migrated to Supabase with no SQLite mirror kept at all (they're leaf tables, nothing downstream needed them) — dropped off this bridge's dependent list entirely, shrinking it from 7 to 3 (`enquiries`, `students`, `audit_log`).
 - 2026-07-24 (ADR-26): `audit_log`'s SQLite mirror-write removed outright — dropped off this bridge's dependent list, shrinking it from 3 to 2 (`enquiries`, `students`).
 - 2026-07-24 (ADR-29): `students`' SQLite mirror-write removed outright — dropped off this bridge's dependent list, shrinking it to 1 (`enquiries` only).
-- 2026-07-24 (ADR-30): `enquiries`' SQLite mirror-write removed outright — dropped off this bridge's dependent list, shrinking it to **0**. `register()`'s mirror-insert bridge is now the sole remaining mirror/bridge in the app, and the last thing standing before Phase 11 (full SQLite removal).
+- 2026-07-24 (ADR-30): `enquiries`' SQLite mirror-write removed outright — dropped off this bridge's dependent list, shrinking it to **0**.
+- 2026-07-25 (ADR-31): `register()`'s SQLite mirror-insert deleted outright. **This was the last mirror/bridge in the entire app** — every table Phase 6-10 touched is now Supabase-only. See ADR-31 in `DECISIONS.md`. Phase 11 (full SQLite removal — connections, `database/db.py`, `schema.sql`, obsolete `migrate_*.py` scripts) can now begin.
 
 ---
 

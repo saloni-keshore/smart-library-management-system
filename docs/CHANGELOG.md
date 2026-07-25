@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-25 — Removed the `admins` SQLite bridge (Phase 10, seventh and final mirror/bridge fully removed)
+
+- **Feature:** Admin registration — internal data layer, no user-visible feature change
+- **Files changed:** `routes/auth.py` (`register()` drops its SQLite mirror-insert of the new admin row and its compensating rollback-on-`sqlite3.Error` entirely; `insert_response`/`new_admin_id` variables removed since nothing downstream needs the new row's id; `import sqlite3` and `from database.db import get_connection` removed — the file has zero SQLite dependency now), `tests/test_08_cross_tenant_isolation.py` (`_register_and_login()` rewritten to read the new admin's id via `tests/conftest.py`'s `get_admin_by_username()` instead of a raw SQLite `SELECT`), `tests/test_09_full_workflow_chain.py` (`_reg()` helper same rewrite), `tests/conftest.py` (now-fully-unused `from database.db import get_connection` import removed)
+- **Why:** `admins` was an existence-only bridge, not a real mirror — kept solely so `audit_log.admin_id`/`students.admin_id`/`enquiries.admin_id`'s SQLite foreign keys had a valid parent row. All three FK dependents stopped writing SQLite in prior slices (`audit_log`: ADR-26, `students`: ADR-29, `enquiries`: ADR-30), clearing the bridge's last removal condition
+- **Database changes:** None to the schema — SQLite stops receiving new `admins` rows; the table and its existing historical rows are untouched until Phase 11 removes SQLite entirely
+- **UI changes:** None — `login()`/`forgot_password()` were already Supabase-only (TD-35, resolved via ADR-17) and are untouched by this change
+- **Future impact:** this is the **last** mirror/bridge in the entire app — every table Phase 6 through Phase 10 touched is now Supabase-only. Phase 11 (full SQLite removal: `database/db.py`, `database/schema.sql`, obsolete `migrate_*.py` scripts, remaining `sqlite3`/`get_connection` imports) can now begin. One known exception needs a decision before Phase 11 can finish cleanly: `routes/setting.py`'s `backup_create()`/`data_backup()` still use `get_connection()` for a whole-file SQLite copy and `db_size` display (a backup/diagnostic feature reading the file itself, not table data). See ADR-31 in docs/DECISIONS.md and the updated docs/MIRROR_TRACKER.md. Verified via targeted tests (test_01/08/09) and the full pytest suite.
+
+---
+
 ## 2026-07-24 — Removed the `enquiries` SQLite mirror-write (Phase 10, sixth mirror fully removed — only the `admins` bridge is left)
 
 - **Feature:** Enquiry add/edit/delete — internal data layer, no user-visible feature change

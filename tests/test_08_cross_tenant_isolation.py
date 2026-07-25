@@ -3,12 +3,11 @@ records by guessing/incrementing IDs, across every admin-scoped resource."""
 import random
 import string
 
-from database.db import get_connection
 from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id,
-    get_last_cashbook_entry, get_cashbook_entry_by_id,
+    get_last_cashbook_entry, get_cashbook_entry_by_id, get_admin_by_username,
 )
 
 
@@ -24,11 +23,8 @@ def _register_and_login(client, suffix):
     client.post("/register", data=creds, follow_redirects=True)
     client.post("/", data={"username": creds["username"], "password": creds["password"]}, follow_redirects=True)
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT admin_id FROM admins WHERE username=?", (creds["username"],))
-    creds["admin_id"] = cur.fetchone()["admin_id"]
-    conn.close()
+    # admins now lives in Supabase only (ADR-31) - no SQLite mirror left.
+    creds["admin_id"] = get_admin_by_username(creds["username"])["admin_id"]
     return creds
 
 
