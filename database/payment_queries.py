@@ -189,6 +189,29 @@ def get_payments_for_admin(admin_id, prefix=None):
     return payments
 
 
+def get_payment_id_by_receipt_number(receipt_number):
+    """Look up the payment_id a receipt_number belongs to.
+
+    record_payment() only ever returned receipt_number (its long-standing
+    return shape, kept as-is here). Callers that need the new payment's ID
+    - to redirect to its receipt page, routes/payment.py's collect() and
+    routes/membership.py's create()/renew() - use this instead of widening
+    record_payment()'s return value. receipt_number is globally unique
+    (enforced by generate_receipt_number()'s uniqueness loop), so this
+    always resolves to at most one row.
+    """
+
+    supabase = get_supabase_client()
+    resp = (
+        supabase.table("payments")
+        .select("payment_id")
+        .eq("receipt_number", receipt_number)
+        .limit(1)
+        .execute()
+    )
+    return resp.data[0]["payment_id"] if resp.data else None
+
+
 def record_payment(
     admin_id,
     membership_id,

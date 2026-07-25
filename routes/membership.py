@@ -10,7 +10,7 @@ from flask import (
 from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
-from database.payment_queries import record_payment
+from database.payment_queries import record_payment, get_payment_id_by_receipt_number
 from database.membership_settings_queries import get_membership_settings
 from database.membership_queries import (
     get_effective_status,
@@ -215,6 +215,7 @@ def create(student_id):
             )
 
         receipt_number = None
+        payment_id = None
 
         if paid_amount > 0:
             try:
@@ -230,6 +231,7 @@ def create(student_id):
                     description=remarks or f"Admission payment - {plan_name}",
                     source="Admission"
                 )
+                payment_id = get_payment_id_by_receipt_number(receipt_number)
             except APIError:
                 supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()
                 flash(
@@ -249,6 +251,9 @@ def create(student_id):
             )
         else:
             flash("Membership created successfully.", "success")
+
+        if payment_id:
+            return redirect(url_for("payment.receipt", payment_id=payment_id))
         return redirect(url_for("student.view", student_id=student_id))
 
     return render_template(
@@ -401,6 +406,7 @@ def renew(student_id):
             )
 
         receipt_number = None
+        payment_id = None
 
         if paid_amount > 0:
             try:
@@ -416,6 +422,7 @@ def renew(student_id):
                     description=remarks or f"Membership renewal - {plan_name}",
                     source="Renewal"
                 )
+                payment_id = get_payment_id_by_receipt_number(receipt_number)
             except APIError:
                 supabase.table("memberships").delete().eq("membership_id", new_membership_id).execute()
                 if previously_active_ids:
@@ -438,6 +445,9 @@ def renew(student_id):
             )
         else:
             flash("Membership renewed successfully.", "success")
+
+        if payment_id:
+            return redirect(url_for("payment.receipt", payment_id=payment_id))
         return redirect(url_for("student.view", student_id=student_id))
 
     return render_template(

@@ -2,26 +2,27 @@
 
 ## App bootstrap — `app.py`
 
-`create_app()` is a factory function:
+`create_app(test_config=None)` is a factory function:
 
 1. Instantiates `Flask(__name__)`.
-2. Sets `app.config["SECRET_KEY"]` from the `SECRET_KEY` env var, defaulting to the literal string `"smart_library_secret"`.
-3. Registers 13 blueprints with no `url_prefix` argument at registration time — each blueprint defines its own prefix internally (or none, for `auth` and `dashboard`):
+2. Reads `APP_ENV` (default `"production"`) and applies `DevelopmentConfig` or `ProductionConfig` from `config.py` via `app.config.from_object(...)` — this is also where `.env` gets loaded, since importing `config` triggers its module-level `load_dotenv()`. If `test_config` is passed, it's merged in with `app.config.update(test_config)`.
+3. If `SECRET_KEY` is still unset after that and the app isn't in testing mode, raises `RuntimeError("SECRET_KEY must be set before starting the application.")` — there is no hardcoded fallback secret; a missing `.env`/env var is a hard startup failure by design. In testing mode only, falls back to the literal `"test-secret-key"`.
+4. Calls `_configure_logging(app)` — attaches a `RotatingFileHandler` (1MB × 5 backups) writing to `<instance_path>/smart-library.log`, skipped when `app.testing`.
+5. Registers 13 blueprints with no `url_prefix` argument at registration time — each blueprint defines its own prefix internally (or none, for `auth` and `dashboard`):
    `auth_bp, dashboard_bp, enquiry_bp, student_bp, membership_bp, payment_bp, cashbook_bp, report_bp, setting_bp, notification_bp, membership_analytics_bp, membership_distribution_bp, business_intelligence_bp`
-4. Registers one `@app.context_processor`, `inject_notification_summary`: if `"admin_id"` is not in `session`, injects `nav_notifications=None`; otherwise calls `get_notification_summary(session["admin_id"])` (defined in `routes/notification.py`) so the navbar bell (`components/notification_dropdown.html`) has data on every page.
+6. Registers a `before_request` hook (`enforce_request_security`) that stamps a CSRF token and, for `POST`/`PUT`/`PATCH`/`DELETE`, validates it (400 on failure); an `after_request` hook (`set_security_headers`) that sets `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and (on HTTPS requests) `Strict-Transport-Security`; a context processor injecting `csrf_token`; and error handlers for 400/404/405/413/500, each rendering `templates/errors/error.html`.
+7. Registers a second `@app.context_processor`, `inject_notification_summary`: if `"admin_id"` is not in `session`, injects `nav_notifications=None`; otherwise calls `get_notification_summary(session["admin_id"])` (defined in `routes/notification.py`) so the navbar bell (`components/notification_dropdown.html`) has data on every page.
 
-There are **no** `before_request`/`after_request` hooks and **no** custom error handlers (no 404/500 pages) — Flask's defaults apply everywhere.
-
-Module-level `app = create_app()`; run via:
+Run via:
 ```python
 if __name__ == "__main__":
-    app.run(debug=True)
+    create_app().run()
 ```
-`debug=True` is hardcoded (not conditional on an env var), and no host/port override is set (defaults to `127.0.0.1:5000`).
+No `debug=True` and no host/port override — defaults to `127.0.0.1:5000` with debug mode off unless `DevelopmentConfig` (`APP_ENV=development`) is selected.
 
-## Config — `config.py` (currently dead code)
+## Config — `config.py`
 
-Defines `Config` (base: `SECRET_KEY` from env, `DEBUG = False`), `DevelopmentConfig(Config)` (`DEBUG = True`), and `ProductionConfig(Config)` (`DEBUG = False`). **None of these classes are imported anywhere in `app.py`** — `app.py` sets `SECRET_KEY` directly instead. This is unused scaffolding; see [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+Defines `Config` (base: `SECRET_KEY`, `SESSION_COOKIE_SECURE`, `PERMANENT_SESSION_LIFETIME`, `MAX_CONTENT_LENGTH`, `CSRF_ENABLED`, `ENABLE_SELF_SERVICE_PASSWORD_RESET`, `LOG_LEVEL` — all sourced from env vars with defaults), `DevelopmentConfig(Config)` (`DEBUG = True`, `SESSION_COOKIE_SECURE = False`), and `ProductionConfig(Config)` (`DEBUG = False`, `TESTING = False`). `app.py`'s `create_app()` selects one via `app.config.from_object(DevelopmentConfig if environment == "development" else ProductionConfig)`, keyed off `APP_ENV`. `config.py` also calls `load_dotenv()` at import time — it's the app's single `.env`-loading entry point, imported before any route module reads `os.environ`.
 
 ## Database connection — `database/supabase_client.py`
 

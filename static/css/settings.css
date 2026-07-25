@@ -196,10 +196,12 @@
 }
 
 /* ==========================
-   Receipt Preview card
+   Receipt document - shared by the Settings > Receipt Settings preview
+   card AND the real payments/receipt.html page (templates/components/
+   receipt_document.html), so these rules aren't scoped to .settings-page.
 ========================== */
 
-.settings-page .receipt-preview-doc{
+.receipt-preview-doc{
 
     max-width:280px;
 
@@ -209,13 +211,13 @@
 
 }
 
-.settings-page .receipt-preview-thermal .receipt-preview-doc{
+.receipt-preview-thermal .receipt-preview-doc{
 
     max-width:220px;
 
 }
 
-.settings-page .receipt-preview-logo{
+.receipt-preview-logo{
 
     height:48px;
 
@@ -227,7 +229,7 @@
 
 }
 
-.settings-page .receipt-preview-mark{
+.receipt-preview-mark{
 
     height:44px;
 

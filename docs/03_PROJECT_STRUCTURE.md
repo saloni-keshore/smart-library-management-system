@@ -7,7 +7,7 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | Path | Purpose | Details |
 |---|---|---|
 | `app.py` | Flask app factory, blueprint registration, entry point | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
-| `config.py` | Unused config classes (dead code, not imported by `app.py`) | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
+| `config.py` | Env-driven config classes used by `app.py`; also the app's `load_dotenv()` call site | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
 | `requirements.txt` | Python deps — currently only `Flask`, `Werkzeug` (missing `matplotlib`/`numpy`, see [11_FUTURE_WORK.md](11_FUTURE_WORK.md)) | |
 | `README.md` | **Empty (0 bytes)** — no project-level README exists | [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
 | `.claude/` | Claude Code local settings (`settings.local.json`) | |

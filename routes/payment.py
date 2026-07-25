@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from flask import (
     Blueprint,
     render_template,
@@ -10,7 +12,12 @@ from flask import (
 from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
-from database.payment_queries import record_payment, get_payments_for_admin
+from database.payment_queries import (
+    record_payment,
+    get_payments_for_admin,
+    get_payment_id_by_receipt_number,
+)
+from database.receipt_settings_queries import get_receipt_settings
 
 
 payment_bp = Blueprint(
@@ -182,10 +189,87 @@ def collect(membership_id):
             f"Payment of ₹{amount:.0f} collected successfully. Receipt No: {receipt_number}",
             "success"
         )
+        payment_id = get_payment_id_by_receipt_number(receipt_number)
+        if payment_id:
+            return redirect(url_for("payment.receipt", payment_id=payment_id))
         return redirect(url_for("student.view", student_id=student["student_id"]))
 
     return render_template(
         "payments/collect.html",
         membership=membership,
         student=student
+    )
+
+
+@payment_bp.route("/receipt/<int:payment_id>")
+def receipt(payment_id):
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+    supabase = get_supabase_client()
+
+    try:
+        payment_response = (
+            supabase.table("payments")
+            .select("*")
+            .eq("payment_id", payment_id)
+            .execute()
+        )
+        payment = payment_response.data[0] if payment_response.data else None
+    except APIError:
+        payment = None
+
+    if payment is None:
+        flash("Receipt not found.", "danger")
+        return redirect(url_for("student.index"))
+
+    # Admin-scope the receipt through student ownership, same pattern as
+    # collect() above - payments has no admin_id column of its own.
+    try:
+        student_response = (
+            supabase.table("students")
+            .select("*")
+            .eq("student_id", payment["student_id"])
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        student = student_response.data[0] if student_response.data else None
+    except APIError:
+        student = None
+
+    if student is None:
+        flash("Receipt not found.", "danger")
+        return redirect(url_for("student.index"))
+
+    membership = None
+    if payment.get("membership_id"):
+        try:
+            membership_response = (
+                supabase.table("memberships")
+                .select("*")
+                .eq("membership_id", payment["membership_id"])
+                .execute()
+            )
+            membership = membership_response.data[0] if membership_response.data else None
+        except APIError:
+            membership = None
+
+    settings = get_receipt_settings(admin_id)
+
+    try:
+        receipt_date_display = datetime.strptime(
+            payment["payment_date"], "%Y-%m-%d"
+        ).strftime("%d %b %Y")
+    except (ValueError, TypeError):
+        receipt_date_display = payment["payment_date"]
+
+    return render_template(
+        "payments/receipt.html",
+        payment=payment,
+        student=student,
+        membership=membership,
+        settings=settings,
+        receipt_date_display=receipt_date_display
     )

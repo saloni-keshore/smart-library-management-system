@@ -27,7 +27,7 @@ pip install matplotlib numpy   # required by utils/charts.py but missing from re
 python app.py                  # runs with debug=True on the Flask default port (5000)
 ```
 
-`app.py` hardcodes `debug=True` and does not read `config.py`'s `Config`/`DevelopmentConfig`/`ProductionConfig` classes at all — those exist but are dead code (see [02_ARCHITECTURE.md](02_ARCHITECTURE.md)).
+`app.py` selects `config.py`'s `DevelopmentConfig`/`ProductionConfig` via `APP_ENV` (default `production`, debug off); importing `config` also loads `.env` via `python-dotenv`'s `load_dotenv()` (see [02_ARCHITECTURE.md](02_ARCHITECTURE.md)).
 
 ## Multi-tenancy model
 

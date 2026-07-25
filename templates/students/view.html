@@ -222,6 +222,8 @@ Student Profile
 
                         <th>Mode</th>
 
+                        <th></th>
+
                     </tr>
 
                 </thead>
@@ -239,6 +241,12 @@ Student Profile
                         <td>₹{{ payment.amount_paid }}</td>
 
                         <td>{{ payment.payment_mode }}</td>
+
+                        <td>
+                            <a href="{{ url_for('payment.receipt', payment_id=payment.payment_id) }}" class="btn btn-sm btn-outline-primary">
+                                Receipt
+                            </a>
+                        </td>
 
                     </tr>
 
@@ -275,11 +283,13 @@ Student Profile
 
         {% endif %}
 
-        <a href="#" class="btn btn-primary">
+        {% if payments %}
+        <a href="{{ url_for('payment.receipt', payment_id=payments[0].payment_id) }}" class="btn btn-primary">
 
             Print Receipt
 
         </a>
+        {% endif %}
 
         <a href="{{ url_for('student.index') }}" class="btn btn-secondary">
 

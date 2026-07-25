@@ -73,7 +73,7 @@ Every feature page does `{% extends "layouts/base.html" %}` and overrides `title
 | `enquiries/` | `index.html`, `add.html`, `edit.html`, `view.html` |
 | `students/` | `index.html`, `admission.html`, `view.html`, `edit.html` |
 | `memberships/` | `index.html`, `create.html`, `renew.html`, `distribution.html`, `analytics.html` |
-| `payments/` | `index.html`, `collect.html`, `create.html`, `success.html` — note `create.html`/`success.html` exist but no current route in `routes/payment.py` renders them (only `index`/`collect` are wired up) |
+| `payments/` | `index.html`, `collect.html`, `receipt.html` — note `create.html` still exists but no route renders it (TD-11); `success.html` is gone, replaced 2026-07-25 by `receipt.html` (rendered by `routes/payment.py`'s new `receipt()`) |
 | `cashbook/` | `index.html`, `transactions.html`, `analytics.html` — only `index.html` is rendered by `routes/cashbook.py`; `transactions.html`/`analytics.html` appear to be leftover/unwired |
 | `business_intelligence/` | `index.html` |
 | `notification/` | `index.html` |

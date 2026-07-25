@@ -1,0 +1,78 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Receipt{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+<style>
+    @media print {
+        .navbar, .sidebar-wrapper, .sidebar-backdrop, .no-print {
+            display: none !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="container mt-4">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+
+            <div class="alert alert-{{ category }} no-print">
+
+                {{ message }}
+
+            </div>
+
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+    <div class="card shadow text-center border-success">
+
+        <div class="card-body p-5">
+
+            <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+
+            <h2 class="mt-3 text-success">Payment Successful!</h2>
+
+            <hr>
+
+            <div class="row justify-content-center">
+
+                <div class="col-md-4">
+
+                    {% set receipt_number = payment.receipt_number %}
+                    {% set receipt_date = receipt_date_display %}
+                    {% set payment_mode = payment.payment_mode %}
+                    {% set student_name = student.full_name %}
+                    {% set plan_name = membership.plan_name if membership else '-' %}
+                    {% set amount = payment.amount_paid %}
+                    {% include "components/receipt_document.html" %}
+
+                </div>
+
+            </div>
+
+            <div class="mt-4 d-flex justify-content-center gap-3 no-print">
+
+                <button type="button" class="btn btn-primary" onclick="window.print()">
+                    <i class="bi bi-printer"></i> Print / Save as PDF
+                </button>
+
+                <a href="{{ url_for('student.view', student_id=student.student_id) }}" class="btn btn-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Student
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
