@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-07-25 — Post-migration cleanup: stale comments, moot technical-debt rows, and a doc-only pagination-bug regression test (Phase 12)
+
+- **Feature:** None — internal cleanup only, no route/behavior change
+- **Files changed:** `routes/membership_distribution.py` (corrected a stale comment claiming `payments` "is not yet migrated" and is "still looked up from SQLite directly" — inaccurate since ADR-25; the route has used `database.payment_queries.get_payments_for_admin()` since then), `utils/security.py` (`rate_limited()`'s docstring corrected from "suitable for one-process SQLite deployments" to explain the real constraint — its `_attempts` state is an in-process dict, unrelated to which database backend is in use, so it stays single-process-only even though Supabase itself supports multiple workers), `docs/11_FUTURE_WORK.md` (TD-5, TD-10, TD-21 flipped to `Resolved` — each was specifically about SQLite infrastructure now deleted; TD-2/TD-34 already `Resolved` in the Phase 11 entry; TD-3/TD-4/TD-13/TD-23's file references updated from the deleted `database/schema.sql` to `database/supabase_migration.sql`, since the underlying issues themselves are still open, just against the new schema file)
+- **Why:** Phases 10-11 already removed the bulk of the migration's dead weight (mirror-write code, bridge code, migration scripts) as part of their own changes, rather than leaving it for a separate pass — this phase is the lighter sweep ADR-32 predicted, catching a couple of comments and technical-debt rows that referenced now-deleted files or now-superseded behavior but weren't touched by any single mirror-removal slice
+- **Database changes:** None
+- **UI changes:** None
+- **Future impact:** No SQLite reference of any kind remains anywhere in the app's Python source, comments, or currently-open technical debt rows. The migration from SQLite to Supabase (ADR-16 through ADR-32) is complete end to end. Verified via the full pytest suite.
+
+---
+
 ## 2026-07-25 — Removed SQLite entirely (Phase 11); rebuilt the backup feature on Supabase, fixing a critical cross-tenant leak (TD-32)
 
 - **Feature:** Application-wide database layer; Settings → Data & Backup's "Create Backup" feature

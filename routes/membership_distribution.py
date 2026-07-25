@@ -28,10 +28,9 @@ def index():
     generate_membership_distribution_donut(admin_id)
 
     # This admin's memberships (each row already carries full_name/mobile) -
-    # Supabase `students`/`memberships` (ADR-23) instead of the SQLite
-    # mirror. `payments` itself is not yet migrated (see
-    # docs/MIRROR_TRACKER.md), so each row's latest receipt/payment info
-    # below is still looked up from SQLite `payments` directly.
+    # Supabase `students`/`memberships` (ADR-23). Each row's latest
+    # receipt/payment info below also comes from Supabase `payments` (ADR-25),
+    # via get_payments_for_admin() a few lines down.
     all_memberships = get_memberships_for_admin(admin_id)
     total_memberships = len(all_memberships)
 

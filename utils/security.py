@@ -26,7 +26,10 @@ def validate_csrf():
 
 
 def rate_limited(limit=5, window_seconds=300):
-    """Limit sensitive form actions per source IP. Suitable for one-process SQLite deployments."""
+    """Limit sensitive form actions per source IP. State (`_attempts`) is an
+    in-process dict, not persisted anywhere - suitable only for a
+    single-process deployment, independent of which database backend is in
+    use (multiple workers would each track their own separate counts)."""
     def decorator(view):
         @wraps(view)
         def wrapped(*args, **kwargs):
