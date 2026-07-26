@@ -21,16 +21,36 @@ def test_add_enquiry_empty_full_name(logged_in_client):
     client, admin = logged_in_client
     resp, data = make_enquiry(client, full_name="")
     assert resp.status_code == 200
+    assert b"Student name is required" in resp.data
     eid = get_last_enquiry_id(admin["admin_id"])
-    row = get_enquiry_by_id(eid)
-    # Gap: no server-side validation rejects empty name (NOT NULL allows "")
-    assert row["full_name"] == ""
+    assert eid is None
 
 
 def test_add_enquiry_empty_mobile(logged_in_client):
     client, admin = logged_in_client
     resp, data = make_enquiry(client, mobile="")
     assert resp.status_code == 200
+    assert b"Mobile number is required" in resp.data
+    eid = get_last_enquiry_id(admin["admin_id"])
+    assert eid is None
+
+
+def test_add_enquiry_empty_purpose(logged_in_client):
+    client, admin = logged_in_client
+    resp, data = make_enquiry(client, purpose="")
+    assert resp.status_code == 200
+    assert b"Purpose is required" in resp.data
+    eid = get_last_enquiry_id(admin["admin_id"])
+    assert eid is None
+
+
+def test_add_enquiry_empty_shift(logged_in_client):
+    client, admin = logged_in_client
+    resp, data = make_enquiry(client, preferred_shift="")
+    assert resp.status_code == 200
+    assert b"Shift is required" in resp.data
+    eid = get_last_enquiry_id(admin["admin_id"])
+    assert eid is None
 
 
 def test_add_enquiry_invalid_mobile_letters(logged_in_client):

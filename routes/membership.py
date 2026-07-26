@@ -18,6 +18,7 @@ from database.membership_queries import (
     get_plan_pricing,
     get_admission_fee,
 )
+from utils.normalization import normalize_category, normalize_free_text
 
 membership_bp = Blueprint(
     "membership",
@@ -135,12 +136,26 @@ def create(student_id):
 
     if request.method == "POST":
 
-        plan_name = request.form.get("plan_name")
+        plan_name = normalize_category(request.form.get("plan_name"))
         joining_date = request.form.get("joining_date")
         duration_days = _sanitize_int(request.form.get("duration"))
         end_date = request.form.get("end_date")
-        remarks = request.form.get("remarks")
+        remarks = normalize_free_text(request.form.get("remarks"))
         payment_mode = request.form.get("payment_mode", "Cash")
+
+        if not plan_name:
+            flash("Membership plan is required.", "danger")
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
+
+        if not (joining_date or "").strip():
+            flash("Joining date is required.", "danger")
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
 
         try:
             paid_amount = float(request.form.get("paid_amount", 0) or 0)
@@ -309,11 +324,11 @@ def renew(student_id):
 
     if request.method == "POST":
 
-        plan_name = request.form.get("plan_name")
+        plan_name = normalize_category(request.form.get("plan_name"))
         joining_date = request.form.get("joining_date")
         duration_days = _sanitize_int(request.form.get("duration_days"))
         end_date = request.form.get("end_date")
-        remarks = request.form.get("remarks")
+        remarks = normalize_free_text(request.form.get("remarks"))
         payment_mode = request.form.get("payment_mode", "Cash")
 
         try:

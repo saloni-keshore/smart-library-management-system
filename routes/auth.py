@@ -16,6 +16,7 @@ from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
 from utils.security import clear_rate_limit, rate_limited
+from utils.normalization import normalize_name, normalize_phone
 
 auth_bp = Blueprint(
     "auth",
@@ -109,9 +110,9 @@ def register():
 
     if request.method == "POST":
 
-        full_name = request.form.get("full_name", "").strip()
+        full_name = normalize_name(request.form.get("full_name", ""))
         username = request.form.get("username", "").strip()
-        mobile = request.form.get("mobile", "").strip()
+        mobile = normalize_phone(request.form.get("mobile", ""))
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")

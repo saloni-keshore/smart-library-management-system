@@ -1,0 +1,138 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Purpose Analytics
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/business_intelligence.css') }}">
+{% endblock %}
+
+{% block content %}
+
+{% import "components/bi_components.html" as bi %}
+
+<div class="container-fluid py-3 bi-page">
+
+    <!-- Module tab bar -->
+    {{ bi.tabs('purpose') }}
+
+    <!-- Header -->
+    {{ bi.analytics_header(
+        'Purpose Analytics',
+        'Understand where your students come from and which category generates the highest revenue.'
+    ) }}
+
+    <!-- Row 1: KPI cards -->
+    <div class="bi-section row g-3">
+        {{ bi.kpi_card('Total Students', data.kpis.total_students, 'bi-people-fill', 'primary') }}
+        {{ bi.kpi_card('Total Revenue', '₹' ~ '{:,.0f}'.format(data.kpis.total_revenue), 'bi-cash-stack', 'success') }}
+        {{ bi.kpi_card('Top Purpose', data.kpis.top_purpose, 'bi-trophy-fill', 'warning') }}
+        {{ bi.kpi_card('Top Revenue Purpose', data.kpis.top_revenue_purpose, 'bi-graph-up-arrow', 'violet') }}
+        {{ bi.kpi_card('Avg Revenue / Student', '₹' ~ '{:,.0f}'.format(data.kpis.avg_revenue_per_student), 'bi-person-check-fill', 'info') }}
+    </div>
+
+    <!-- Row 2: Students by Purpose / Purpose Distribution -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Students by Purpose', 'Enquiry volume across each purpose category', sample=False) %}
+        <canvas id="purposeStudentsChart"></canvas>
+        {% endcall %}
+
+        {% call bi.chart_card('Purpose Distribution', 'Share of total students by purpose', sample=False) %}
+        <canvas id="purposeDistributionChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 3: Revenue by Purpose / Revenue Distribution -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Revenue by Purpose', 'Total revenue generated per purpose category', sample=False) %}
+        <canvas id="purposeRevenueChart"></canvas>
+        {% endcall %}
+
+        {% call bi.chart_card('Revenue Distribution', 'Share of total revenue by purpose', sample=False) %}
+        <canvas id="purposeRevenueDistributionChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 4: Business Insights -->
+    <div class="bi-section">
+        <h3 class="bi-section-title mb-2">Business Insights</h3>
+        <div class="row g-3">
+
+            {{ bi.insight_card('Highest Students', data.table_rows[0].purpose, data.table_rows[0].students ~ ' students enrolled', 'bi-arrow-up-circle-fill', 'success') }}
+            {{ bi.insight_card('Highest Revenue', data.table_rows[0].purpose, '₹' ~ '{:,.0f}'.format(data.table_rows[0].revenue) ~ ' generated', 'bi-cash-coin', 'primary') }}
+            {{ bi.insight_card('Lowest Students', data.table_rows[-1].purpose, data.table_rows[-1].students ~ ' students enrolled', 'bi-arrow-down-circle-fill', 'danger') }}
+            {{ bi.insight_card('Lowest Revenue', data.table_rows[-1].purpose, '₹' ~ '{:,.0f}'.format(data.table_rows[-1].revenue) ~ ' generated', 'bi-graph-down', 'warning') }}
+
+            <div class="col-lg-3 col-md-6">
+                <div class="card bi-card bi-insight-card border-0 h-100" style="background:linear-gradient(180deg,#fbfcff 0%,#f8fafc 100%);">
+                    <div class="bi-card-body">
+                        <div class="bi-insight-icon bi-insight-icon-violet">
+                            <i class="bi bi-lightbulb-fill"></i>
+                        </div>
+                        <div class="bi-insight-label">Recommendation</div>
+                        <p class="bi-insight-desc mb-0">
+                            Consider a targeted offer for lower-performing purpose
+                            categories to lift both enrollment and revenue share.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Row 5: Purpose Summary Table -->
+    <div class="bi-section row g-3">
+
+        {% call bi.analytics_table('Purpose Summary', 'Full breakdown of students and revenue by purpose', sample=False) %}
+        <thead>
+            <tr>
+                <th>Purpose</th>
+                <th>Students</th>
+                <th>Student %</th>
+                <th>Revenue</th>
+                <th>Revenue %</th>
+                <th>Average Revenue</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data.table_rows %}
+            <tr>
+                <td class="bi-table-strong">{{ row.purpose }}</td>
+                <td>{{ row.students }}</td>
+                <td class="bi-table-muted">{{ row.student_pct }}%</td>
+                <td>₹{{ '{:,.0f}'.format(row.revenue) }}</td>
+                <td class="bi-table-muted">{{ row.revenue_pct }}%</td>
+                <td>₹{{ '{:,.0f}'.format(row.avg_revenue) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        {% endcall %}
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<script>
+    // PLACEHOLDER DATA - built server-side in routes/business_intelligence.py
+    // (_purpose_analytics_placeholder). A future phase will replace that
+    // function with real database/bi_queries.py calls; this object and the
+    // JS below do not need to change when that happens.
+    window.biPurposeChartData = {{ data | tojson }};
+</script>
+
+<script src="{{ url_for('static', filename='js/bi_purpose_analytics.js') }}"></script>
+
+{% endblock %}

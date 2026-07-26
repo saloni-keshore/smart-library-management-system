@@ -1,0 +1,159 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Revenue Analytics
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/business_intelligence.css') }}">
+{% endblock %}
+
+{% block content %}
+
+{% import "components/bi_components.html" as bi %}
+
+<div class="container-fluid py-3 bi-page">
+
+    <!-- Module tab bar -->
+    {{ bi.tabs('revenue') }}
+
+    <!-- Header -->
+    {{ bi.analytics_header(
+        'Revenue Analytics',
+        'Track how revenue is trending, where it comes from, and which months perform best.'
+    ) }}
+
+    <!-- Row 1: Revenue overview -->
+    <div class="bi-section row g-3">
+        {{ bi.kpi_card('Total Revenue', '₹' ~ '{:,.0f}'.format(data.kpis.total_revenue), 'bi-cash-stack', 'primary') }}
+        {{ bi.kpi_card("Today's Revenue", '₹' ~ '{:,.0f}'.format(data.kpis.today_revenue), 'bi-calendar-day', 'info') }}
+        {{ bi.kpi_card("This Week's Revenue", '₹' ~ '{:,.0f}'.format(data.kpis.week_revenue), 'bi-calendar-week', 'violet') }}
+        {{ bi.kpi_card("This Month's Revenue", '₹' ~ '{:,.0f}'.format(data.kpis.month_revenue), 'bi-calendar3', 'success') }}
+        {{ bi.kpi_card("This Year's Revenue", '₹' ~ '{:,.0f}'.format(data.kpis.year_revenue), 'bi-calendar-range', 'warning') }}
+    </div>
+
+    <!-- Row 2: Fee collection -->
+    <div class="bi-section row g-3">
+        {{ bi.kpi_card('Expected Revenue', '₹' ~ '{:,.0f}'.format(data.kpis.expected_revenue), 'bi-receipt', 'primary') }}
+        {{ bi.kpi_card('Collected Revenue', '₹' ~ '{:,.0f}'.format(data.kpis.collected_revenue), 'bi-check-circle-fill', 'success') }}
+        {{ bi.kpi_card('Pending Revenue', '₹' ~ '{:,.0f}'.format(data.kpis.pending_revenue), 'bi-hourglass-split', 'danger') }}
+        {{ bi.kpi_card('Collection %', data.kpis.collection_pct ~ '%', 'bi-pie-chart-fill', 'info') }}
+        {{ bi.kpi_card('Avg Revenue / Student', '₹' ~ '{:,.0f}'.format(data.kpis.avg_revenue_per_student), 'bi-person-check-fill', 'violet') }}
+    </div>
+
+    <!-- Row 3: Revenue Trend / Monthly Revenue -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Revenue Trend', 'Revenue and profit over the last 12 months', col='col-lg-6', size='lg', sample=False) %}
+        <canvas id="revenueTrendChart"></canvas>
+        {% endcall %}
+
+        {% call bi.chart_card('Monthly Revenue', 'Revenue collected each month', col='col-lg-6', size='lg', sample=False) %}
+        <canvas id="monthlyRevenueChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 4: Revenue by Membership / Revenue by Purpose -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Revenue by Membership', 'Contribution of each membership plan', sample=False) %}
+        <canvas id="membershipRevenueChart"></canvas>
+        {% endcall %}
+
+        {% call bi.chart_card('Revenue by Purpose', 'Contribution of each purpose category', sample=False) %}
+        <canvas id="purposeRevenueChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 5: Revenue by Payment Mode / New Admissions vs Renewal -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Revenue by Payment Mode', 'Contribution of each payment mode', sample=False) %}
+        <canvas id="paymentModeChart"></canvas>
+        {% endcall %}
+
+        {% call bi.chart_card('New Admissions vs Renewal', 'Revenue split between new admissions and renewals', sample=False) %}
+        <canvas id="newVsRenewalChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 6: Business Insights -->
+    <div class="bi-section">
+        <h3 class="bi-section-title mb-2">Business Insights</h3>
+        <div class="row g-3">
+
+            {{ bi.insight_card('Highest Revenue Purpose', data.insights.top_purpose, '₹' ~ '{:,.0f}'.format(data.insights.top_purpose_revenue) ~ ' generated', 'bi-mortarboard-fill', 'primary') }}
+            {{ bi.insight_card('Highest Revenue Plan', data.insights.top_plan, '₹' ~ '{:,.0f}'.format(data.insights.top_plan_revenue) ~ ' generated', 'bi-award-fill', 'violet') }}
+            {{ bi.insight_card('Fastest Growing Month', data.insights.best_growth_month, ('+' if data.insights.best_growth_pct >= 0 else '') ~ data.insights.best_growth_pct ~ '% vs previous month', 'bi-rocket-takeoff-fill', 'success') }}
+            {{ bi.insight_card('Most-Used Payment Mode', data.insights.top_payment_mode, data.insights.top_payment_mode_count ~ (' transaction' if data.insights.top_payment_mode_count == 1 else ' transactions'), 'bi-credit-card-fill', 'warning') }}
+
+            <div class="col-lg-3 col-md-6">
+                <div class="card bi-card bi-insight-card border-0 h-100">
+                    <div class="bi-card-body">
+                        <div class="bi-insight-icon bi-insight-icon-{{ 'success' if data.kpis.collection_pct >= 80 else ('warning' if data.kpis.collection_pct >= 50 else 'danger') }}">
+                            <i class="bi bi-piggy-bank-fill"></i>
+                        </div>
+                        <div class="bi-insight-label">Collection Rate</div>
+                        <div class="bi-insight-value">{{ data.kpis.collection_pct }}%</div>
+                        <p class="bi-insight-desc mb-0">
+                            {% if data.kpis.pending_revenue > 0 %}
+                            ₹{{ '{:,.0f}'.format(data.kpis.pending_revenue) }} still pending collection.
+                            {% else %}
+                            All billed fees have been collected.
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Row 7: Revenue Table -->
+    <div class="bi-section row g-3">
+
+        {% call bi.analytics_table('Revenue Table', 'Month-by-month revenue, expense and profit', sample=False) %}
+        <thead>
+            <tr>
+                <th>Month</th>
+                <th>Revenue</th>
+                <th>Expense</th>
+                <th>Profit</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data.table_rows %}
+            <tr>
+                <td class="bi-table-strong">{{ row.month }}</td>
+                <td>₹{{ '{:,.0f}'.format(row.revenue) }}</td>
+                <td class="bi-table-muted">₹{{ '{:,.0f}'.format(row.expense) }}</td>
+                <td>₹{{ '{:,.0f}'.format(row.profit) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        {% endcall %}
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<script>
+    // Live data - built server-side in routes/business_intelligence.py
+    // (_revenue_analytics_data), which reads Supabase `payments`/
+    // `memberships` via database/bi_queries.py's revenue helpers.
+    window.biRevenueChartData = {{ data | tojson }};
+</script>
+
+<script src="{{ url_for('static', filename='js/bi_revenue_analytics.js') }}"></script>
+
+{% endblock %}

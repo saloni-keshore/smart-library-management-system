@@ -282,10 +282,37 @@ CREATE TABLE IF NOT EXISTS library_settings (
     dash_show_pending_fees INTEGER DEFAULT 1,
     dash_show_new_admissions INTEGER DEFAULT 1,
 
+    -- Seating Capacity (Settings > Library Profile; read by Occupancy
+    -- Analytics, Business Intelligence Phase 3, ADR-38) - per-shift seat
+    -- count this admin's library actually has, so "Available Seats"/
+    -- "Occupancy %" are real capacity numbers instead of a hardcoded guess.
+    morning_capacity INTEGER DEFAULT 50,
+    afternoon_capacity INTEGER DEFAULT 50,
+    evening_capacity INTEGER DEFAULT 50,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
 );
+
+-- 2026-07-26 (Occupancy Analytics, Phase 3, ADR-38): the three
+-- morning/afternoon/evening_capacity columns above are new. This script's
+-- CREATE TABLE IF NOT EXISTS only applies them to a *fresh* database - an
+-- already-provisioned Supabase project (this app has no direct-Postgres/
+-- psycopg2 path to run DDL from Python, see ADR-14) needs this run by hand,
+-- once, in the Supabase SQL Editor:
+--
+--   ALTER TABLE library_settings
+--     ADD COLUMN IF NOT EXISTS morning_capacity INTEGER DEFAULT 50,
+--     ADD COLUMN IF NOT EXISTS afternoon_capacity INTEGER DEFAULT 50,
+--     ADD COLUMN IF NOT EXISTS evening_capacity INTEGER DEFAULT 50;
+--
+-- Until that's run, database/settings_queries.py's create_library_settings()/
+-- update_library_settings() detect the missing columns (Postgres error
+-- 42703) and retry the same save without them, so Library Profile saving
+-- itself never breaks - the seating-capacity fields just silently don't
+-- persist yet, and Occupancy Analytics falls back to bi_queries.py's
+-- DEFAULT_SHIFT_CAPACITY (50/shift) until the columns exist. See TD-49.
 
 -- membership_settings Table
 -- NOTE: reminder_days/send_reminders are superseded by the notification_*/

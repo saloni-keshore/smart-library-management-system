@@ -260,6 +260,22 @@ def test_membership_create_non_numeric_amount_rejected(logged_in_client):
     assert b"Invalid amount entered" in resp.data
 
 
+def test_membership_create_empty_plan_name_rejected(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = create_membership(client, sid, plan_name="")
+    assert b"Membership plan is required" in resp.data
+    assert get_last_membership_id(sid) is None
+
+
+def test_membership_create_empty_joining_date_rejected(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = create_membership(client, sid, joining_date="")
+    assert b"Joining date is required" in resp.data
+    assert get_last_membership_id(sid) is None
+
+
 def test_membership_create_zero_pay_full_due_no_payment_row(logged_in_client):
     """paid_amount=0, due_amount>0 -> membership created, but no payment/
     receipt/cashbook row (paid_amount > 0 guard in membership.create)."""

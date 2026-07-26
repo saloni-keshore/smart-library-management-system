@@ -33,6 +33,7 @@ from postgrest.exceptions import APIError
 from database.cashbook_queries import insert_income_entry
 from database.membership_queries import get_admin_students
 from database.supabase_client import get_supabase_client
+from utils.normalization import normalize_category
 
 
 def _receipt_number_taken(supabase, receipt_number):
@@ -255,12 +256,21 @@ def record_payment(
     payment_id = (next_id_row.data[0]["payment_id"] + 1) if next_id_row.data else 1
     payment_date = date.today().isoformat()
 
+    # payments.payment_mode is a Category field (Payment Mode) per the
+    # input-normalization policy (utils/normalization.py) - stored
+    # UPPERCASE. The *original* payment_mode is still what's passed to
+    # insert_income_entry() below: Cashbook's payment_method column/filter
+    # dropdown (database/cashbook_categories.py's PAYMENT_METHODS, Title
+    # Case) is a separate, out-of-scope concept that both manual and
+    # automatic Cashbook entries must keep sharing one casing convention
+    # for - normalizing only the payments-table copy avoids splitting that
+    # column's values by capitalization instead of fixing it.
     supabase.table("payments").insert({
         "payment_id": payment_id,
         "membership_id": membership_id,
         "student_id": student_id,
         "receipt_number": receipt_number,
-        "payment_mode": payment_mode,
+        "payment_mode": normalize_category(payment_mode),
         "amount_paid": amount,
         "payment_date": payment_date,
         "remarks": remarks,

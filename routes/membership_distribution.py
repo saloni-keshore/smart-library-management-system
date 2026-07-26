@@ -7,6 +7,7 @@ from database.membership_queries import (
 )
 from database.payment_queries import get_payments_for_admin
 from utils.charts import generate_membership_distribution_donut
+from utils.normalization import normalize_category
 
 membership_distribution_bp = Blueprint(
     "membership_distribution",
@@ -14,7 +15,15 @@ membership_distribution_bp = Blueprint(
     url_prefix="/membership-distribution"
 )
 
+# Templates (membership_summary_cards.html, membership_progress.html) index
+# plan_counts/plan_percentages by these exact Title-Case labels - kept as-is
+# so no template changes are needed. memberships.plan_name is stored
+# UPPERCASE as of the input-normalization pass (see utils/normalization.py),
+# so matching a stored row to its label goes through _PLAN_LOOKUP instead of
+# a direct dict-key match, keeping this robust to any pre-migration row that
+# still has a differently-cased plan_name too.
 PLAN_ORDER = ["Monthly", "Quarterly", "Half-Yearly", "Yearly"]
+_PLAN_LOOKUP = {normalize_category(plan): plan for plan in PLAN_ORDER}
 
 
 @membership_distribution_bp.route("/")
@@ -37,8 +46,9 @@ def index():
     # Plan-wise counts
     plan_counts = {plan: 0 for plan in PLAN_ORDER}
     for m in all_memberships:
-        if m["plan_name"] in plan_counts:
-            plan_counts[m["plan_name"]] += 1
+        label = _PLAN_LOOKUP.get(normalize_category(m["plan_name"]))
+        if label:
+            plan_counts[label] += 1
 
     plan_percentages = {
         plan: (round(count * 100 / total_memberships) if total_memberships else 0)

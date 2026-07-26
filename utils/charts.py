@@ -10,6 +10,7 @@ from matplotlib.ticker import MaxNLocator, FuncFormatter
 
 from database.membership_queries import get_memberships_for_admin
 from database.payment_queries import get_payments_for_admin
+from utils.normalization import normalize_category
 
 
 def _smooth_curve(x, y, samples_per_segment=30):
@@ -185,9 +186,13 @@ def generate_membership_chart(admin_id):
 
     memberships = get_memberships_for_admin(admin_id)
 
+    # Normalize defensively so a pre-migration row with a differently-cased
+    # plan_name still merges into the same slice instead of splitting it
+    # (see utils/normalization.py / the one-time migration script).
     counts = {}
     for m in memberships:
-        counts[m["plan_name"]] = counts.get(m["plan_name"], 0) + 1
+        plan = normalize_category(m["plan_name"])
+        counts[plan] = counts.get(plan, 0) + 1
 
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     labels = [plan for plan, _ in ranked]
@@ -325,10 +330,10 @@ def generate_membership_chart(admin_id):
 # ==========================================================
 
 PLAN_CHART_COLORS = {
-    "Monthly": "#2563eb",
-    "Quarterly": "#06b6d4",
-    "Half-Yearly": "#f59e0b",
-    "Yearly": "#7c3aed",
+    "MONTHLY": "#2563eb",
+    "QUARTERLY": "#06b6d4",
+    "HALF-YEARLY": "#f59e0b",
+    "YEARLY": "#7c3aed",
 }
 PLAN_CHART_FALLBACK_COLOR = "#94a3b8"
 
@@ -342,7 +347,8 @@ def generate_membership_distribution_donut(admin_id):
 
     counts = {}
     for m in memberships:
-        counts[m["plan_name"]] = counts.get(m["plan_name"], 0) + 1
+        plan = normalize_category(m["plan_name"])
+        counts[plan] = counts.get(plan, 0) + 1
 
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     labels = [plan for plan, _ in ranked]

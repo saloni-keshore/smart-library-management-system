@@ -14,6 +14,12 @@ from flask import (
 from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
+from utils.normalization import (
+    normalize_name,
+    normalize_phone,
+    normalize_category,
+    normalize_free_text,
+)
 
 enquiry_bp = Blueprint(
     "enquiry",
@@ -95,12 +101,25 @@ def add():
 
     if request.method == "POST":
 
-        full_name = request.form.get("full_name", "").strip()
-        mobile = request.form.get("mobile", "").strip()
-        purpose = request.form.get("purpose", "").strip()
-        preferred_shift = request.form.get("preferred_shift", "").strip()
+        full_name = normalize_name(request.form.get("full_name", ""))
+        mobile = normalize_phone(request.form.get("mobile", ""))
+        purpose = normalize_category(request.form.get("purpose", ""))
+        preferred_shift = normalize_category(request.form.get("preferred_shift", ""))
         followup_date = _sanitize_date(request.form.get("followup_date", ""))
-        remarks = request.form.get("remarks", "").strip()
+        remarks = normalize_free_text(request.form.get("remarks", ""))
+
+        if not full_name:
+            flash("Student name is required.", "danger")
+            return redirect(url_for("enquiry.add"))
+        if not mobile:
+            flash("Mobile number is required.", "danger")
+            return redirect(url_for("enquiry.add"))
+        if not purpose:
+            flash("Purpose is required.", "danger")
+            return redirect(url_for("enquiry.add"))
+        if not preferred_shift:
+            flash("Shift is required.", "danger")
+            return redirect(url_for("enquiry.add"))
 
         supabase = get_supabase_client()
 
@@ -156,12 +175,12 @@ def edit(enquiry_id):
 
     if request.method == "POST":
 
-        full_name = request.form.get("full_name", "").strip()
-        mobile = request.form.get("mobile", "").strip()
-        purpose = request.form.get("purpose", "").strip()
-        preferred_shift = request.form.get("preferred_shift", "").strip()
+        full_name = normalize_name(request.form.get("full_name", ""))
+        mobile = normalize_phone(request.form.get("mobile", ""))
+        purpose = normalize_category(request.form.get("purpose", ""))
+        preferred_shift = normalize_category(request.form.get("preferred_shift", ""))
         followup_date = _sanitize_date(request.form.get("followup_date"))
-        remarks = request.form.get("remarks", "").strip()
+        remarks = normalize_free_text(request.form.get("remarks", ""))
 
         try:
             supabase.table("enquiries").update({

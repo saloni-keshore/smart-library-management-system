@@ -102,13 +102,23 @@ routes/business_intelligence.py → database.cashbook_queries.get_monthly_income
                                 → database.bi_queries (last_n_months, get_monthly_new_memberships,
                                    get_business_health_score, get_revenue_growth, classify_revenue_health,
                                    classify_expense_health, get_top_revenue_sources,
-                                   get_top_expense_categories, get_action_items, get_business_timeline)
+                                   get_top_expense_categories, get_action_items, get_business_timeline,
+                                   get_purpose_breakdown — used by index()/purpose_analytics(); added
+                                   2026-07-26, revenue_analytics() only: get_revenue_time_windows,
+                                   get_monthly_fee_revenue, get_revenue_by_plan, get_revenue_by_payment_mode,
+                                   get_payment_mode_usage_counts, get_new_vs_renewal_revenue,
+                                   get_revenue_collection_summary, get_avg_revenue_per_student; added
+                                   2026-07-26, occupancy_analytics() only: get_occupancy_summary,
+                                   get_monthly_occupancy_trend, get_occupancy_by_purpose,
+                                   get_occupancy_by_plan, get_purpose_shift_matrix, get_occupancy_insights)
 routes/setting.py              → database.settings_queries (get/save/create/update/clear library settings —
                                   Supabase, ADR-24), database.receipt_settings_queries (Supabase, ADR-24),
                                   database.notification_settings_queries (Supabase, ADR-24)
                                 → database.membership_settings_queries (get/save — Supabase, ADR-24)
                                 → database.backup_queries (Supabase, ADR-24), database.security_settings_queries
                                   (Supabase, ADR-24)
+                                → database.bi_queries.DEFAULT_SHIFT_CAPACITY (added 2026-07-26, ADR-38 —
+                                  library_profile()'s seating-capacity fallback default)
                                 → database.supabase_client.get_supabase_client (security_settings()'s password
                                   branch, admins table, ADR-17; backup_export_csv()'s students read, ADR-24; and
                                   as of 2026-07-25 (ADR-32) backup_create()'s per-admin export too, via the new
@@ -137,9 +147,17 @@ database/bi_queries.py         → database.cashbook_queries (get_monthly_income
                                    get_income_category_totals, get_expense_category_totals,
                                    get_pending_fees, get_total_fee_revenue, get_recent_transactions — all now
                                    Supabase-backed for the cashbook-table ones, as of ADR-22)
-                                → database.membership_queries.get_memberships_for_admin (as of 2026-07-23,
-                                  ADR-23 — replaces database.db.get_connection for its three membership-side
-                                  functions; this module has no SQLite dependency left)
+                                → database.membership_queries.get_memberships_for_admin/get_admin_students (as of
+                                  2026-07-23, ADR-23 — replaces database.db.get_connection for its three
+                                  membership-side functions; this module has no SQLite dependency left)
+                                → database.payment_queries.get_payments_for_admin (added 2026-07-26,
+                                  get_purpose_breakdown() and every Revenue Analytics helper — merges Students
+                                  purpose with Payments amount_paid in Python, same shape
+                                  get_memberships_for_admin() uses for its own Students join)
+                                → database.membership_queries.get_effective_status, database.settings_queries.
+                                  get_library_settings (added 2026-07-26, ADR-38 — every Occupancy Analytics
+                                  helper: get_active_memberships() filters through get_effective_status(),
+                                  get_shift_capacities() reads library_settings' *_capacity columns)
 database/audit_queries.py      → database.supabase_client.get_supabase_client   (as of 2026-07-23, ADR-22 —
                                   audit_log table, source of truth for get_recent_audit_log(), its only
                                   function; log_entry() was deleted outright as of 2026-07-24, ADR-26 — this
@@ -218,6 +236,15 @@ cashbook/index.html        includes components/cashbook_{summary_cards, filters,
 business_intelligence/index.html includes components/bi_{health_score, health_status, action_center,
                                      revenue_growth, revenue_trend_chart, membership_growth_chart,
                                      top_revenue, top_expense, timeline, advisor}.html
+                                     + imports components/bi_components.html as bi (tabs() only, added 2026-07-25)
+
+business_intelligence/{purpose_analytics, revenue_analytics, occupancy_analytics}.html
+                                   imports components/bi_components.html as bi
+                                     (tabs, analytics_header, kpi_card, chart_card, insight_card,
+                                     analytics_table macros) — added 2026-07-25
+                                   occupancy_analytics.html also includes components/bi_occupancy_insights.html
+                                     with context (added 2026-07-26, ADR-38 — reads the parent template's
+                                     `insights` variable without it being passed explicitly)
 
 memberships/distribution.html includes components/membership_{summary_cards, distribution_chart,
                                      distribution_table, filters, quick_insights, progress}.html

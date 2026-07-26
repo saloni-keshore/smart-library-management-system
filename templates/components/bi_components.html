@@ -1,0 +1,161 @@
+{#
+  Business Intelligence - shared UI components
+  ==============================================
+  Reusable Jinja macros for the Business Intelligence module (Overview,
+  Purpose Analytics, Revenue Analytics, Occupancy Analytics). Every BI page
+  imports this file so KPI cards, chart cards, insight cards, tables and the
+  tab bar look and behave identically without copy-pasting markup.
+
+  Usage:
+    {% import "components/bi_components.html" as bi %}
+    {{ bi.tabs('purpose') }}
+    {{ bi.analytics_header('Purpose Analytics', 'Subtitle text') }}
+    {{ bi.kpi_card('Total Students', '482', 'bi-people-fill') }}
+    {% call bi.chart_card('Students by Purpose', 'Enquiry volume per category') %}
+        <canvas id="myChart"></canvas>
+    {% endcall %}
+    {{ bi.insight_card('Highest Students', 'Job Preparation', '164 students', 'bi-arrow-up-circle-fill', 'success') }}
+    {% call bi.analytics_table('Purpose Summary') %}
+        <thead>...</thead><tbody>...</tbody>
+    {% endcall %}
+#}
+
+{% macro tabs(active) %}
+<nav class="bi-tabbar" aria-label="Business Intelligence sections">
+    <div class="bi-tabbar-eyebrow">
+        <i class="bi bi-graph-up-arrow"></i>
+        Business Intelligence
+    </div>
+    <div class="bi-tabbar-inner">
+        <a class="bi-tab {{ 'active' if active == 'overview' }}"
+           href="{{ url_for('business_intelligence.index') }}">
+            <i class="bi bi-speedometer2"></i>
+            Overview
+        </a>
+        <a class="bi-tab {{ 'active' if active == 'purpose' }}"
+           href="{{ url_for('business_intelligence.purpose_analytics') }}">
+            <i class="bi bi-person-lines-fill"></i>
+            Purpose Analytics
+        </a>
+        <a class="bi-tab {{ 'active' if active == 'revenue' }}"
+           href="{{ url_for('business_intelligence.revenue_analytics') }}">
+            <i class="bi bi-cash-coin"></i>
+            Revenue Analytics
+        </a>
+        <a class="bi-tab {{ 'active' if active == 'occupancy' }}"
+           href="{{ url_for('business_intelligence.occupancy_analytics') }}">
+            <i class="bi bi-grid-3x3-gap-fill"></i>
+            Occupancy Analytics
+        </a>
+    </div>
+</nav>
+{% endmacro %}
+
+
+{% macro analytics_header(title, subtitle) %}
+<div class="bi-section">
+    <h2 class="page-title mb-1">{{ title }}</h2>
+    {% if subtitle %}
+    <p class="page-subtitle mb-0">{{ subtitle }}</p>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{% macro kpi_card(label, value, icon, accent='primary', col='col-xl col-lg-4 col-md-6 col-6') %}
+<div class="{{ col }}">
+    <div class="card bi-card bi-kpi-card border-0">
+        <div class="bi-card-body bi-kpi-body">
+            <div class="bi-kpi-top">
+                <span class="bi-kpi-label">{{ label }}</span>
+                <div class="bi-kpi-icon bi-kpi-icon-{{ accent }}">
+                    <i class="bi {{ icon }}"></i>
+                </div>
+            </div>
+            <div class="bi-kpi-value">{{ value }}</div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{% macro chart_card(title, subtitle='', col='col-lg-6', size='', sample=True) %}
+<div class="{{ col }}">
+    <div class="card bi-card border-0 h-100">
+        <div class="bi-card-header">
+            <div>
+                <h3 class="bi-section-title mb-0">{{ title }}</h3>
+                {% if subtitle %}
+                <p class="bi-section-subtitle mb-0">{{ subtitle }}</p>
+                {% endif %}
+            </div>
+            {% if sample %}
+            <span class="bi-placeholder-badge" title="Sample data - not connected to live figures yet">
+                <i class="bi bi-stars"></i>
+                Sample data
+            </span>
+            {% else %}
+            <span class="bi-live-badge" title="Live data from your library's own records">
+                <i class="bi bi-broadcast"></i>
+                Live Data
+            </span>
+            {% endif %}
+        </div>
+        <div class="bi-card-body">
+            <div class="bi-chart-stage {{ 'bi-chart-stage-lg' if size == 'lg' }}">
+                {{ caller() }}
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{% macro insight_card(label, value, description, icon, accent='primary', col='col-lg-3 col-md-6') %}
+<div class="{{ col }}">
+    <div class="card bi-card bi-insight-card border-0 h-100">
+        <div class="bi-card-body">
+            <div class="bi-insight-icon bi-insight-icon-{{ accent }}">
+                <i class="bi {{ icon }}"></i>
+            </div>
+            <div class="bi-insight-label">{{ label }}</div>
+            <div class="bi-insight-value">{{ value }}</div>
+            {% if description %}
+            <p class="bi-insight-desc mb-0">{{ description }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{% macro analytics_table(title, subtitle='', sample=True) %}
+<div class="col-12">
+    <div class="card bi-card border-0">
+        <div class="bi-card-header">
+            <div>
+                <h3 class="bi-section-title mb-0">{{ title }}</h3>
+                {% if subtitle %}
+                <p class="bi-section-subtitle mb-0">{{ subtitle }}</p>
+                {% endif %}
+            </div>
+            {% if sample %}
+            <span class="bi-placeholder-badge" title="Sample data - not connected to live figures yet">
+                <i class="bi bi-stars"></i>
+                Sample data
+            </span>
+            {% else %}
+            <span class="bi-live-badge" title="Live data from your library's own records">
+                <i class="bi bi-broadcast"></i>
+                Live Data
+            </span>
+            {% endif %}
+        </div>
+        <div class="bi-card-body bi-table-wrap">
+            <table class="table bi-analytics-table mb-0">
+                {{ caller() }}
+            </table>
+        </div>
+    </div>
+</div>
+{% endmacro %}

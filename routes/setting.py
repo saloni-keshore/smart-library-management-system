@@ -18,6 +18,7 @@ from database.supabase_client import get_supabase_client
 from database.settings_queries import (
     get_library_settings, save_library_settings, clear_library_logo
 )
+from database.bi_queries import DEFAULT_SHIFT_CAPACITY
 from database.membership_settings_queries import (
         get_membership_settings,
         save_membership_settings,
@@ -33,6 +34,13 @@ from database.security_settings_queries import (
     get_security_settings, save_security_settings
 )
 from routes.auth import validate_password
+from utils.normalization import (
+    normalize_name,
+    normalize_phone,
+    normalize_location,
+    normalize_free_text,
+    normalize_category,
+)
 
 
 
@@ -379,20 +387,38 @@ def library_profile():
 
     if request.method == "POST":
         library_name = request.form.get("library_name", "").strip()
-        owner_name = request.form.get("owner_name", "").strip()
-        phone = request.form.get("phone", "").strip()
+        owner_name = normalize_name(request.form.get("owner_name", ""))
+        phone = normalize_phone(request.form.get("phone", ""))
         email = request.form.get("email", "").strip()
-        address = request.form.get("address", "").strip()
-        city = request.form.get("city", "").strip()
-        state = request.form.get("state", "").strip()
+        address = normalize_free_text(request.form.get("address", ""))
+        city = normalize_location(request.form.get("city", ""))
+        state = normalize_location(request.form.get("state", ""))
         pincode = request.form.get("pincode", "").strip()
         opening_time = request.form.get("opening_time", "").strip()
         closing_time = request.form.get("closing_time", "").strip()
         weekly_holiday = request.form.get("weekly_holiday", "").strip()
-        receipt_footer = request.form.get("receipt_footer", "").strip()
+        receipt_footer = normalize_free_text(request.form.get("receipt_footer", ""))
         remove_logo = request.form.get("remove_logo") == "1"
 
         errors = {}
+
+        def seat_capacity(field_name):
+            raw_value = request.form.get(field_name, "").strip()
+            if not raw_value:
+                return DEFAULT_SHIFT_CAPACITY
+            try:
+                value = int(raw_value)
+            except ValueError:
+                errors[field_name] = "Seat capacity must be a whole number."
+                return DEFAULT_SHIFT_CAPACITY
+            if value < 0:
+                errors[field_name] = "Seat capacity cannot be negative."
+                return DEFAULT_SHIFT_CAPACITY
+            return value
+
+        morning_capacity = seat_capacity("morning_capacity")
+        afternoon_capacity = seat_capacity("afternoon_capacity")
+        evening_capacity = seat_capacity("evening_capacity")
 
         if not library_name:
             errors["library_name"] = "Library name is required."
@@ -466,6 +492,9 @@ def library_profile():
             "stamp_path": stamp_path,
             "signature_path": signature_path,
             "receipt_footer": receipt_footer or None,
+            "morning_capacity": morning_capacity,
+            "afternoon_capacity": afternoon_capacity,
+            "evening_capacity": evening_capacity,
         }
 
         save_library_settings(admin_id, data)
@@ -531,9 +560,9 @@ def receipt_settings():
 
     if request.method == "POST":
 
-        receipt_prefix = request.form.get("receipt_prefix", "").strip().upper()
+        receipt_prefix = normalize_category(request.form.get("receipt_prefix", ""))
         paper_size = request.form.get("paper_size", "A4").strip()
-        receipt_footer = request.form.get("receipt_footer", "").strip()
+        receipt_footer = normalize_free_text(request.form.get("receipt_footer", ""))
 
         errors = []
 

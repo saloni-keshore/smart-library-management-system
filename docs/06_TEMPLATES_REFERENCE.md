@@ -18,7 +18,7 @@ Every feature page does `{% extends "layouts/base.html" %}` and overrides `title
 
 **`sidebar.html`** — left nav. Local Jinja macro `nav_badge(count)` renders a red badge if `count > 0`. Expects `enquiries_new_count`, `students_new_today_count`, `memberships_expiring_soon_count`, `payments_pending_count` — **note:** no route or context processor currently supplies these variables (only `sidebar.html` references them), so the badges likely render blank/undefined in practice. Active-link highlighting is done inline per-link via `request.endpoint.startswith('student.')`-style checks, not a passed-in "active" flag.
 
-## `templates/components/` (~45 shared partials)
+## `templates/components/` (~47 shared partials)
 
 **Generic primitives**, used via `{% include %}` with `with`, or `{% call %}` macros:
 | File | Purpose |
@@ -28,13 +28,13 @@ Every feature page does `{% extends "layouts/base.html" %}` and overrides `title
 | `table_card.html` | Same caller-based wrapper, styled for tables |
 | `activity_card.html` | Card meant to be `{% extends %}`-ed (has a `{% block activity %}`), not included |
 | `alert.html` | **Empty file (0 bytes)** — unused placeholder |
-| `dashboard_header.html`, `insights_card.html`, `quick_actions.html` | Dashboard-specific: header banner, shortcut action row. `dashboard_header.html`'s "Today's Date" block has been commented out since before this doc existed; the inline `<script>` that wrote into it (`getElementById("dashboardDate")` against a non-existent element, throwing on every Dashboard load) was dead code removed 2026-07-21 — see [CHANGELOG.md](CHANGELOG.md) |
+| `dashboard_header.html`, `insights_card.html`, `quick_actions.html` | Dashboard-specific: header banner, shortcut action row. `dashboard_header.html`'s "Today's Date" block has been commented out since before this doc existed; the inline `<script>` that wrote into it (`getElementById("dashboardDate")` against a non-existent element, throwing on every Dashboard load) was dead code removed 2026-07-21 — see [CHANGELOG.md](CHANGELOG.md). `quick_actions.html`'s "New Admission" card linked to `student.index` (the Student List) instead of starting the admission workflow at its actual entry point; fixed 2026-07-25 to link to `enquiry.add`, matching the "New Enquiry" card and the documented Dashboard → New Enquiry → Save Enquiry → Convert to Student → Create Membership → Payment → Receipt → Student Profile flow — see [CHANGELOG.md](CHANGELOG.md). Its "Collect Fees" card likewise linked to `payment.index` (the generic Payments list) instead of the Student List; fixed 2026-07-25 to link to `student.index`, matching the documented Dashboard → Collect Fees → Student List → Student Profile → Collect Pending Fee → Receipt flow (per-student "Collect Payment" already exists on both `students/index.html` and `students/view.html`, routing to `payment.collect`) — see [CHANGELOG.md](CHANGELOG.md) |
 | `notification_dropdown.html` | Navbar bell — expects `nav_notifications` (from `app.py`'s context processor) with `.counts`/`.buckets`/`.meta` |
 | `revenue_chart.html`, `payment_chart.html`, `membership_chart.html`, `membership_distribution_chart.html` | Dashboard cards displaying **pre-rendered PNGs** from `static/charts/`, wrapped in a skeleton loader (`data-chart-stage`, revealed by `dashboard-charts.js`). `revenue_chart.html`'s `chart-content` div carried a stray Bootstrap `d-none` class that no sibling chart card had — harmless only because a second, now-removed JS mechanism happened to strip it; removed 2026-07-21 so all chart cards reveal through the one CSS-class-based mechanism (see `dashboard-charts.js` in [07_STATIC_ASSETS.md](07_STATIC_ASSETS.md)) |
 | `expiry_table.html`, `upcoming_expiry.html`, `recent_admissions.html` | Dashboard mini-tables |
 | `add_transaction_modal.html`, `edit_transaction_modal.html`, `transaction_details_modal.html` | Bootstrap modals shared by Cashbook + Dashboard quick actions, driven by `static/js/transaction_modal.js` |
 
-**Business Intelligence (`bi_*`, 9 files)** — data from `database/bi_queries.py` via `routes/business_intelligence.py`:
+**Business Intelligence (`bi_*`, 10 files)** — data from `database/bi_queries.py` via `routes/business_intelligence.py`:
 | File | Purpose |
 |---|---|
 | `bi_health_score.html` | Circular Chart.js gauge for the composite health score/status |
@@ -44,6 +44,12 @@ Every feature page does `{% extends "layouts/base.html" %}` and overrides `title
 | `bi_membership_growth_chart.html`, `bi_revenue_growth.html`, `bi_revenue_trend_chart.html` | Chart.js canvas cards for growth/trend metrics |
 | `bi_timeline.html` | Chronological activity feed |
 | `bi_top_expense.html`, `bi_top_revenue.html` | Ranked top-category list cards |
+
+All ten of the above are Overview-only (included directly by `business_intelligence/index.html`, unchanged 2026-07-25). A separate, module-wide file sits alongside them:
+
+| File | Purpose |
+|---|---|
+| `bi_components.html` | **Added 2026-07-25.** Macro file (`{% import ... as bi %}`, not `{% include %}`) shared by **all four** BI pages (Overview + the three new ones below). Exports `tabs(active)` (the module's top nav bar — Overview/Purpose Analytics/Revenue Analytics/Occupancy Analytics), `analytics_header(title, subtitle)`, `kpi_card(label, value, icon, accent, col)`, `chart_card(title, subtitle, col, size, sample=True)` (`{% call %}`-style, caller supplies the `<canvas>`), `insight_card(label, value, description, icon, accent, col)`, `analytics_table(title, subtitle, sample=True)` (`{% call %}`-style, caller supplies `<thead>`/`<tbody>`). `sample=False` (all three sibling pages pass this on every call, as of 2026-07-26) renders a "Live Data" badge instead of the default "Sample data" one. Styled entirely by `static/css/business_intelligence.css`'s `.bi-tab*`, `.bi-kpi-*`, `.bi-insight-*`, `.bi-table*` rules (same file the Overview page already used, extended not replaced). |
 
 **Cashbook (`cashbook_*`, 6 files)**:
 | File | Purpose |
@@ -75,12 +81,23 @@ Every feature page does `{% extends "layouts/base.html" %}` and overrides `title
 | `memberships/` | `index.html`, `create.html`, `renew.html`, `distribution.html`, `analytics.html` |
 | `payments/` | `index.html`, `collect.html`, `receipt.html` — note `create.html` still exists but no route renders it (TD-11); `success.html` is gone, replaced 2026-07-25 by `receipt.html` (rendered by `routes/payment.py`'s new `receipt()`) |
 | `cashbook/` | `index.html`, `transactions.html`, `analytics.html` — only `index.html` is rendered by `routes/cashbook.py`; `transactions.html`/`analytics.html` appear to be leftover/unwired |
-| `business_intelligence/` | `index.html` |
+| `business_intelligence/` | `index.html` (Overview), plus `purpose_analytics.html`, `revenue_analytics.html`, `occupancy_analytics.html` (added 2026-07-25, UI-only — see below) |
 | `notification/` | `index.html` |
 | `settings/` | `index.html`, `library_profile.html`, `membership_settings.html`, `receipt_settings.html`, `notification_settings.html`, `staff_access.html`, `data_backup.html`, `security_settings.html` — every Settings sub-page now has a template, no stubs remain |
 | `reports/` | `index.html` — unreferenced (see `routes/report.py`, a pure redirect shim) |
 
 See [11_FUTURE_WORK.md](11_FUTURE_WORK.md) for the unwired-template list.
+
+### Business Intelligence module templates, in detail
+
+Added 2026-07-25 to turn Business Intelligence from a single page into a tabbed module. The sidebar still has exactly one "Business Intelligence" entry (unchanged); navigation between the four pages happens entirely inside the module via the tab bar in `components/bi_components.html`'s `tabs()` macro, rendered at the top of every one of the four pages below.
+
+- **`index.html`** (Overview, **not redesigned**) — the only change is one added line, `{{ bi.tabs('overview') }}`, right after the flashed-messages block and before its existing `.bi-section` header. Every `bi_*` component it already included is untouched.
+- **`purpose_analytics.html`** (real data since 2026-07-26, Phase 1) — `bi.analytics_header()`; a 5-card `bi.kpi_card()` row (Total Students, Total Revenue, Top Purpose, Top Revenue Purpose, Average Revenue Per Student); two `bi.chart_card()` rows (Students by Purpose bar + Purpose Distribution doughnut, then Revenue by Purpose bar + Revenue Distribution doughnut); a "Business Insights" row of four `bi.insight_card()`s (Highest/Lowest Students, Highest/Lowest Revenue) plus one hand-rolled recommendation card; and a `bi.analytics_table()` ("Purpose Summary": Purpose, Students, Student %, Revenue, Revenue %, Average Revenue). Charts render via `static/js/bi_purpose_analytics.js` against `window.biPurposeChartData`, sourced from `_purpose_analytics_data()`/`database/bi_queries.py`'s `get_purpose_breakdown()`.
+- **`revenue_analytics.html`** (real data since 2026-07-26, Phase 2, ADR-37) — a 5-card KPI row (Total/Today's/This Week's/This Month's/This Year's Revenue) plus a second 5-card row (Expected/Collected/Pending Revenue, Collection %, Avg Revenue/Student); a large-size `bi.chart_card()` row (Revenue Trend line + Monthly Revenue bar, 12 months); a second chart row (Revenue by Membership doughnut + Revenue by Purpose doughnut); a third chart row (Revenue by Payment Mode doughnut + New Admissions vs Renewal doughnut); a "Business Insights" row of four `bi.insight_card()`s (Highest Revenue Purpose/Plan, Fastest Growing Month, Most-Used Payment Mode) plus one hand-rolled Collection Rate card; and a `bi.analytics_table()` ("Revenue Table": Month, Revenue, Expense, Profit). Charts render via `static/js/bi_revenue_analytics.js` against `window.biRevenueChartData`, sourced from `_revenue_analytics_data()`/`database/bi_queries.py`'s revenue helpers.
+- **`occupancy_analytics.html`** (real data since 2026-07-26, Phase 3, ADR-38) — a 5-card KPI row (Total Seats, Occupied Seats, Available Seats, Overall Occupancy %, Peak Shift) plus a second 3-card row (Morning/Afternoon/Evening Occupancy %); a chart row (Shift Distribution doughnut + Seat Utilization stacked bar); three hand-rolled shift cards (Morning/Afternoon/Evening, each a mini Chart.js doughnut ring showing occupied vs. available, seeded from the admin's own configured seat capacity); a full-width large `bi.chart_card()` (Monthly Occupancy Trend line, 6 months); a chart row (Purpose vs Shift stacked bar + Membership vs Occupancy bar); an `{% include "components/bi_occupancy_insights.html" %}` AI Insights section (rule-based, `.bi-action-item`-styled); two `bi.insight_card()`s (Occupancy by Membership Plan, Occupancy by Purpose); a `bi.analytics_table()` ("Shift Utilization": Shift, Capacity, Occupied, Available, Utilization); and a second `bi.analytics_table()` ("Purpose Shift Matrix": Purpose, one column per shift (dynamic — grows an "Other" column only if populated), Total). Charts render via `static/js/bi_occupancy_analytics.js` against `window.biOccupancyChartData`, sourced from `_occupancy_analytics_data()`/`database/bi_queries.py`'s occupancy helpers.
+
+**All three pages now render real, admin-scoped data — none are placeholders.** Each route builds a dict → the template dumps it into a `window.*ChartData` JS global → a page-specific JS file renders Chart.js canvases from it, the same shape `index.html`/`business_intelligence.js` already used. See TD-46 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) for the full history of this rollout across its three phases.
 
 ### Settings templates, in detail
 

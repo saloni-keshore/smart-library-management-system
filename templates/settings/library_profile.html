@@ -319,6 +319,68 @@ Library Profile
 
                 </div>
 
+                <div class="card shadow-sm border-0 mb-4">
+
+                    <div class="card-body">
+
+                        <h5 class="mb-3 text-primary">
+                            Seating Capacity
+                        </h5>
+
+                        <p class="text-muted small mb-3">
+                            Number of seats available per shift - used by Business Intelligence &gt; Occupancy Analytics to compute occupancy rate and available seats.
+                        </p>
+
+                        <div class="row">
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Morning Capacity
+                                </label>
+
+                                <input type="number"
+                                       class="form-control"
+                                       name="morning_capacity"
+                                       min="0"
+                                       value="{{ settings.morning_capacity if settings and settings.morning_capacity is not none else 50 }}">
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Afternoon Capacity
+                                </label>
+
+                                <input type="number"
+                                       class="form-control"
+                                       name="afternoon_capacity"
+                                       min="0"
+                                       value="{{ settings.afternoon_capacity if settings and settings.afternoon_capacity is not none else 50 }}">
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Evening Capacity
+                                </label>
+
+                                <input type="number"
+                                       class="form-control"
+                                       name="evening_capacity"
+                                       min="0"
+                                       value="{{ settings.evening_capacity if settings and settings.evening_capacity is not none else 50 }}">
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
                 <div class="card shadow-sm border-0">
 
                     <div class="card-body">

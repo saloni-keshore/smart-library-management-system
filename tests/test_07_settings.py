@@ -87,6 +87,31 @@ def test_library_profile_missing_name_rejected(logged_in_client):
     assert b"Please fix the highlighted fields" in resp.data
 
 
+def test_library_profile_seating_capacity_accepted(logged_in_client):
+    """Seating-capacity fields (Occupancy Analytics, Business Intelligence
+    Phase 3, ADR-38) must not break Library Profile saving - even before
+    the live database has the *_capacity columns applied, the
+    create/update fallback in database/settings_queries.py must still let
+    every other field save successfully."""
+    client, admin = logged_in_client
+    resp = _save_library_profile(
+        client, morning_capacity="60", afternoon_capacity="70", evening_capacity="40"
+    )
+    assert b"saved successfully" in resp.data
+
+
+def test_library_profile_negative_seat_capacity_rejected(logged_in_client):
+    client, admin = logged_in_client
+    resp = _save_library_profile(client, morning_capacity="-5")
+    assert b"Please fix the highlighted fields" in resp.data
+
+
+def test_library_profile_non_numeric_seat_capacity_rejected(logged_in_client):
+    client, admin = logged_in_client
+    resp = _save_library_profile(client, morning_capacity="abc")
+    assert b"Please fix the highlighted fields" in resp.data
+
+
 def test_library_profile_missing_owner_rejected(logged_in_client):
     client, admin = logged_in_client
     resp = _save_library_profile(client, owner_name="")
@@ -483,7 +508,10 @@ def test_backup_export_csv_own_students_only(logged_in_client):
     resp = client.get("/settings/backup/export-csv")
     assert resp.status_code == 200
     assert resp.mimetype == "text/csv"
-    assert b"CSV Export Target" in resp.data
+    # full_name is normalized to Title Case on save (utils/normalization.py) -
+    # "CSV Export Target" (all-caps acronym included) is stored/exported as
+    # "Csv Export Target".
+    assert b"Csv Export Target" in resp.data
 
 
 def test_backup_export_csv_empty_state_headers_only(logged_in_client):

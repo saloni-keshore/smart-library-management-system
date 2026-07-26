@@ -28,6 +28,7 @@ from database.cashbook_categories import (
     ALL_CATEGORIES,
     PAYMENT_METHODS
 )
+from utils.normalization import normalize_name, normalize_free_text
 
 cashbook_bp = Blueprint(
     "cashbook",
@@ -268,8 +269,8 @@ def add_transaction():
     amount = request.form.get("amount")
     payment_method = request.form.get("payment_method")
     entry_date = request.form.get("transaction_date") or date.today().isoformat()
-    person = request.form.get("person")
-    description = request.form.get("description")
+    person = normalize_name(request.form.get("person"))
+    description = normalize_free_text(request.form.get("description"))
     redirect_to = request.form.get("redirect_to", "cashbook")
 
     destination = (
@@ -333,8 +334,8 @@ def edit_transaction(entry_id):
     amount = request.form.get("amount")
     payment_method = request.form.get("payment_method")
     entry_date = request.form.get("transaction_date")
-    person = request.form.get("person")
-    description = request.form.get("description")
+    person = normalize_name(request.form.get("person"))
+    description = normalize_free_text(request.form.get("description"))
 
     allowed_categories = (
         MANUAL_INCOME_CATEGORIES

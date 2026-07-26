@@ -1,0 +1,197 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+Occupancy Analytics
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/business_intelligence.css') }}">
+{% endblock %}
+
+{% block content %}
+
+{% import "components/bi_components.html" as bi %}
+
+<div class="container-fluid py-3 bi-page">
+
+    <!-- Module tab bar -->
+    {{ bi.tabs('occupancy') }}
+
+    <!-- Header -->
+    {{ bi.analytics_header(
+        'Occupancy Analytics',
+        'See how full your library is across shifts and where extra seating capacity is needed.'
+    ) }}
+
+    <!-- Row 1: KPI cards -->
+    <div class="bi-section row g-3">
+        {{ bi.kpi_card('Total Seats', data.kpis.total_seats, 'bi-grid-3x3-gap-fill', 'primary') }}
+        {{ bi.kpi_card('Occupied Seats', data.kpis.occupied_seats, 'bi-person-fill-check', 'success') }}
+        {{ bi.kpi_card('Available Seats', data.kpis.available_seats, 'bi-door-open-fill', 'info') }}
+        {{ bi.kpi_card('Overall Occupancy %', data.kpis.occupancy_pct ~ '%', 'bi-speedometer2', 'warning') }}
+        {{ bi.kpi_card('Peak Shift', data.kpis.peak_shift, 'bi-sun-fill', 'violet') }}
+    </div>
+
+    <!-- Row 2: Per-shift occupancy % -->
+    <div class="bi-section row g-3">
+        {{ bi.kpi_card('Morning Occupancy %', data.kpis.morning_occupancy_pct ~ '%', 'bi-brightness-high-fill', 'primary') }}
+        {{ bi.kpi_card('Afternoon Occupancy %', data.kpis.afternoon_occupancy_pct ~ '%', 'bi-cloud-sun-fill', 'warning') }}
+        {{ bi.kpi_card('Evening Occupancy %', data.kpis.evening_occupancy_pct ~ '%', 'bi-moon-stars-fill', 'violet') }}
+    </div>
+
+    <!-- Row 3: Shift Distribution / Seat Utilization -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Shift Distribution', 'Occupied seats per shift', sample=False) %}
+        <canvas id="shiftDistributionChart"></canvas>
+        {% endcall %}
+
+        {% call bi.chart_card('Seat Utilization', 'Occupied vs. available seats per shift', sample=False) %}
+        <canvas id="seatUtilizationChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 4: Morning / Afternoon / Evening shift cards -->
+    <div class="bi-section row g-3">
+
+        {% for shift in data.shifts %}
+        <div class="col-lg-4 col-md-6">
+            <div class="card bi-card border-0 h-100">
+                <div class="bi-card-body bi-shift-card">
+                    <div class="bi-shift-name">{{ shift.name }}</div>
+                    <div class="bi-shift-time">{{ shift.time }}</div>
+                    <div class="bi-shift-ring-stage">
+                        <canvas id="shiftRing{{ loop.index }}"></canvas>
+                        <div class="bi-shift-ring-center">
+                            <span class="bi-shift-ring-value">{{ shift.utilization_pct }}%</span>
+                            <span class="bi-shift-ring-label">Utilized</span>
+                        </div>
+                    </div>
+                    <div class="bi-shift-seats">
+                        {{ shift.occupied }} occupied &middot; {{ shift.available }} available of {{ shift.capacity }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+    </div>
+
+    <!-- Row 5: Monthly Occupancy Trend -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Monthly Occupancy Trend', 'Overall occupancy rate over the last 6 months', col='col-12', size='lg', sample=False) %}
+        <canvas id="occupancyTrendChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 6: Purpose vs Shift / Membership vs Occupancy -->
+    <div class="bi-section row g-3">
+
+        {% call bi.chart_card('Purpose vs Shift', 'Occupied seats by purpose, split across shifts', sample=False) %}
+        <canvas id="purposeShiftChart"></canvas>
+        {% endcall %}
+
+        {% call bi.chart_card('Membership vs Occupancy', 'Occupied seats by membership plan', sample=False) %}
+        <canvas id="membershipOccupancyChart"></canvas>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 7: AI Insights -->
+    <div class="bi-section row g-3">
+        {% include "components/bi_occupancy_insights.html" with context %}
+    </div>
+
+    <!-- Row 8: Occupancy by Membership Plan / Occupancy by Purpose -->
+    <div class="bi-section row g-3">
+
+        {{ bi.insight_card('Occupancy by Membership Plan', data.breakdown.top_plan, data.breakdown.top_plan_count ~ ' occupied seat' ~ ('s' if data.breakdown.top_plan_count != 1 else ''), 'bi-award-fill', 'primary') }}
+        {{ bi.insight_card('Occupancy by Purpose', data.breakdown.top_purpose, data.breakdown.top_purpose_count ~ ' occupied seat' ~ ('s' if data.breakdown.top_purpose_count != 1 else ''), 'bi-mortarboard-fill', 'violet') }}
+
+    </div>
+
+    <!-- Row 9: Shift Utilization Table -->
+    <div class="bi-section row g-3">
+
+        {% call bi.analytics_table('Shift Utilization', 'Capacity and utilization for each shift', sample=False) %}
+        <thead>
+            <tr>
+                <th>Shift</th>
+                <th>Capacity</th>
+                <th>Occupied</th>
+                <th>Available</th>
+                <th>Utilization</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for shift in data.shifts %}
+            <tr>
+                <td class="bi-table-strong">{{ shift.name }}</td>
+                <td>{{ shift.capacity }}</td>
+                <td>{{ shift.occupied }}</td>
+                <td class="bi-table-muted">{{ shift.available }}</td>
+                <td>{{ shift.utilization_pct }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        {% endcall %}
+
+    </div>
+
+    <!-- Row 10: Purpose Shift Matrix Table -->
+    <div class="bi-section row g-3">
+
+        {% call bi.analytics_table('Purpose Shift Matrix', 'Occupied seats by purpose, broken down by shift', sample=False) %}
+        <thead>
+            <tr>
+                <th>Purpose</th>
+                {% for column in data.purpose_matrix.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data.purpose_matrix.rows %}
+            <tr>
+                <td class="bi-table-strong">{{ row.purpose }}</td>
+                {% for column in data.purpose_matrix.columns %}
+                <td>{{ row.counts[column] }}</td>
+                {% endfor %}
+                <td class="bi-table-muted">{{ row.total }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="{{ data.purpose_matrix.columns | length + 2 }}" class="text-center bi-table-muted">
+                    No occupied seats yet.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        {% endcall %}
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<script>
+    // Live data - built server-side in routes/business_intelligence.py
+    // (_occupancy_analytics_data), which reads Supabase `students`/
+    // `memberships`/`library_settings` via database/bi_queries.py's
+    // occupancy helpers.
+    window.biOccupancyChartData = {{ data | tojson }};
+</script>
+
+<script src="{{ url_for('static', filename='js/bi_occupancy_analytics.js') }}"></script>
+
+{% endblock %}

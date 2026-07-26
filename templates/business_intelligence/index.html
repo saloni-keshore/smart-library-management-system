@@ -11,6 +11,8 @@ Business Intelligence
 
 {% block content %}
 
+{% import "components/bi_components.html" as bi %}
+
 <div class="container-fluid py-3 bi-page">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -26,6 +28,9 @@ Business Intelligence
             {% endfor %}
         {% endif %}
     {% endwith %}
+
+    <!-- Module tab bar -->
+    {{ bi.tabs('overview') }}
 
     <!-- Header -->
     <div class="bi-section">

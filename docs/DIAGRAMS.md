@@ -381,6 +381,7 @@ graph LR
     setting_py --> notification_settings_queries_py
     setting_py --> backup_queries_py
     setting_py --> security_settings_queries_py
+    setting_py --> bi_queries_py
     setting_py -.->|"security_settings() password branch, ADR-17; backup_export_csv()'s students read, ADR-24"| supabase_client_py
     setting_py -.->|"backup_create()'s whole-file copy + data_backup()'s db_size only, ADR-24"| db_py
     app_py -.->|"inject_notification_summary()"| notification_settings_queries_py
@@ -390,6 +391,8 @@ graph LR
     cashbook_queries_py --> membership_queries_py
     bi_queries_py --> cashbook_queries_py
     bi_queries_py --> membership_queries_py
+    bi_queries_py --> payment_queries_py
+    bi_queries_py --> settings_queries_py
     audit_queries_py --> supabase_client_py
     membership_settings_queries_py --> supabase_client_py
     membership_queries_py --> supabase_client_py

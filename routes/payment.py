@@ -18,6 +18,7 @@ from database.payment_queries import (
     get_payment_id_by_receipt_number,
 )
 from database.receipt_settings_queries import get_receipt_settings
+from utils.normalization import normalize_free_text
 
 
 payment_bp = Blueprint(
@@ -129,7 +130,7 @@ def collect(membership_id):
             )
 
         payment_mode = request.form.get("payment_mode")
-        remarks = request.form.get("remarks")
+        remarks = normalize_free_text(request.form.get("remarks"))
 
         old_paid = float(membership["paid_amount"])
         new_paid = old_paid + amount

@@ -13,6 +13,12 @@ from postgrest.exceptions import APIError
 
 from database.membership_queries import get_memberships_for_admin, get_effective_status
 from database.supabase_client import get_supabase_client
+from utils.normalization import (
+    normalize_name,
+    normalize_phone,
+    normalize_category,
+    normalize_free_text,
+)
 
 
 student_bp = Blueprint(
@@ -113,9 +119,26 @@ def admission(enquiry_id):
 
     if request.method == "POST":
 
-        address = request.form.get("address", "").strip()
-        id_proof = request.form.get("id_proof", "").strip()
+        address = normalize_free_text(request.form.get("address", ""))
+        id_proof = normalize_free_text(request.form.get("id_proof", ""))
         join_date = _sanitize_date(request.form.get("join_date"))
+
+        # Name/mobile/purpose/shift are inherited from the enquiry rather
+        # than re-entered here, so admission must re-check them - an
+        # enquiry saved before this validation existed, or missing one of
+        # these, must not silently produce an incomplete student record.
+        if not (enquiry.get("full_name") or "").strip():
+            flash("Student name is required.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
+        if not (enquiry.get("mobile") or "").strip():
+            flash("Mobile number is required.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
+        if not (enquiry.get("purpose") or "").strip():
+            flash("Purpose is required.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
+        if not (enquiry.get("preferred_shift") or "").strip():
+            flash("Shift is required.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
 
         # Check if this mobile already admitted under THIS admin
         try:
@@ -153,16 +176,21 @@ def admission(enquiry_id):
             if next_id_response.data else 1
         )
 
+        # full_name/mobile/purpose/shift are inherited from the enquiry,
+        # which is already normalized at the point it was saved
+        # (routes/enquiries.py) - re-normalizing here is defensive/
+        # idempotent, guarding against any enquiry row that predates this
+        # normalization pass (see the one-time migration script).
         student_row = {
             "student_id": new_student_id,
             "admin_id": admin_id,
             "enquiry_id": enquiry["enquiry_id"],
-            "full_name": enquiry["full_name"],
-            "mobile": enquiry["mobile"],
+            "full_name": normalize_name(enquiry["full_name"]),
+            "mobile": normalize_phone(enquiry["mobile"]),
             "address": address,
             "id_proof": id_proof,
-            "purpose": enquiry["purpose"],
-            "shift": enquiry["preferred_shift"],
+            "purpose": normalize_category(enquiry["purpose"]),
+            "shift": normalize_category(enquiry["preferred_shift"]),
             "join_date": join_date,
             "status": "Active",
         }
@@ -280,11 +308,11 @@ def edit(student_id):
 
     if request.method == "POST":
 
-        full_name = request.form.get("full_name")
-        mobile = request.form.get("mobile")
-        address = request.form.get("address")
-        purpose = request.form.get("purpose")
-        shift = request.form.get("shift")
+        full_name = normalize_name(request.form.get("full_name"))
+        mobile = normalize_phone(request.form.get("mobile"))
+        address = normalize_free_text(request.form.get("address"))
+        purpose = normalize_category(request.form.get("purpose"))
+        shift = normalize_category(request.form.get("shift"))
         status = request.form.get("status")
 
         # UNIQUE(mobile, admin_id) exists on both databases -- check for a

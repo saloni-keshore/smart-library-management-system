@@ -140,6 +140,243 @@ def test_reports_redirects_to_bi(logged_in_client):
 
 
 # ---------------------------------------------------------------------------
+# Purpose Analytics (wired to real data - Business Intelligence Phase 1)
+# ---------------------------------------------------------------------------
+
+def test_purpose_analytics_requires_login(client):
+    resp = client.get("/business-intelligence/purpose-analytics", follow_redirects=False)
+    assert resp.status_code == 302
+
+
+def test_purpose_analytics_loads_with_no_data(logged_in_client):
+    """Brand new admin, zero students - table_rows[0]/[-1] in the template
+    must not IndexError on an empty breakdown."""
+    client, admin = logged_in_client
+    resp = client.get("/business-intelligence/purpose-analytics")
+    assert resp.status_code == 200
+    assert b"N/A" in resp.data
+
+
+def test_purpose_analytics_totals_match_payment_records(logged_in_client):
+    """Total Students/Total Revenue on the page must match
+    get_admin_students()/get_total_fee_revenue(), and each purpose's
+    student_pct/revenue_pct must sum to ~100% across the breakdown."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+
+    make_enquiry(client, purpose="UPSC")
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid = get_last_student_id(admin_id)
+    create_membership(client, sid, paid_amount="1000", due_amount="0")
+
+    make_enquiry(client, purpose="UPSC")
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid = get_last_student_id(admin_id)
+    create_membership(client, sid, paid_amount="500", due_amount="0")
+
+    make_enquiry(client, purpose="NEET")
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid = get_last_student_id(admin_id)
+    create_membership(client, sid, paid_amount="2000", due_amount="0")
+
+    from database.bi_queries import get_purpose_breakdown
+    from database.cashbook_queries import get_total_fee_revenue
+    from database.membership_queries import get_admin_students
+
+    breakdown = get_purpose_breakdown(admin_id)
+    total_students = sum(row["students"] for row in breakdown)
+    total_revenue = sum(row["revenue"] for row in breakdown)
+
+    assert total_students == len(get_admin_students(admin_id))
+    assert total_revenue == get_total_fee_revenue(admin_id) == 3500
+
+    student_pct_sum = sum(round(row["students"] * 100 / total_students, 1) for row in breakdown)
+    revenue_pct_sum = sum(round(row["revenue"] * 100 / total_revenue, 1) for row in breakdown)
+    assert 99.0 <= student_pct_sum <= 101.0
+    assert 99.0 <= revenue_pct_sum <= 101.0
+
+    resp = client.get("/business-intelligence/purpose-analytics")
+    assert resp.status_code == 200
+    assert b"UPSC" in resp.data
+    assert b"NEET" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Revenue Analytics (wired to real data - Business Intelligence Phase 2)
+# ---------------------------------------------------------------------------
+
+def test_revenue_analytics_requires_login(client):
+    resp = client.get("/business-intelligence/revenue-analytics", follow_redirects=False)
+    assert resp.status_code == 302
+
+
+def test_revenue_analytics_loads_with_no_data(logged_in_client):
+    """Brand new admin, zero payments/memberships - the "fastest growing
+    month"/"top plan"/"top payment mode" insights must all fall back to
+    N/A instead of raising on an empty breakdown."""
+    client, admin = logged_in_client
+    resp = client.get("/business-intelligence/revenue-analytics")
+    assert resp.status_code == 200
+    assert b"N/A" in resp.data
+
+
+def test_revenue_analytics_kpis_match_payment_and_membership_records(logged_in_client):
+    """Every KPI on the page must match the same underlying Payments/
+    Memberships rows the rest of the app already asserts against
+    (get_total_fee_revenue/get_pending_fees), and the New Admissions vs
+    Renewal split must correctly attribute a renewal payment to Renewal,
+    not New Admissions."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+
+    # Student A: new admission (paid in full), then a renewal with a
+    # partial payment (some still pending).
+    make_enquiry(client)
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid_a = get_last_student_id(admin_id)
+    create_membership(client, sid_a, paid_amount="1000", due_amount="0")
+
+    client.post(
+        f"/memberships/renew/{sid_a}",
+        data={
+            "plan_name": "Monthly",
+            "joining_date": "2026-08-22",
+            "duration_days": "30",
+            "end_date": "2026-09-21",
+            "remarks": "renewal",
+            "payment_mode": "UPI",
+            "paid_amount": "300",
+            "due_amount": "200",
+        },
+        follow_redirects=True,
+    )
+
+    # Student B: a second new admission.
+    make_enquiry(client)
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid_b = get_last_student_id(admin_id)
+    create_membership(client, sid_b, paid_amount="500", due_amount="0")
+
+    from database.bi_queries import (
+        get_revenue_time_windows, get_revenue_collection_summary,
+        get_new_vs_renewal_revenue,
+    )
+    from database.cashbook_queries import get_total_fee_revenue, get_pending_fees
+
+    windows = get_revenue_time_windows(admin_id)
+    collection = get_revenue_collection_summary(admin_id)
+    split = get_new_vs_renewal_revenue(admin_id)
+
+    assert windows["total"] == get_total_fee_revenue(admin_id) == 1800
+    assert windows["today"] == 1800  # every payment above lands on today's date
+    assert windows["month"] == 1800
+    assert windows["year"] == 1800
+
+    assert collection["expected"] == 2000  # 1000 + (300+200) + 500
+    assert collection["collected"] == 1800
+    assert collection["pending"] == get_pending_fees(admin_id) == 200
+    assert collection["collection_pct"] == 90.0
+
+    assert split["new_admissions"] == 1500  # student A's first membership + student B
+    assert split["renewal"] == 300  # student A's renewal payment only
+
+    resp = client.get("/business-intelligence/revenue-analytics")
+    assert resp.status_code == 200
+    assert "1,800".encode() in resp.data  # Total Revenue KPI
+
+
+# ---------------------------------------------------------------------------
+# Occupancy Analytics (wired to real data - Business Intelligence Phase 3)
+# ---------------------------------------------------------------------------
+
+def test_occupancy_analytics_requires_login(client):
+    resp = client.get("/business-intelligence/occupancy-analytics", follow_redirects=False)
+    assert resp.status_code == 302
+
+
+def test_occupancy_analytics_loads_with_no_data(logged_in_client):
+    """Brand new admin, zero students - capacity still defaults (no Library
+    Profile saved yet) and every insight/breakdown must fall back cleanly
+    instead of raising on an empty active-membership population."""
+    client, admin = logged_in_client
+    resp = client.get("/business-intelligence/occupancy-analytics")
+    assert resp.status_code == 200
+    assert b"N/A" in resp.data
+
+
+def test_occupancy_analytics_counts_active_students_by_shift(logged_in_client):
+    """Occupied seats must match the currently effectively-active
+    membership population, grouped by each student's own shift - not raw
+    student count (Purpose Analytics counts every student regardless of
+    status; Occupancy deliberately doesn't, see ADR-38)."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+
+    make_enquiry(client, preferred_shift="Morning", purpose="UPSC")
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid = get_last_student_id(admin_id)
+    create_membership(client, sid, plan_name="Monthly")
+
+    make_enquiry(client, preferred_shift="Evening", purpose="NEET")
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid = get_last_student_id(admin_id)
+    create_membership(client, sid, plan_name="Quarterly")
+
+    from database.bi_queries import get_occupancy_summary, get_occupancy_by_purpose, get_occupancy_by_plan
+
+    summary = get_occupancy_summary(admin_id)
+    shifts_by_name = {s["name"]: s for s in summary["shifts"]}
+    assert shifts_by_name["Morning"]["occupied"] == 1
+    assert shifts_by_name["Evening"]["occupied"] == 1
+    assert shifts_by_name["Afternoon"]["occupied"] == 0
+    assert summary["total_occupied"] == 2
+
+    purpose_occupancy = get_occupancy_by_purpose(admin_id)
+    assert purpose_occupancy.get("UPSC") == 1
+    assert purpose_occupancy.get("NEET") == 1
+
+    plan_occupancy = get_occupancy_by_plan(admin_id)
+    assert plan_occupancy.get("MONTHLY") == 1
+    assert plan_occupancy.get("QUARTERLY") == 1
+
+    resp = client.get("/business-intelligence/occupancy-analytics")
+    assert resp.status_code == 200
+    assert b"Morning" in resp.data
+    assert b"Evening" in resp.data
+
+
+def test_occupancy_analytics_excludes_expired_memberships(logged_in_client):
+    """A membership whose end_date has already passed no longer occupies a
+    seat, even though membership_status was stored 'Active' at creation
+    (get_effective_status() re-derives 'Expired' from the date)."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+
+    make_enquiry(client, preferred_shift="Morning")
+    eid = get_last_enquiry_id(admin_id)
+    admit_student(client, eid)
+    sid = get_last_student_id(admin_id)
+    create_membership(
+        client, sid,
+        joining_date="2020-01-01", duration="30", end_date="2020-01-31",
+    )
+
+    from database.bi_queries import get_occupancy_summary
+
+    summary = get_occupancy_summary(admin_id)
+    assert summary["total_occupied"] == 0
+    shifts_by_name = {s["name"]: s for s in summary["shifts"]}
+    assert shifts_by_name["Morning"]["occupied"] == 0
+
+
+# ---------------------------------------------------------------------------
 # Membership Analytics (fixed: now redirects to Membership Distribution)
 # ---------------------------------------------------------------------------
 
