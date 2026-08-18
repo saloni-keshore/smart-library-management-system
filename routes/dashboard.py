@@ -1,10 +1,14 @@
+import time
 from datetime import date, timedelta
 
 from flask import (
     Blueprint,
     render_template,
     session,
-    redirect
+    redirect,
+    request,
+    jsonify,
+    url_for
 )
 from postgrest.exceptions import APIError
 
@@ -172,4 +176,21 @@ def dashboard():
         dash_show_pending_fees=dash_show_pending_fees
     )
 
-   
+
+@dashboard_bp.route("/dashboard/revenue-chart")
+def revenue_chart():
+
+    if "admin_id" not in session:
+        return jsonify({}), 401
+
+    admin_id = session["admin_id"]
+
+    period = request.args.get("period", "this_year")
+    if period not in ("this_year", "last_year"):
+        period = "this_year"
+
+    generate_revenue_chart(admin_id, period)
+
+    image_url = url_for("static", filename="charts/revenue.png") + "?t=" + str(time.time())
+
+    return jsonify({"image_url": image_url})

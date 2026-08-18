@@ -1,0 +1,213 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+AI Center - Settings
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/ai_center.css') }}">
+{% endblock %}
+
+{% block content %}
+
+{% import "components/ai_center_components.html" as aic %}
+
+<div class="container-fluid py-3 ai-center-page">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {{ aic.tabs('settings') }}
+
+    <div class="ai-section">
+        <h2 class="page-title mb-1">AI Center Settings</h2>
+        <p class="page-subtitle mb-0">
+            Decide how a student's risk score is worked out. Changes apply right away - no technical setup needed.
+        </p>
+    </div>
+
+    <div class="ai-info-banner">
+        <i class="bi bi-lightbulb-fill"></i>
+        <div>
+            <b>Recommended settings work well for most libraries.</b>
+            <span>You only need to change these if your library works differently - for example, if late payments rarely affect whether a student keeps coming.</span>
+        </div>
+    </div>
+
+    <form method="post" action="{{ url_for('ai_center.settings') }}">
+        <div class="ai-settings-grid">
+
+            <div class="ai-card">
+                <div class="ai-card-header">
+                    <h3>Risk Score Ranges</h3>
+                    <p>Decide which scores count as High, Medium, or Low risk on the Student Risk Analysis page</p>
+                </div>
+                <div class="ai-card-body">
+                    <div class="ai-field-row">
+                        <label for="high_risk_max">
+                            High Risk
+                            {{ aic.info_tip(
+                                "This is the highest score a student can have and still be flagged High Risk.",
+                                "if you want the High Risk group to catch students earlier.",
+                                "if High Risk should be reserved for only the most serious cases."
+                            ) }}
+                            <span class="ai-hint">A score below this is flagged High Risk</span>
+                        </label>
+                        <div class="ai-field-input">
+                            <input type="number" min="0" max="100" id="high_risk_max"
+                                   name="high_risk_max" value="{{ settings.high_risk_max }}">
+                            <span>%</span>
+                        </div>
+                    </div>
+                    <div class="ai-field-row">
+                        <label for="low_risk_min">
+                            Low Risk
+                            {{ aic.info_tip(
+                                "This is the lowest score a student needs to be treated as Low Risk (safe, no action needed).",
+                                "if Low Risk should only apply to your safest, most reliable students.",
+                                "if you want more students to count as Low Risk."
+                            ) }}
+                            <span class="ai-hint">A score above this is treated as Low Risk</span>
+                        </label>
+                        <div class="ai-field-input">
+                            <input type="number" min="0" max="100" id="low_risk_min"
+                                   name="low_risk_min" value="{{ settings.low_risk_min }}">
+                            <span>%</span>
+                        </div>
+                    </div>
+                    <p class="ai-hint mb-0">Any score in between is treated as Medium Risk.</p>
+
+                    <div class="ai-range-bar">
+                        <div class="ai-range-seg bg-risk-high" id="rangeSegHigh"
+                             style="width:{{ settings.high_risk_max }}%"></div>
+                        <div class="ai-range-seg bg-risk-medium" id="rangeSegMedium"
+                             style="width:{{ [0, settings.low_risk_min - settings.high_risk_max]|max }}%"></div>
+                        <div class="ai-range-seg bg-risk-low" id="rangeSegLow"
+                             style="width:{{ [0, 100 - settings.low_risk_min]|max }}%"></div>
+                    </div>
+                    <div class="ai-range-scale">
+                        <span>0</span>
+                        <span id="rangeScaleHighVal">{{ settings.high_risk_max }}</span>
+                        <span id="rangeScaleLowVal">{{ settings.low_risk_min }}</span>
+                        <span>100</span>
+                    </div>
+                    <div class="ai-range-legend">
+                        <span><i class="ai-range-dot" style="background:var(--ai-danger)"></i>High Risk</span>
+                        <span><i class="ai-range-dot" style="background:var(--ai-warning)"></i>Medium Risk</span>
+                        <span><i class="ai-range-dot" style="background:var(--ai-success)"></i>Low Risk</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ai-card">
+                <div class="ai-card-header">
+                    <h3>What Affects the Score</h3>
+                    <p>How much each factor counts toward a student's risk score - the three numbers below must add up to 100%</p>
+                </div>
+                <div class="ai-card-body">
+                    <div class="ai-field-row">
+                        <label for="weight_payment_delay">
+                            Late or pending payments
+                            {{ aic.info_tip(
+                                "This decides how much late or pending payments affect the student's risk score.",
+                                "if unpaid fees usually mean a student may stop coming.",
+                                "if late payments are common but students still continue."
+                            ) }}
+                            <span class="ai-hint">Raise this if unpaid dues should count more toward risk</span>
+                        </label>
+                        <div class="ai-field-input">
+                            <input type="number" min="0" max="100" id="weight_payment_delay"
+                                   name="weight_payment_delay" value="{{ settings.weight_payment_delay }}">
+                            <span>%</span>
+                        </div>
+                    </div>
+                    <div class="ai-field-row">
+                        <label for="weight_renewal_history">
+                            Renewal timing
+                            {{ aic.info_tip(
+                                "This checks whether renewing late or right at the deadline says something about a student's chances of continuing.",
+                                "if students who wait until the last moment to renew often don't come back.",
+                                "if renewal timing doesn't really predict who stays and who leaves."
+                            ) }}
+                            <span class="ai-hint">Raise this if students cutting it close to their renewal date worry you most</span>
+                        </label>
+                        <div class="ai-field-input">
+                            <input type="number" min="0" max="100" id="weight_renewal_history"
+                                   name="weight_renewal_history" value="{{ settings.weight_renewal_history }}">
+                            <span>%</span>
+                        </div>
+                    </div>
+                    <div class="ai-field-row">
+                        <label for="weight_membership_duration">
+                            Membership plan length
+                            {{ aic.info_tip(
+                                "This checks whether students with longer plans usually continue longer.",
+                                "if yearly or long-term members usually stay much longer than monthly ones.",
+                                "if plan length doesn't make much difference for your students."
+                            ) }}
+                            <span class="ai-hint">Raise this if students on short (monthly) plans tend to leave more often</span>
+                        </label>
+                        <div class="ai-field-input">
+                            <input type="number" min="0" max="100" id="weight_membership_duration"
+                                   name="weight_membership_duration" value="{{ settings.weight_membership_duration }}">
+                            <span>%</span>
+                        </div>
+                    </div>
+
+                    <div class="ai-weight-bars">
+                        <div class="ai-weight-row">
+                            <span>Late payments</span>
+                            <div class="ai-weight-track">
+                                <div class="ai-weight-fill" id="weightFillPayment"
+                                     style="width:{{ settings.weight_payment_delay }}%"></div>
+                            </div>
+                            <span class="ai-weight-pct" id="weightPctPayment">{{ settings.weight_payment_delay }}%</span>
+                        </div>
+                        <div class="ai-weight-row">
+                            <span>Renewal timing</span>
+                            <div class="ai-weight-track">
+                                <div class="ai-weight-fill" id="weightFillRenewal"
+                                     style="width:{{ settings.weight_renewal_history }}%"></div>
+                            </div>
+                            <span class="ai-weight-pct" id="weightPctRenewal">{{ settings.weight_renewal_history }}%</span>
+                        </div>
+                        <div class="ai-weight-row">
+                            <span>Plan length</span>
+                            <div class="ai-weight-track">
+                                <div class="ai-weight-fill" id="weightFillMembership"
+                                     style="width:{{ settings.weight_membership_duration }}%"></div>
+                            </div>
+                            <span class="ai-weight-pct" id="weightPctMembership">{{ settings.weight_membership_duration }}%</span>
+                        </div>
+                        <div class="ai-weight-total-row" id="weightTotalRow">
+                            <span>Total</span>
+                            <div class="ai-weight-track">
+                                <div class="ai-weight-fill" id="weightFillTotal"
+                                     style="width:{{ [100, settings.weight_payment_delay + settings.weight_renewal_history + settings.weight_membership_duration]|min }}%"></div>
+                            </div>
+                            <span class="ai-weight-pct" id="weightPctTotal">{{ settings.weight_payment_delay + settings.weight_renewal_history + settings.weight_membership_duration }}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <button type="submit" class="ai-save-btn">Save Settings</button>
+    </form>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/ai_center_settings.js') }}"></script>
+{% endblock %}

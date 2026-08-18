@@ -17,6 +17,8 @@ from database.membership_queries import (
     get_active_membership,
     get_plan_pricing,
     get_admission_fee,
+    insert_membership,
+    DiscountColumnsUnavailable,
 )
 from utils.normalization import normalize_category, normalize_free_text
 
@@ -157,9 +159,14 @@ def create(student_id):
                 plan_pricing=plan_pricing, admission_fee=admission_fee
             )
 
+        # Pricing lookup must use the raw, pre-normalization plan value --
+        # normalize_category() below uppercases plan_name for storage, but
+        # plan_pricing/admission_fee are keyed by the Title-Case names shown
+        # on the form ("Monthly", "Quarterly", ...).
+        raw_plan = request.form.get("plan_name")
+
         try:
             paid_amount = float(request.form.get("paid_amount", 0) or 0)
-            due_amount = float(request.form.get("due_amount", 0) or 0)
         except ValueError:
             flash("Invalid amount entered.", "danger")
             return render_template(
@@ -167,21 +174,90 @@ def create(student_id):
                 plan_pricing=plan_pricing, admission_fee=admission_fee
             )
 
-        if paid_amount < 0 or due_amount < 0:
-            flash("Paid and due amounts cannot be negative.", "danger")
+        if paid_amount < 0:
+            flash("Paid amount cannot be negative.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
                 plan_pricing=plan_pricing, admission_fee=admission_fee
             )
 
-        total_fee = paid_amount + due_amount
+        # Total Payable is never taken from client input for standard plans
+        # -- it is derived from the admin-configured plan fee + admission
+        # fee (a one-time new-admission charge) so it can never drift from
+        # what Settings > Membership Settings says. Only "Custom" has no
+        # configured price, so it alone accepts a manually-entered total --
+        # and that entered value already represents the complete payable
+        # amount (including any admission charge the operator has folded
+        # in), so admission_fee is not added a second time for Custom.
+        if raw_plan == "Custom":
+            try:
+                total_fee = float(request.form.get("total_fee", 0) or 0)
+            except ValueError:
+                flash("Invalid Total Payable entered.", "danger")
+                return render_template(
+                    "memberships/create.html", student=student,
+                    plan_pricing=plan_pricing, admission_fee=admission_fee
+                )
+            if total_fee < 0:
+                flash("Total Payable cannot be negative.", "danger")
+                return render_template(
+                    "memberships/create.html", student=student,
+                    plan_pricing=plan_pricing, admission_fee=admission_fee
+                )
+        elif raw_plan in plan_pricing:
+            total_fee = plan_pricing[raw_plan]["fee"] + admission_fee
+        else:
+            flash("Membership plan is required.", "danger")
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
 
         if total_fee <= 0:
-            flash("Total fee must be greater than zero.", "danger")
+            flash("Total Payable must be greater than zero.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
                 plan_pricing=plan_pricing, admission_fee=admission_fee
             )
+
+        # Discount is a separate, staff-entered line item on top of Total
+        # Payable, never folded silently into it (ADR-46, same transparency
+        # principle as Plan Fee/Admission Fee not being merged into Paid).
+        # Final Payable = Total Payable - Discount.
+        try:
+            discount_amount = float(request.form.get("discount_amount", 0) or 0)
+        except ValueError:
+            flash("Invalid discount entered.", "danger")
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
+        discount_reason = normalize_free_text(request.form.get("discount_reason", ""))
+
+        if discount_amount < 0:
+            flash("Discount cannot be negative.", "danger")
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
+
+        if discount_amount >= total_fee:
+            flash("Discount cannot be greater than or equal to Total Payable.", "danger")
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
+
+        total_fee = total_fee - discount_amount
+
+        if paid_amount > total_fee:
+            flash("Paid cannot exceed Final Payable.", "danger")
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
+
+        pending_amount = total_fee - paid_amount
 
         # membership_id is assigned explicitly, not left to Supabase's
         # auto-assigned identity value -- same reasoning as
@@ -211,13 +287,26 @@ def create(student_id):
             "end_date": end_date,
             "total_fee": total_fee,
             "paid_amount": paid_amount,
-            "pending_amount": due_amount,
+            "pending_amount": pending_amount,
+            "discount_amount": discount_amount,
+            "discount_reason": discount_reason or None,
             "remarks": remarks,
             "membership_status": "Active",
         }
 
         try:
-            supabase.table("memberships").insert(membership_row).execute()
+            insert_membership(supabase, membership_row)
+        except DiscountColumnsUnavailable:
+            flash(
+                "Discounts aren't available yet on this system - the database "
+                "needs a one-time update. Contact your administrator, or "
+                "create this membership without a discount.",
+                "danger"
+            )
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee
+            )
         except APIError:
             flash(
                 "Could not create this membership due to a database error. "
@@ -321,6 +410,9 @@ def renew(student_id):
 
     settings = get_membership_settings(admin_id)
     plan_pricing = get_plan_pricing(settings)
+    # Admission fee is a one-time new-admission charge only (see create()
+    # above) -- deliberately not fetched/applied here. A renewal's Total
+    # Payable is the configured plan price alone.
 
     if request.method == "POST":
 
@@ -330,29 +422,56 @@ def renew(student_id):
         end_date = request.form.get("end_date")
         remarks = normalize_free_text(request.form.get("remarks"))
         payment_mode = request.form.get("payment_mode", "Cash")
+        raw_plan = request.form.get("plan_name")
 
         try:
             paid_amount = float(request.form.get("paid_amount", 0) or 0)
-            due_amount = float(request.form.get("due_amount", 0) or 0)
         except ValueError:
             flash("Invalid amount entered.", "danger")
             return render_template(
                 "memberships/renew.html", student=student, plan_pricing=plan_pricing
             )
 
-        if paid_amount < 0 or due_amount < 0:
-            flash("Paid and due amounts cannot be negative.", "danger")
+        if paid_amount < 0:
+            flash("Paid amount cannot be negative.", "danger")
             return render_template(
                 "memberships/renew.html", student=student, plan_pricing=plan_pricing
             )
 
-        total_fee = paid_amount + due_amount
+        if raw_plan == "Custom":
+            try:
+                total_fee = float(request.form.get("total_fee", 0) or 0)
+            except ValueError:
+                flash("Invalid Total Payable entered.", "danger")
+                return render_template(
+                    "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                )
+            if total_fee < 0:
+                flash("Total Payable cannot be negative.", "danger")
+                return render_template(
+                    "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                )
+        elif raw_plan in plan_pricing:
+            total_fee = plan_pricing[raw_plan]["fee"]
+        else:
+            flash("Membership plan is required.", "danger")
+            return render_template(
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+            )
 
         if total_fee <= 0:
-            flash("Total fee must be greater than zero.", "danger")
+            flash("Total Payable must be greater than zero.", "danger")
             return render_template(
                 "memberships/renew.html", student=student, plan_pricing=plan_pricing
             )
+
+        if paid_amount > total_fee:
+            flash("Paid cannot exceed Total Payable.", "danger")
+            return render_template(
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+            )
+
+        pending_amount = total_fee - paid_amount
 
         # Same explicit-id bridging as create() above - as of 2026-07-24
         # (ADR-29), computed from Supabase's own MAX(membership_id).
@@ -394,7 +513,7 @@ def renew(student_id):
             "end_date": end_date,
             "total_fee": total_fee,
             "paid_amount": paid_amount,
-            "pending_amount": due_amount,
+            "pending_amount": pending_amount,
             "remarks": remarks,
             "membership_status": "Active",
         }

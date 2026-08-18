@@ -239,3 +239,62 @@ def get_plan_pricing(settings):
 
 def get_admission_fee(settings):
     return settings["admission_fee"] if settings is not None else DEFAULT_ADMISSION_FEE
+
+
+# ---------------------------------------------------------------------------
+# Membership insert - tolerates discount_amount/discount_reason not existing
+# yet on a given Supabase project (ADR-46), without ADR-38's silent-strip
+# fallback: a discount is financial data, so a real discount that can't be
+# recorded fails the whole insert loudly instead of quietly disappearing.
+# ---------------------------------------------------------------------------
+
+_DISCOUNT_FIELDS = ("discount_amount", "discount_reason")
+
+_UNDEFINED_COLUMN_ERROR_CODES = {
+    "42703",     # raw Postgres "column does not exist" (surfaced by .select())
+    "PGRST204",  # PostgREST "column not found in schema cache" (surfaced by .insert()/.update())
+}
+
+
+def _is_undefined_column_error(error):
+    """True when the live database is missing a column PostgREST otherwise
+    validated the payload against - same detection database/settings_queries.py
+    uses for library_settings' *_capacity columns (ADR-38). `APIError.args[0]`
+    is a Python-repr string of the error dict, not an actual dict - matched
+    with a plain substring check rather than parsed, so a genuinely
+    unexpected error string doesn't get masked by a parse failure."""
+
+    details = error.args[0] if error.args else ""
+    if isinstance(details, dict):
+        code = details.get("code")
+    else:
+        code = str(details)
+    return any(marker in code for marker in _UNDEFINED_COLUMN_ERROR_CODES)
+
+
+class DiscountColumnsUnavailable(Exception):
+    """Raised when a membership row includes a real discount
+    (discount_amount != 0 or discount_reason set) but the live database
+    doesn't have discount_amount/discount_reason yet (ADR-46's ALTER TABLE
+    hasn't been run on this Supabase project). The caller must not insert
+    the membership in this case - total_fee already has the discount baked
+    in, so inserting without these columns would charge the discounted
+    price while silently losing the only record of why."""
+
+
+def insert_membership(supabase, payload):
+    """Insert a `memberships` row, tolerating discount_amount/discount_reason
+    not existing yet - but only when no real discount was actually entered
+    (both absent/zero, the common case for any admin not using the discount
+    box yet). If a real discount is present and the columns don't exist,
+    raises DiscountColumnsUnavailable instead of retrying without them."""
+
+    try:
+        supabase.table("memberships").insert(payload).execute()
+    except APIError as error:
+        if not _is_undefined_column_error(error):
+            raise
+        if payload.get("discount_amount") or payload.get("discount_reason"):
+            raise DiscountColumnsUnavailable() from error
+        fallback = {k: v for k, v in payload.items() if k not in _DISCOUNT_FIELDS}
+        supabase.table("memberships").insert(fallback).execute()

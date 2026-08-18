@@ -1,0 +1,185 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+AI Center - Student Risk Analysis
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/ai_center.css') }}">
+{% endblock %}
+
+{% block content %}
+
+{% import "components/ai_center_components.html" as aic %}
+
+<div class="container-fluid py-3 ai-center-page">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {{ aic.tabs('risk') }}
+
+    <div class="ai-section">
+        <h2 class="page-title mb-1">AI Center</h2>
+        <p class="page-subtitle mb-0">
+            Student Risk Analysis - look up any student to see their retention score,
+            the reasons behind it, and what to do next.
+        </p>
+    </div>
+
+    <div class="ai-autocomplete" id="aiStudentSearch" data-search-url="{{ url_for('ai_center.student_suggestions') }}">
+        <div class="ai-search-form">
+            <i class="bi bi-search"></i>
+            <input type="text" id="aiSearchInput" autocomplete="off"
+                   placeholder="Search student by name or mobile..."
+                   role="combobox" aria-autocomplete="list" aria-expanded="false"
+                   aria-controls="aiSuggestions">
+        </div>
+        <ul class="ai-suggestions" id="aiSuggestions" role="listbox" hidden></ul>
+    </div>
+
+    {% if risk %}
+
+        {% set student = risk.student %}
+        {% set level_class = 'risk-' ~ risk.level|lower %}
+        {% set level_bg_class = 'bg-risk-' ~ risk.level|lower %}
+
+        <div class="ai-section ai-student-grid">
+            <div class="ai-card ai-card-body ai-student-id">
+                <div class="ai-avatar">{{ (student.full_name or '?')[:2]|upper }}</div>
+                <div>
+                    <h4>
+                        {{ student.full_name }}
+                        {% if student.status == 'Active' %}
+                            <span class="ai-pill-active">Active</span>
+                        {% else %}
+                            <span class="ai-pill-inactive">{{ student.status or 'Unknown' }}</span>
+                        {% endif %}
+                    </h4>
+                    <p>
+                        {{ student.mobile or 'No mobile on file' }}
+                        {% if student.purpose %} &middot; {{ student.purpose }}{% endif %}
+                        {% if risk.latest_membership %} &middot; {{ risk.latest_membership.plan_name }} plan{% endif %}
+                    </p>
+                </div>
+            </div>
+
+            <div class="ai-card ai-card-body ai-score-block">
+                <p class="ai-card-header p mb-0" style="padding:0;">Retention Score</p>
+                <div class="ai-score-num {{ level_class }}">{{ risk.score }}%</div>
+                <div class="ai-score-label {{ level_class }}">{{ risk.level }} Risk</div>
+                <div class="ai-meter">
+                    <div class="ai-meter-fill {{ level_bg_class }}" style="width:{{ risk.score }}%"></div>
+                </div>
+                <div class="ai-meter-scale"><span>Low</span><span>Medium</span><span>High</span></div>
+            </div>
+
+            <div class="ai-card ai-card-body ai-badge-card">
+                <i class="bi bi-shield-check {{ level_class }}"></i>
+                <b class="{{ level_class }}">{{ risk.level }} Risk</b>
+                {% if risk.level == 'High' %}
+                    <span>Needs attention within 48 hours</span>
+                {% elif risk.level == 'Medium' %}
+                    <span>Worth a proactive follow-up</span>
+                {% else %}
+                    <span>No action needed right now</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="ai-section" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="ai-card">
+                <div class="ai-card-header">
+                    <h3>Why is this student at risk?</h3>
+                    <p>The exact rules that produced the {{ risk.score }}% score</p>
+                </div>
+                <div class="ai-card-body">
+                    {% if risk.reasons %}
+                        {% for r in risk.reasons %}
+                        <div class="ai-pair-item">
+                            <span class="ai-pair-dot {{ level_bg_class }}">{{ loop.index }}</span>
+                            {{ r.reason }}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="ai-pair-item">
+                            <span class="ai-pair-dot bg-risk-low">&check;</span>
+                            No risk signals detected - payments, plan length and renewal timing all look healthy.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="ai-card">
+                <div class="ai-card-header">
+                    <h3>Recommended actions</h3>
+                    <p>Matched 1:1 to the reason on the left</p>
+                </div>
+                <div class="ai-card-body">
+                    {% if risk.reasons %}
+                        {% for r in risk.reasons %}
+                        <div class="ai-pair-item">
+                            <span class="ai-pair-dot {{ level_bg_class }}">{{ loop.index }}</span>
+                            {{ r.action }}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="ai-pair-item">
+                            <span class="ai-pair-dot bg-risk-low">&check;</span>
+                            Nothing to do - keep an eye on this student at the next renewal.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="ai-section ai-card">
+            <div class="ai-card-header">
+                <h3>Key Information</h3>
+            </div>
+            <div class="ai-key-info">
+                <div class="ai-key-cell">
+                    <span>Total Days in Library</span>
+                    <b>{{ risk.key_info.total_days if risk.key_info.total_days is not none else '-' }}</b>
+                </div>
+                <div class="ai-key-cell ai-key-gap">
+                    <span>Total Visits</span>
+                    <b>&mdash;</b>
+                    <i>Not tracked yet</i>
+                </div>
+                <div class="ai-key-cell">
+                    <span>Total Paid</span>
+                    <b>₹{{ "{:,.0f}".format(risk.key_info.total_paid) }}</b>
+                </div>
+                <div class="ai-key-cell">
+                    <span>Pending Amount</span>
+                    <b>₹{{ "{:,.0f}".format(risk.key_info.pending_amount) }}</b>
+                </div>
+            </div>
+        </div>
+
+    {% else %}
+
+        <div class="ai-empty-state" id="aiEmptyState">
+            Search for a student by name or mobile number, then pick them from
+            the dropdown to see their retention risk score, the reasons behind
+            it, and what to do next.
+        </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/ai_center_search.js') }}"></script>
+{% endblock %}

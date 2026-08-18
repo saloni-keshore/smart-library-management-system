@@ -1,0 +1,99 @@
+{#
+    Panda AI Assistant - floating button + slide-out chat panel.
+    Included once from templates/layouts/base.html, so it appears on every
+    authenticated page. Renders nothing for a logged-out session (base.html
+    is app-only; auth pages use auth_base.html and never include this).
+
+    All data (insights, suggested questions, chat history) is fetched by
+    static/js/panda.js from panda/routes.py - this template only supplies
+    the empty markup shell and the endpoint URLs it needs.
+#}
+<div id="pandaWidget" class="panda-widget"
+     data-insights-url="{{ url_for('panda.insights') }}"
+     data-questions-url="{{ url_for('panda.suggested_questions') }}"
+     data-conversations-url="{{ url_for('panda.conversations') }}">
+
+    <button type="button" id="pandaToggleBtn" class="panda-toggle-btn" aria-expanded="false" aria-controls="pandaPanel" title="Ask Panda">
+        <span class="panda-toggle-emoji" aria-hidden="true">🐼</span>
+        <span id="pandaBadge" class="panda-badge" hidden>0</span>
+    </button>
+
+    <div id="pandaPanel" class="panda-panel" role="dialog" aria-label="Panda AI Assistant" hidden>
+
+        <div class="panda-header">
+            <div class="panda-header-identity">
+                <span class="panda-avatar" aria-hidden="true">🐼</span>
+                <div>
+                    <div class="panda-title">Panda</div>
+                    <div class="panda-subtitle">Your Smart Library Assistant</div>
+                </div>
+            </div>
+            <div class="panda-header-actions">
+                <button type="button" id="pandaHistoryBtn" class="panda-icon-btn" title="Chat history" aria-expanded="false">
+                    <i class="bi bi-clock-history"></i>
+                </button>
+                <button type="button" id="pandaNewChatBtn" class="panda-icon-btn" title="New chat">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+                <button type="button" id="pandaMinimizeBtn" class="panda-icon-btn" title="Minimize">
+                    <i class="bi bi-dash-lg"></i>
+                </button>
+                <button type="button" id="pandaCloseBtn" class="panda-icon-btn" title="Close">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="pandaHistoryPanel" class="panda-history-panel" hidden>
+            <div class="panda-history-header">
+                <span>Chat History</span>
+                <button type="button" id="pandaHistoryCloseBtn" class="panda-icon-btn" title="Back to chat">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <ul id="pandaHistoryList" class="panda-history-list"></ul>
+        </div>
+
+        <div id="pandaBody" class="panda-body">
+
+            <div id="pandaWelcome" class="panda-welcome">
+
+                <div class="panda-bubble panda-bubble-bot">
+                    Hi, I'm Panda 🐼 — I can surface insights about your library and, soon,
+                    answer questions directly. Real AI answers are coming in a future update.
+                </div>
+
+                <div class="panda-section">
+                    <div class="panda-section-title">
+                        <i class="bi bi-stars"></i>
+                        Today's AI Insights
+                    </div>
+                    <div id="pandaInsights" class="panda-insights">
+                        <div class="panda-insights-empty">Loading insights...</div>
+                    </div>
+                </div>
+
+                <div class="panda-section">
+                    <div class="panda-section-title">
+                        <i class="bi bi-chat-square-text"></i>
+                        Suggested Questions
+                    </div>
+                    <div id="pandaSuggestions" class="panda-suggestions"></div>
+                </div>
+
+            </div>
+
+            <div id="pandaMessages" class="panda-messages" hidden></div>
+
+        </div>
+
+        <form id="pandaInputForm" class="panda-input-bar" autocomplete="off">
+            <textarea id="pandaInput" class="panda-input" placeholder="Ask Panda anything..." rows="1" maxlength="2000"></textarea>
+            <button type="submit" id="pandaSendBtn" class="panda-send-btn" title="Send">
+                <i class="bi bi-send-fill"></i>
+            </button>
+        </form>
+
+    </div>
+
+</div>

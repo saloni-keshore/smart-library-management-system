@@ -1,0 +1,50 @@
+{#
+  AI Center - shared UI components
+  =================================
+  A tab bar plus a small inline-help tooltip, shared by the two AI Center
+  pages (Student Risk Analysis, Settings), following the same reasoning
+  components/bi_components.html was introduced for: real shared markup
+  across multiple pages, not a speculative library built ahead of need.
+
+  Usage:
+    {% import "components/ai_center_components.html" as aic %}
+    {{ aic.tabs('risk') }}
+    {{ aic.info_tip("What it does.", "increase it if...", "decrease it if...") }}
+#}
+
+{% macro tabs(active) %}
+<nav class="ai-tabbar" aria-label="AI Center sections">
+    <div class="ai-tabbar-eyebrow">
+        <i class="bi bi-stars"></i>
+        AI Center
+    </div>
+    <div class="ai-tabbar-inner">
+        <a class="ai-tab {{ 'active' if active == 'risk' }}"
+           href="{{ url_for('ai_center.index') }}">
+            <i class="bi bi-person-lines-fill"></i>
+            Student Risk Analysis
+        </a>
+        <a class="ai-tab {{ 'active' if active == 'settings' }}"
+           href="{{ url_for('ai_center.settings') }}">
+            <i class="bi bi-gear-fill"></i>
+            Settings
+        </a>
+    </div>
+</nav>
+{% endmacro %}
+
+{#
+  Small "ⓘ" icon that reveals a plain-language explanation on hover, tap or
+  keyboard focus. Kept content-only (what/increase/decrease) so every field
+  reads consistently instead of each caller inventing its own layout.
+#}
+{% macro info_tip(what, increase, decrease) %}
+<span class="ai-info-tip" tabindex="0" role="button" aria-label="More information">
+    <i class="bi bi-info-circle" aria-hidden="true"></i>
+    <span class="ai-info-popover" role="tooltip">
+        {{ what }}
+        <span class="ai-info-row"><b>Increase it</b> {{ increase }}</span>
+        <span class="ai-info-row"><b>Decrease it</b> {{ decrease }}</span>
+    </span>
+</span>
+{% endmacro %}

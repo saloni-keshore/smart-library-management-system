@@ -1,4 +1,6 @@
 """Students/Admission -> Membership -> Payment: the core money workflow."""
+import pytest
+
 from database.supabase_client import get_supabase_client
 from tests.conftest import (
     make_enquiry,
@@ -10,6 +12,7 @@ from tests.conftest import (
     create_membership,
     get_last_membership_id,
     get_membership_by_id,
+    save_membership_settings,
 )
 
 
@@ -236,7 +239,7 @@ def test_membership_create_zero_paid_zero_due_rejected(logged_in_client):
     client, admin = logged_in_client
     _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
     resp = create_membership(client, sid, paid_amount="0", due_amount="0")
-    assert b"Total fee must be greater than zero" in resp.data
+    assert b"Total Payable must be greater than zero" in resp.data
 
 
 def test_membership_create_negative_paid_rejected(logged_in_client):
@@ -246,11 +249,21 @@ def test_membership_create_negative_paid_rejected(logged_in_client):
     assert b"cannot be negative" in resp.data
 
 
-def test_membership_create_negative_due_rejected(logged_in_client):
+def test_membership_create_negative_total_fee_rejected(logged_in_client):
+    """Custom plan is the only one with a client-supplied Total Payable
+    (standard plans derive it server-side from membership_settings) -
+    this is where a negative total can actually reach validation."""
     client, admin = logged_in_client
     _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
-    resp = create_membership(client, sid, paid_amount="100", due_amount="-50")
+    resp = create_membership(client, sid, paid_amount="0", total_fee="-50")
     assert b"cannot be negative" in resp.data
+
+
+def test_membership_create_paid_exceeds_total_payable_rejected(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = create_membership(client, sid, paid_amount="150", total_fee="100")
+    assert b"Paid cannot exceed Final Payable" in resp.data
 
 
 def test_membership_create_non_numeric_amount_rejected(logged_in_client):
@@ -337,6 +350,115 @@ def test_membership_create_decimal_amount(logged_in_client):
     assert abs(total - 500.00) < 0.001
 
 
+def test_membership_create_standard_plan_total_fee_from_settings_plus_admission(logged_in_client):
+    """Regression for the bug where Total Fee silently included the
+    admission fee inside "Paid" instead of being derived from the
+    admin-configured plan price: Total Payable for a standard plan must
+    equal monthly_fee + admission_fee, and Pending must be the balance
+    (never added into Total Payable)."""
+    client, admin = logged_in_client
+    save_membership_settings(client, monthly_fee="2400", admission_fee="400")
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+
+    resp = create_membership(
+        client, sid, plan_name="Monthly", paid_amount="2000", total_fee="ignored-for-standard-plans",
+    )
+    assert b"Membership created successfully" in resp.data
+
+    mid = get_last_membership_id(sid)
+    m = get_membership_by_id(mid)
+    assert m["total_fee"] == 2800  # 2400 plan fee + 400 admission fee
+    assert m["paid_amount"] == 2000
+    assert m["pending_amount"] == 800  # balance, never folded into total_fee
+
+
+def test_membership_create_custom_plan_total_fee_is_manual(logged_in_client):
+    client, admin = logged_in_client
+    save_membership_settings(client, monthly_fee="2400", admission_fee="400")
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+
+    resp = create_membership(client, sid, plan_name="Custom", paid_amount="1000", total_fee="3000")
+    assert b"Membership created successfully" in resp.data
+
+    mid = get_last_membership_id(sid)
+    m = get_membership_by_id(mid)
+    assert m["total_fee"] == 3000
+    assert m["pending_amount"] == 2000
+
+
+def test_membership_create_discount_negative_rejected(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = create_membership(
+        client, sid, paid_amount="0", total_fee="1000", discount_amount="-50"
+    )
+    assert b"Discount cannot be negative" in resp.data
+
+
+def test_membership_create_discount_equal_to_total_rejected(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = create_membership(
+        client, sid, paid_amount="0", total_fee="1000", discount_amount="1000"
+    )
+    assert b"Discount cannot be greater than or equal to Total Payable" in resp.data
+
+
+def test_membership_create_discount_reduces_total_fee(logged_in_client):
+    """ADR-46: Total Payable = Plan Fee + Admission Fee, Discount is a
+    separate line item, Final Payable = Total Payable - Discount (stored as
+    total_fee). Skips if this Supabase project hasn't had the
+    discount_amount/discount_reason ALTER TABLE applied yet (see
+    database/supabase_migration.sql) - same not-yet-migrated skip pattern
+    tests/test_11_panda.py uses for its own new tables."""
+    client, admin = logged_in_client
+    save_membership_settings(client, monthly_fee="2400", admission_fee="400")
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+
+    resp = create_membership(
+        client, sid, plan_name="Monthly", paid_amount="2000",
+        discount_amount="300", discount_reason="Referral discount",
+    )
+
+    if b"available yet on this system" in resp.data:
+        pytest.skip(
+            "memberships.discount_amount/discount_reason columns not yet "
+            "added on this Supabase project"
+        )
+
+    assert b"Membership created successfully" in resp.data
+    mid = get_last_membership_id(sid)
+    m = get_membership_by_id(mid)
+    assert m["total_fee"] == 2500  # 2400 + 400 - 300
+    assert m["discount_amount"] == 300
+    assert m["discount_reason"] == "Referral discount"
+    assert m["paid_amount"] == 2000
+    assert m["pending_amount"] == 500
+
+
+def test_membership_create_discount_unavailable_fails_safely(logged_in_client):
+    """When discount_amount/discount_reason don't exist yet on this
+    Supabase project, a real discount must NOT silently vanish while the
+    student is still charged the discounted price (ADR-46) - membership
+    creation is blocked with a clear message instead, and nothing is saved."""
+    client, admin = logged_in_client
+    save_membership_settings(client, monthly_fee="2400", admission_fee="400")
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+
+    resp = create_membership(
+        client, sid, plan_name="Monthly", paid_amount="2000", discount_amount="300"
+    )
+
+    if b"Membership created successfully" in resp.data:
+        pytest.skip(
+            "memberships.discount_amount/discount_reason columns already "
+            "exist on this Supabase project"
+        )
+
+    assert b"available yet on this system" in resp.data
+    assert get_last_membership_id(sid) is None
+
+
 # ---------------------------------------------------------------------------
 # Membership renew
 # ---------------------------------------------------------------------------
@@ -357,14 +479,14 @@ def test_renew_success_expires_old_creates_new(logged_in_client):
     resp = client.post(
         f"/memberships/renew/{sid}",
         data={
-            "plan_name": "Monthly",
+            "plan_name": "Custom",
             "joining_date": "2026-08-22",
             "duration_days": "30",
             "end_date": "2026-09-21",
             "remarks": "renewal",
             "payment_mode": "UPI",
             "paid_amount": "500",
-            "due_amount": "0",
+            "total_fee": "500",
         },
         follow_redirects=True,
     )
@@ -391,18 +513,45 @@ def test_renew_zero_total_fee_rejected(logged_in_client):
     create_membership(client, sid, paid_amount="500", due_amount="0")
     resp = client.post(
         f"/memberships/renew/{sid}",
-        data={"plan_name": "Monthly", "joining_date": "2026-08-22", "duration_days": "30",
+        data={"plan_name": "Custom", "joining_date": "2026-08-22", "duration_days": "30",
               "end_date": "2026-09-21", "remarks": "x", "payment_mode": "Cash",
-              "paid_amount": "0", "due_amount": "0"},
+              "paid_amount": "0", "total_fee": "0"},
         follow_redirects=True,
     )
-    assert b"Total fee must be greater than zero" in resp.data
+    assert b"Total Payable must be greater than zero" in resp.data
 
 
 def test_renew_for_nonexistent_student(logged_in_client):
     client, admin = logged_in_client
     resp = client.get("/memberships/renew/999999999", follow_redirects=True)
     assert b"Student not found" in resp.data
+
+
+def test_renew_standard_plan_total_fee_excludes_admission_fee(logged_in_client):
+    """Regression: admission fee is a one-time new-admission charge only
+    (routes/membership.py's create()) - a renewal's Total Payable must be
+    the configured plan price alone, unlike Create's."""
+    client, admin = logged_in_client
+    save_membership_settings(client, monthly_fee="2400", admission_fee="400")
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, plan_name="Monthly", paid_amount="2800")
+
+    resp = client.post(
+        f"/memberships/renew/{sid}",
+        data={
+            "plan_name": "Monthly", "joining_date": "2026-08-22", "duration_days": "30",
+            "end_date": "2026-09-21", "remarks": "renewal", "payment_mode": "Cash",
+            "paid_amount": "2000",
+        },
+        follow_redirects=True,
+    )
+    assert b"Membership renewed successfully" in resp.data
+
+    mid = get_last_membership_id(sid)
+    m = get_membership_by_id(mid)
+    assert m["total_fee"] == 2400  # plan fee only, no admission fee
+    assert m["paid_amount"] == 2000
+    assert m["pending_amount"] == 400
 
 
 # ---------------------------------------------------------------------------

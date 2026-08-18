@@ -8,13 +8,11 @@
                 Revenue Overview
             </h5>
 
-            <select class="form-select form-select-sm w-auto">
+            <select id="revenue-period-select" class="form-select form-select-sm w-auto">
 
-                <option>This Month</option>
+                <option value="this_year" selected>This Year</option>
 
-                <option>This Year</option>
-
-                <option>Last Year</option>
+                <option value="last_year">Last Year</option>
 
             </select>
 
@@ -62,6 +60,7 @@
                     <div class="chart-frame" data-chart-frame>
 
                         <img
+                            id="revenue-chart-img"
                             src="{{ url_for('static', filename='charts/revenue.png') }}"
                             class="chart-image"
                             alt="Revenue Chart">

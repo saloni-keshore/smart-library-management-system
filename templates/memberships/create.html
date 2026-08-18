@@ -180,7 +180,134 @@ Create Membership
 
                     </div>
 
+                </div>
+
+                <div class="row" id="fee_breakdown_row">
+
                     <div class="col-md-3 mb-3">
+
+                        <label class="form-label">
+
+                            Plan Fee (₹)
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="plan_fee_display"
+                            readonly
+                            value="0">
+
+                    </div>
+
+                    <div class="col-md-3 mb-3 d-none" id="admission_fee_group">
+
+                        <label class="form-label">
+
+                            Admission Fee (₹)
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="admission_fee_display"
+                            readonly
+                            value="0">
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label">
+
+                            Total Payable (₹)
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="total_payable_display"
+                            readonly
+                            value="0">
+
+                        <input
+                            type="number"
+                            class="form-control d-none"
+                            id="total_payable_input"
+                            name="total_fee"
+                            min="0"
+                            value="0">
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label">
+
+                            Discount (₹)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="discount_amount"
+                            name="discount_amount"
+                            placeholder="0"
+                            min="0"
+                            value="0">
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label">
+
+                            Discount Reason
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            name="discount_reason"
+                            placeholder="Optional">
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label">
+
+                            Final Payable (₹)
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="final_payable_display"
+                            readonly
+                            value="0">
+
+                        <div class="form-text">
+                            Total Payable minus Discount.
+                        </div>
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
 
                         <label class="form-label">
 
@@ -192,28 +319,31 @@ Create Membership
                             type="number"
                             class="form-control"
                             name="paid_amount"
-                            placeholder="Amount Paid"
+                            placeholder="Amount received now"
                             min="0"
                             value="0"
                             required>
 
                     </div>
 
-                    <div class="col-md-3 mb-3">
+                    <div class="col-md-4 mb-3">
 
                         <label class="form-label">
 
-                            Due Amount (₹)
+                            Pending (₹)
 
                         </label>
 
                         <input
-                            type="number"
+                            type="text"
                             class="form-control"
-                            name="due_amount"
-                            placeholder="0"
-                            min="0"
+                            id="pending_preview"
+                            readonly
                             value="0">
+
+                        <div class="form-text">
+                            Estimated - Final Payable minus Paid.
+                        </div>
 
                     </div>
 
@@ -299,6 +429,15 @@ const joiningDate = document.getElementById("joining_date");
 const duration = document.getElementById("duration");
 const endDate = document.getElementById("end_date");
 const paidAmount = document.querySelector("input[name='paid_amount']");
+const feeBreakdownRow = document.getElementById("fee_breakdown_row");
+const planFeeDisplay = document.getElementById("plan_fee_display");
+const admissionFeeGroup = document.getElementById("admission_fee_group");
+const admissionFeeDisplay = document.getElementById("admission_fee_display");
+const totalPayableDisplay = document.getElementById("total_payable_display");
+const totalPayableInput = document.getElementById("total_payable_input");
+const discountAmount = document.getElementById("discount_amount");
+const finalPayableDisplay = document.getElementById("final_payable_display");
+const pendingPreview = document.getElementById("pending_preview");
 
 // Sourced from Settings > Membership Settings (database/membership_settings_queries.py)
 // instead of hardcoded here, so an admin's configured plan days/fees are what
@@ -323,12 +462,77 @@ function calculateEndDate(){
 
 }
 
+// Total Payable is authoritative from the server for standard plans
+// (routes/membership.py's create() recomputes it independently and
+// ignores total_payable_input's value except when plan is Custom) -
+// this display is purely so staff can see what will be charged before
+// submitting. Plan Fee and Admission Fee are shown as separate line
+// items rather than folded silently into Paid, which was the bug.
+function updateTotalPayable(){
+
+    if(plan.value === "Custom"){
+
+        feeBreakdownRow.classList.add("d-none");
+        totalPayableDisplay.classList.add("d-none");
+        totalPayableInput.classList.remove("d-none");
+
+    }else if(planPricing[plan.value]){
+
+        const planFee = planPricing[plan.value].fee;
+        const total = planFee + admissionFee;
+
+        feeBreakdownRow.classList.remove("d-none");
+        totalPayableDisplay.classList.remove("d-none");
+        totalPayableInput.classList.add("d-none");
+
+        planFeeDisplay.value = planFee;
+
+        if(admissionFee > 0){
+            admissionFeeGroup.classList.remove("d-none");
+            admissionFeeDisplay.value = admissionFee;
+        }else{
+            admissionFeeGroup.classList.add("d-none");
+        }
+
+        totalPayableDisplay.value = total;
+        totalPayableInput.value = total;
+
+    }
+
+    updateFinalPayable();
+
+}
+
+// Discount is its own line item on top of Total Payable, never folded
+// silently into it (ADR-46) - Final Payable = Total Payable - Discount is
+// what routes/membership.py's create() actually stores as total_fee.
+// Cosmetic only; the server recomputes this independently.
+function updateFinalPayable(){
+
+    const visibleTotalInput = plan.value === "Custom" ? totalPayableInput : totalPayableDisplay;
+    const total = parseFloat(visibleTotalInput.value) || 0;
+    const discount = parseFloat(discountAmount.value) || 0;
+
+    finalPayableDisplay.value = Math.max(total - discount, 0);
+
+    updatePendingPreview();
+
+}
+
+function updatePendingPreview(){
+
+    const finalPayable = parseFloat(finalPayableDisplay.value) || 0;
+    const paid = parseFloat(paidAmount.value) || 0;
+
+    pendingPreview.value = Math.max(finalPayable - paid, 0);
+
+}
+
 plan.addEventListener("change", function(){
 
     if(plan.value !== "Custom" && planPricing[plan.value]){
 
         duration.value = planPricing[plan.value].days;
-        paidAmount.value = planPricing[plan.value].fee + admissionFee;
 
     }else{
 
@@ -336,6 +540,7 @@ plan.addEventListener("change", function(){
 
     }
 
+    updateTotalPayable();
     calculateEndDate();
 
 });
@@ -343,6 +548,12 @@ plan.addEventListener("change", function(){
 joiningDate.addEventListener("change", calculateEndDate);
 
 duration.addEventListener("input", calculateEndDate);
+
+paidAmount.addEventListener("input", updatePendingPreview);
+
+totalPayableInput.addEventListener("input", updateFinalPayable);
+
+discountAmount.addEventListener("input", updateFinalPayable);
 
 </script>
 

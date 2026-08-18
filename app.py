@@ -21,6 +21,9 @@ from routes.notification import notification_bp, get_notification_summary
 from routes.membership_analytics import membership_analytics_bp
 from routes.membership_distribution import membership_distribution_bp
 from routes.business_intelligence import business_intelligence_bp
+from routes.ai_center import ai_center_bp
+from routes.search import search_bp
+from panda.routes import panda_bp
 from database.notification_settings_queries import get_notification_settings_cached
 
 DEFAULT_NAV_NOTIFICATION_PREFS = {
@@ -74,6 +77,9 @@ def create_app(test_config=None):
     app.register_blueprint(membership_analytics_bp)
     app.register_blueprint(membership_distribution_bp)
     app.register_blueprint(business_intelligence_bp)
+    app.register_blueprint(ai_center_bp)
+    app.register_blueprint(search_bp)
+    app.register_blueprint(panda_bp)
 
     @app.before_request
     def enforce_request_security():

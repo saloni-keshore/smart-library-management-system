@@ -1,7 +1,7 @@
 """Dashboard, Business Intelligence, Membership Analytics/Distribution."""
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, admit_student, get_last_student_id,
-    create_membership, get_last_membership_id,
+    create_membership, get_last_membership_id, save_membership_settings,
 )
 
 
@@ -73,6 +73,95 @@ def test_dashboard_survives_membership_with_null_plan(logged_in_client):
     resp = client.get("/dashboard")
     assert resp.status_code == 200
     assert b"--" in resp.data or resp.status_code == 200
+
+
+def test_dashboard_revenue_chart_endpoint_requires_login(client):
+    resp = client.get("/dashboard/revenue-chart")
+    assert resp.status_code == 401
+
+
+def test_dashboard_revenue_chart_endpoint_switches_period(logged_in_client):
+    client, admin = logged_in_client
+    _admitted_student_with_membership(client, admin["admin_id"], paid_amount="500", due_amount="0")
+
+    resp_this_year = client.get("/dashboard/revenue-chart?period=this_year")
+    assert resp_this_year.status_code == 200
+    assert "image_url" in resp_this_year.get_json()
+
+    resp_last_year = client.get("/dashboard/revenue-chart?period=last_year")
+    assert resp_last_year.status_code == 200
+    assert "image_url" in resp_last_year.get_json()
+
+    # Cache-busting: the two responses must not resolve to the same URL,
+    # otherwise the browser would keep showing whichever period rendered
+    # first (the whole reason a "?t=" query string was added).
+    assert resp_this_year.get_json()["image_url"] != resp_last_year.get_json()["image_url"]
+
+    # Unknown period values must not error - they fall back to this_year.
+    resp_bogus = client.get("/dashboard/revenue-chart?period=bogus")
+    assert resp_bogus.status_code == 200
+    assert "image_url" in resp_bogus.get_json()
+
+
+def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
+    """Proves This Year and Last Year genuinely read different data: two
+    real payments for the same admin, one dated this year and one dated
+    last year, must land in their own year's bucket and nowhere else."""
+    client, admin = logged_in_client
+    from datetime import date
+    from database.supabase_client import get_supabase_client
+    from database.payment_queries import get_payments_for_admin
+    from utils.charts import _monthly_revenue_for_year
+
+    sid = _admitted_student_with_membership(
+        client, admin["admin_id"], paid_amount="500", due_amount="0"
+    )
+    mid = get_last_membership_id(sid)
+
+    payments = get_payments_for_admin(admin["admin_id"])
+    assert len(payments) == 1
+    this_year_payment_id = payments[0]["payment_id"]
+    this_year = date.today().year
+    last_year = this_year - 1
+
+    # Add a second, distinct payment for the same student dated last year
+    # by inserting it directly (bypassing the UI, which can't backdate).
+    # payment_id must be supplied explicitly - this table's identity
+    # sequence is never advanced since every real insert path (see
+    # database/payment_queries.py) computes its own next id the same way.
+    supabase = get_supabase_client()
+    next_id_row = (
+        supabase.table("payments")
+        .select("payment_id")
+        .order("payment_id", desc=True)
+        .limit(1)
+        .execute()
+    )
+    next_payment_id = (next_id_row.data[0]["payment_id"] + 1) if next_id_row.data else 1
+
+    supabase.table("payments").insert({
+        "payment_id": next_payment_id,
+        "membership_id": mid,
+        "student_id": sid,
+        "amount_paid": 300,
+        "payment_date": f"{last_year}-07-15",
+        "payment_mode": "Cash",
+        "receipt_number": f"QA-LASTYEAR-{sid}",
+    }).execute()
+
+    payments = get_payments_for_admin(admin["admin_id"])
+    assert len(payments) == 2
+
+    this_year_revenue = _monthly_revenue_for_year(payments, this_year)
+    last_year_revenue = _monthly_revenue_for_year(payments, last_year)
+
+    assert sum(this_year_revenue) == 500
+    assert sum(last_year_revenue) == 300
+    assert this_year_revenue != last_year_revenue
+
+    # And the admin-scoped source data is unaffected by the payment_id we
+    # already had - the this-year bucket still only reflects that one row.
+    assert this_year_payment_id in [p["payment_id"] for p in payments]
 
 
 # ---------------------------------------------------------------------------
@@ -243,14 +332,14 @@ def test_revenue_analytics_kpis_match_payment_and_membership_records(logged_in_c
     client.post(
         f"/memberships/renew/{sid_a}",
         data={
-            "plan_name": "Monthly",
+            "plan_name": "Custom",
             "joining_date": "2026-08-22",
             "duration_days": "30",
             "end_date": "2026-09-21",
             "remarks": "renewal",
             "payment_mode": "UPI",
             "paid_amount": "300",
-            "due_amount": "200",
+            "total_fee": "500",
         },
         follow_redirects=True,
     )
@@ -316,6 +405,7 @@ def test_occupancy_analytics_counts_active_students_by_shift(logged_in_client):
     status; Occupancy deliberately doesn't, see ADR-38)."""
     client, admin = logged_in_client
     admin_id = admin["admin_id"]
+    save_membership_settings(client)  # Monthly/Quarterly need a configured, nonzero fee
 
     make_enquiry(client, preferred_shift="Morning", purpose="UPSC")
     eid = get_last_enquiry_id(admin_id)
@@ -417,7 +507,7 @@ def test_membership_distribution_loads_with_no_data(logged_in_client):
 
 def test_membership_distribution_plan_percentages_sum_reasonable(logged_in_client):
     client, admin = logged_in_client
-    _admitted_student_with_membership(client, admin["admin_id"], plan_name="Monthly", paid_amount="500", due_amount="0")
+    _admitted_student_with_membership(client, admin["admin_id"], paid_amount="500", due_amount="0")
     resp = client.get("/membership-distribution/")
     assert resp.status_code == 200
 

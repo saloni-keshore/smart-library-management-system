@@ -110,9 +110,9 @@ def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in
     client.post(
         f"/memberships/renew/{sid}",
         data={
-            "plan_name": "Monthly", "joining_date": "2026-08-22", "duration_days": "30",
+            "plan_name": "Custom", "joining_date": "2026-08-22", "duration_days": "30",
             "end_date": "2026-09-21", "remarks": "renew", "payment_mode": "Cash",
-            "paid_amount": "500", "due_amount": "0",
+            "paid_amount": "500", "total_fee": "500",
         },
         follow_redirects=True,
     )

@@ -30,5 +30,24 @@
         }
     };
 
-    document.addEventListener("DOMContentLoaded", initChartSkeletons);
+    function initRevenuePeriodSelect() {
+        var select = document.getElementById("revenue-period-select");
+        var img = document.getElementById("revenue-chart-img");
+        if (!select || !img) return;
+
+        select.addEventListener("change", function () {
+            fetch("/dashboard/revenue-chart?period=" + encodeURIComponent(select.value))
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (data && data.image_url) {
+                        img.src = data.image_url;
+                    }
+                });
+        });
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        initChartSkeletons();
+        initRevenuePeriodSelect();
+    });
 })();

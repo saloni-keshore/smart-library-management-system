@@ -231,7 +231,36 @@ Renew Membership
 
                     </div>
 
-                    <div class="col-md-3 mb-3">
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-4 mb-3">
+
+                        <label class="form-label fw-bold">
+
+                            Total Payable (₹)
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="total_payable_display"
+                            readonly
+                            value="0">
+
+                        <input
+                            type="number"
+                            class="form-control d-none"
+                            id="total_payable_input"
+                            name="total_fee"
+                            min="0"
+                            value="0">
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
 
                         <label class="form-label fw-bold">
 
@@ -243,28 +272,31 @@ Renew Membership
                             type="number"
                             class="form-control"
                             name="paid_amount"
-                            placeholder="Amount Paid"
+                            placeholder="Amount received now"
                             min="0"
                             value="0"
                             required>
 
                     </div>
 
-                    <div class="col-md-3 mb-3">
+                    <div class="col-md-4 mb-3">
 
                         <label class="form-label fw-bold">
 
-                            Due Amount (₹)
+                            Pending (₹)
 
                         </label>
 
                         <input
-                            type="number"
+                            type="text"
                             class="form-control"
-                            name="due_amount"
-                            placeholder="0"
-                            min="0"
+                            id="pending_preview"
+                            readonly
                             value="0">
+
+                        <div class="form-text">
+                            Estimated - Total Payable minus Paid.
+                        </div>
 
                     </div>
 
@@ -357,10 +389,14 @@ const joiningDate = document.getElementById("joining_date");
 const duration = document.getElementById("duration");
 const endDate = document.getElementById("end_date");
 const paidAmount = document.querySelector("input[name='paid_amount']");
+const totalPayableDisplay = document.getElementById("total_payable_display");
+const totalPayableInput = document.getElementById("total_payable_input");
+const pendingPreview = document.getElementById("pending_preview");
 
 // Sourced from Settings > Membership Settings (database/membership_settings_queries.py)
 // instead of hardcoded here, so an admin's configured plan days/fees are what
-// actually get applied when renewing a membership.
+// actually get applied when renewing a membership. No admission fee here --
+// that's a one-time new-admission charge applied only on Create.
 const planPricing = {{ plan_pricing | tojson }};
 
 function calculateEndDate(){
@@ -380,12 +416,48 @@ function calculateEndDate(){
 
 }
 
+// Total Payable is authoritative from the server (routes/membership.py's
+// renew() recomputes it independently and ignores total_payable_input's
+// value except when plan is Custom) - this display just previews what
+// will be charged before submitting.
+function updateTotalPayable(){
+
+    if(plan.value === "Custom"){
+
+        totalPayableDisplay.classList.add("d-none");
+        totalPayableInput.classList.remove("d-none");
+
+    }else if(planPricing[plan.value]){
+
+        const total = planPricing[plan.value].fee;
+
+        totalPayableDisplay.classList.remove("d-none");
+        totalPayableInput.classList.add("d-none");
+
+        totalPayableDisplay.value = total;
+        totalPayableInput.value = total;
+
+    }
+
+    updatePendingPreview();
+
+}
+
+function updatePendingPreview(){
+
+    const visibleTotalInput = plan.value === "Custom" ? totalPayableInput : totalPayableDisplay;
+    const total = parseFloat(visibleTotalInput.value) || 0;
+    const paid = parseFloat(paidAmount.value) || 0;
+
+    pendingPreview.value = Math.max(total - paid, 0);
+
+}
+
 plan.addEventListener("change", function(){
 
     if(plan.value !== "Custom" && planPricing[plan.value]){
 
         duration.value = planPricing[plan.value].days;
-        paidAmount.value = planPricing[plan.value].fee;
 
     }else{
 
@@ -393,6 +465,7 @@ plan.addEventListener("change", function(){
 
     }
 
+    updateTotalPayable();
     calculateEndDate();
 
 });
@@ -400,6 +473,10 @@ plan.addEventListener("change", function(){
 joiningDate.addEventListener("change", calculateEndDate);
 
 duration.addEventListener("input", calculateEndDate);
+
+paidAmount.addEventListener("input", updatePendingPreview);
+
+totalPayableInput.addEventListener("input", updatePendingPreview);
 
 </script>
 

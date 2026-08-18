@@ -72,9 +72,11 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `joining_date` | DATE NOT NULL | |
 | `duration_days` | INTEGER | |
 | `end_date` | DATE NOT NULL | |
-| `total_fee` | REAL NOT NULL | |
+| `total_fee` | REAL NOT NULL | Final Payable (Plan Fee + Admission Fee, minus Discount) — see ADR-45/ADR-46 |
 | `paid_amount` | REAL DEFAULT 0 | |
 | `pending_amount` | REAL DEFAULT 0 | |
+| `discount_amount` | REAL DEFAULT 0 | Added 2026-08-17 (ADR-46) — Create only, needs a manual `ALTER TABLE` on a pre-existing Supabase project (TD-58) |
+| `discount_reason` | TEXT | Added 2026-08-17 (ADR-46) — optional, freeform |
 | `remarks` | TEXT | |
 | `membership_status` | TEXT DEFAULT `'Active'` | `'Active'` / `'Expired'` — set programmatically, not by a scheduled job (see below) |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |

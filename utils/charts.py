@@ -63,10 +63,29 @@ def _format_currency_short(value, _pos=None):
     return f"₹{int(value)}"
 
 
-def generate_revenue_chart(admin_id):
+def _monthly_revenue_for_year(payments, year):
+    """Sums each payment's amount_paid into its calendar month, restricted
+    to `year` - split out from generate_revenue_chart() so the this_year vs
+    last_year bucketing can be unit-tested without Supabase or matplotlib."""
+
+    year_str = str(year)
+    revenue = [0] * 12
+
+    for p in payments:
+        payment_date = p["payment_date"]
+        if not payment_date or not payment_date.startswith(year_str):
+            continue
+        month_index = int(payment_date[5:7]) - 1
+        revenue[month_index] += p["amount_paid"] or 0
+
+    return revenue
+
+
+def generate_revenue_chart(admin_id, period="this_year"):
     """Monthly revenue line chart, from Supabase `payments`/`students`
     (ADR-25) via database.payment_queries.get_payments_for_admin(), grouped
-    by calendar month for the current year in Python instead of SQL."""
+    by calendar month for the selected year (`period`: "this_year" or
+    "last_year") in Python instead of SQL."""
 
     payments = get_payments_for_admin(admin_id)
 
@@ -76,15 +95,8 @@ def generate_revenue_chart(admin_id):
         "Sep","Oct","Nov","Dec"
     ]
 
-    current_year = str(date.today().year)
-    revenue = [0] * 12
-
-    for p in payments:
-        payment_date = p["payment_date"]
-        if not payment_date or not payment_date.startswith(current_year):
-            continue
-        month_index = int(payment_date[5:7]) - 1
-        revenue[month_index] += p["amount_paid"] or 0
+    target_year = date.today().year - 1 if period == "last_year" else date.today().year
+    revenue = _monthly_revenue_for_year(payments, target_year)
 
     line_color = "#2563eb"
     x_idx = np.arange(12)

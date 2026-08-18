@@ -124,6 +124,27 @@ def test_admin_b_cannot_edit_admin_a_student(app):
     assert row["full_name"] != "HACKED"
 
 
+def test_admin_b_cannot_view_admin_a_student_risk_via_ai_center(app):
+    """database/ai_center_queries.py's get_student_detail() scopes by
+    admin_id - Admin B guessing/incrementing Admin A's student_id must fall
+    back to the empty state, never Admin A's name/score/reasons."""
+    client_a = app.test_client()
+    client_b = app.test_client()
+    a = _register_and_login(client_a, "iso_ai_a")
+    b = _register_and_login(client_b, "iso_ai_b")
+
+    make_enquiry(client_a, full_name="Secret A Student")
+    eid_a = get_last_enquiry_id(a["admin_id"])
+    admit_student(client_a, eid_a)
+    sid_a = get_last_student_id(a["admin_id"])
+    create_membership(client_a, sid_a, paid_amount="200", due_amount="800")
+
+    resp = client_b.get(f"/ai-center/?student_id={sid_a}", follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"Secret A Student" not in resp.data
+    assert b"Search for a student" in resp.data
+
+
 def test_admin_b_cannot_admit_against_admin_a_enquiry(app):
     client_a = app.test_client()
     client_b = app.test_client()

@@ -26,18 +26,30 @@
     <!-- Center Section -->
     <div class="navbar-center">
 
-        <div class="input-group">
+        <div class="navbar-search" id="globalSearch" data-search-url="{{ url_for('search.suggestions') }}">
 
-            <span class="input-group-text bg-white border-end-0">
+            <div class="input-group">
 
-                <i class="bi bi-search"></i>
+                <span class="input-group-text bg-white border-end-0">
 
-            </span>
+                    <i class="bi bi-search"></i>
 
-            <input
-                type="text"
-                class="form-control border-start-0"
-                placeholder="Search students, fees, payments...">
+                </span>
+
+                <input
+                    type="text"
+                    id="globalSearchInput"
+                    class="form-control border-start-0"
+                    autocomplete="off"
+                    placeholder="Search students, fees, payments..."
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded="false"
+                    aria-controls="globalSearchSuggestions">
+
+            </div>
+
+            <ul class="navbar-search-suggestions" id="globalSearchSuggestions" role="listbox" hidden></ul>
 
         </div>
 

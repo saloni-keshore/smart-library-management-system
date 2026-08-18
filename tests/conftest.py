@@ -145,8 +145,14 @@ def get_student_by_id(student_id):
 
 
 def create_membership(client, student_id, **overrides):
+    """Defaults to the "Custom" plan so callers' paid_amount/due_amount
+    directly control total_fee (routes/membership.py trusts a manually
+    entered total_fee only for Custom - standard plans derive it from
+    that admin's membership_settings, which most tests never seed).
+    due_amount is folded into total_fee here rather than posted as-is,
+    since the route no longer reads a due_amount field at all."""
     data = {
-        "plan_name": "Monthly",
+        "plan_name": "Custom",
         "joining_date": "2026-07-22",
         "duration": "30",
         "end_date": "2026-08-21",
@@ -156,8 +162,36 @@ def create_membership(client, student_id, **overrides):
         "due_amount": "0",
     }
     data.update(overrides)
+    due_amount = data.pop("due_amount", "0")
+    if "total_fee" not in data:
+        try:
+            data["total_fee"] = str(float(data["paid_amount"]) + float(due_amount))
+        except (TypeError, ValueError):
+            # paid_amount/due_amount isn't numeric - let the route's own
+            # parsing surface the real "Invalid amount entered" error
+            # rather than crashing test setup here.
+            data["total_fee"] = due_amount
     resp = client.post(f"/memberships/create/{student_id}", data=data, follow_redirects=True)
     return resp
+
+
+def save_membership_settings(client, **overrides):
+    """POSTs Settings > Membership Settings so plan_pricing/admission_fee
+    are non-default for this admin - required before create_membership()/
+    the /memberships/renew POST is called with a standard plan_name
+    (Monthly/Quarterly/Half-Yearly/Yearly), since those derive total_fee
+    from this data server-side rather than trusting client input."""
+    data = {
+        "monthly_fee": "500", "monthly_days": "30",
+        "quarterly_fee": "1400", "quarterly_days": "90",
+        "half_yearly_fee": "2700", "half_yearly_days": "180",
+        "yearly_fee": "5000", "yearly_days": "365",
+        "admission_fee": "100", "late_fee_per_day": "10",
+        "renewal_grace_days": "7",
+        "auto_expiry": "on", "allow_early_renewal": "on",
+    }
+    data.update(overrides)
+    return client.post("/settings/membership", data=data, follow_redirects=True)
 
 
 def get_last_membership_id(student_id):
