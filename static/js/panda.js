@@ -31,6 +31,16 @@ document.addEventListener("DOMContentLoaded", function () {
     var currentConversationId = null;
     var insightsLoaded = false;
 
+    // Shown whenever a Panda request comes back unauthenticated (401), or
+    // the server rejected it before it reached a Panda route at all (e.g.
+    // the app-wide CSRF guard in app.py's enforce_request_security aborts
+    // with an HTML error page, not JSON, when the session has lapsed) -
+    // the session/CSRF token from the page load no longer matches, so
+    // "please try again" would just fail the same way again. Distinct from
+    // CHAT_UNAVAILABLE_RESPONSE's message (panda/routes.py), which is a
+    // real, different condition (chat tables not migrated yet).
+    var SESSION_EXPIRED_MESSAGE = "Your session has expired. Please refresh the page and log in again.";
+
     function escapeHtml(value) {
         var div = document.createElement("div");
         div.textContent = value === null || value === undefined ? "" : String(value);
@@ -46,8 +56,18 @@ document.addEventListener("DOMContentLoaded", function () {
         return fetch(url, options).then(function (response) {
             return response.json().then(function (data) {
                 return { ok: response.ok, status: response.status, data: data };
+            }).catch(function () {
+                // Non-JSON body (e.g. the CSRF-guard's HTML error page from
+                // a lapsed session) - surface it as a normal failed result
+                // instead of rejecting the whole promise, so callers can
+                // still inspect the status code.
+                return { ok: false, status: response.status, data: {}, parseError: true };
             });
         });
+    }
+
+    function isSessionLapse(result) {
+        return result.status === 401 || result.parseError === true;
     }
 
     // ------------------------------------------------------------------
@@ -177,7 +197,11 @@ document.addEventListener("DOMContentLoaded", function () {
             return Promise.resolve(currentConversationId);
         }
         return jsonFetch(conversationsUrl, { method: "POST" }).then(function (result) {
-            if (!result.ok) throw new Error(result.data.error || "chat_unavailable");
+            if (!result.ok) {
+                var error = new Error(result.data.error || "chat_unavailable");
+                error.sessionLapse = isSessionLapse(result);
+                throw error;
+            }
             currentConversationId = result.data.conversation.conversation_id;
             return currentConversationId;
         });
@@ -200,12 +224,16 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         }).then(function (result) {
             if (!result.ok) {
-                appendMessage("assistant", result.data.message || "Panda's chat history isn't available right now.");
+                appendMessage("assistant", isSessionLapse(result)
+                    ? SESSION_EXPIRED_MESSAGE
+                    : (result.data.message || "Panda's chat history isn't available right now."));
                 return;
             }
             appendMessage("assistant", result.data.assistant_message.content);
-        }).catch(function () {
-            appendMessage("assistant", "Something went wrong reaching Panda. Please try again.");
+        }).catch(function (error) {
+            appendMessage("assistant", error && error.sessionLapse
+                ? SESSION_EXPIRED_MESSAGE
+                : "Something went wrong reaching Panda. Please try again.");
         }).finally(function () {
             sendBtn.disabled = false;
         });
@@ -246,7 +274,10 @@ document.addEventListener("DOMContentLoaded", function () {
         historyList.innerHTML = '<li class="panda-history-empty">Loading...</li>';
         jsonFetch(conversationsUrl, { method: "GET", headers: {} }).then(function (result) {
             if (!result.ok) {
-                historyList.innerHTML = '<li class="panda-history-empty">' + escapeHtml(result.data.message || "Chat history isn't available yet.") + '</li>';
+                var message = isSessionLapse(result)
+                    ? SESSION_EXPIRED_MESSAGE
+                    : (result.data.message || "Chat history isn't available yet.");
+                historyList.innerHTML = '<li class="panda-history-empty">' + escapeHtml(message) + '</li>';
                 return;
             }
             renderHistory(result.data.conversations || []);

@@ -2,6 +2,7 @@ import sys
 import os
 import random
 import string
+from datetime import date, timedelta
 
 import pytest
 
@@ -155,7 +156,7 @@ def create_membership(client, student_id, **overrides):
         "plan_name": "Custom",
         "joining_date": "2026-07-22",
         "duration": "30",
-        "end_date": "2026-08-21",
+        "end_date": (date.today() + timedelta(days=30)).isoformat(),
         "remarks": "auto-created by QA suite",
         "payment_mode": "Cash",
         "paid_amount": "500",

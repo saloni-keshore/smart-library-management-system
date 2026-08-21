@@ -1,13 +1,16 @@
 """Prompt/persona scaffolding for Panda's future LLM integration, plus the
-Phase 1 placeholder reply generator that stands in for it today.
+honest fallback reply generator for questions panda/intents.py (Part 1,
+"Ask") doesn't recognize.
 
 Nothing in this file calls a language model. `SYSTEM_PERSONA` and
 `READ_ONLY_RULES` exist now so that when a real LLM is wired into
 panda/services.py's send_message(), the system prompt it needs already has
 a single, reviewed home instead of being invented ad hoc at integration
-time. Until then, `generate_placeholder_reply()` is the only thing that
-produces an "assistant" message, and it is a fixed, honest template - never
-a fabricated answer dressed up as one.
+time. `generate_placeholder_reply()` is no longer the only thing that
+produces an "assistant" message - panda/intents.py's rule-based classifier
+answers recognized questions with real data first - but it's still the
+fallback for a genuinely unrecognized message, and it stays a fixed,
+honest template - never a fabricated answer dressed up as one.
 """
 
 SYSTEM_PERSONA = """You are Panda, the Smart Library Management System's in-app assistant.
@@ -42,8 +45,13 @@ model to refuse; once a real model exists, both layers apply."""
 SUGGESTED_QUESTIONS = (
     "How many memberships are expiring soon?",
     "What's my revenue trend this month?",
+    "Why is my revenue up or down this month?",
+    "How can I increase profit?",
+    "What's expected next month?",
     "Which shift has the most free seats?",
     "How do I add a new student?",
+    "How can I retain students?",
+    "How can I manage cash?",
 )
 
 
@@ -56,9 +64,10 @@ _PLACEHOLDER_REPLY = (
 
 
 def generate_placeholder_reply(user_message):
-    """The dummy 'assistant' response used everywhere in this phase, in
-    place of a real LLM call. Deliberately does not try to pattern-match or
-    fake an answer to `user_message` - an honest "I can't do this yet" beats
-    a scripted reply that looks like real understanding it doesn't have."""
+    """The fallback 'assistant' response for a message panda/intents.py
+    couldn't classify into any recognized intent, in place of a real LLM
+    call. Deliberately does not try to pattern-match or fake an answer to
+    `user_message` itself - an honest "I can't do this yet" beats a
+    scripted reply that looks like real understanding it doesn't have."""
 
     return _PLACEHOLDER_REPLY

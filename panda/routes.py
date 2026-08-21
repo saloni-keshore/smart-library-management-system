@@ -74,7 +74,8 @@ def messages(conversation_id):
 
     try:
         if request.method == "POST":
-            text = (request.get_json(silent=True) or {}).get("message", "").strip()
+            raw_message = (request.get_json(silent=True) or {}).get("message")
+            text = raw_message.strip() if isinstance(raw_message, str) else ""
             if not text:
                 return jsonify({"error": "empty_message"}), 400
             if len(text) > MAX_MESSAGE_LENGTH:

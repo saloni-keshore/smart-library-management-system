@@ -7,7 +7,7 @@ future mobile API) ever needs the same behavior.
 """
 
 from database import panda_queries
-from panda import notifications, prompts
+from panda import intents, notifications, prompts
 
 
 def get_today_insights(admin_id):
@@ -47,14 +47,16 @@ def get_conversation_thread(admin_id, conversation_id):
 
 def send_message(admin_id, conversation_id, text):
     """Persists the admin's message, then persists and returns Panda's
-    (currently dummy - see panda/prompts.py) reply to it. Returns None if
-    this admin doesn't own conversation_id."""
+    reply to it - a real, rule-based intent classification and answer
+    (see panda/intents.py) for recognized questions, or prompts.py's honest
+    placeholder for anything it doesn't recognize yet. Returns None if this
+    admin doesn't own conversation_id."""
 
     user_message = panda_queries.add_message(admin_id, conversation_id, "user", text)
     if user_message is None:
         return None
 
-    reply_text = prompts.generate_placeholder_reply(text)
+    reply_text = intents.generate_reply(admin_id, text)
     assistant_message = panda_queries.add_message(admin_id, conversation_id, "assistant", reply_text)
 
     return {"user_message": user_message, "assistant_message": assistant_message}

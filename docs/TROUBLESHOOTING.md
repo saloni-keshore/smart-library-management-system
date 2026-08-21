@@ -42,6 +42,12 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 **Cause:** Flask's session cookie is signed with `SECRET_KEY` (set in `app.py` from the `SECRET_KEY` env var, defaulting to a fixed literal string). If the env var changes between process restarts, every existing session cookie fails to validate and is treated as empty.
 **Check:** is `SECRET_KEY` set in the environment, and is it stable across restarts? In `debug=True` dev mode, the auto-reloader restarts the *same* process config, so this is usually only an issue across full manual restarts with a different environment.
 
+## Panda shows "Something went wrong reaching Panda" or "Chat history isn't available yet."
+
+**Cause (historical, fixed 2026-08-20):** both are generic, misleading text for the same underlying condition — the admin's session had lapsed (expired, or the cookie was cleared) by the time the widget sent the request. Before the fix, `static/js/panda.js` couldn't tell a real "something went wrong reaching Panda" (a genuine network error) apart from a plain `401 Unauthorized`, and couldn't handle app.py's app-wide `enforce_request_security()` CSRF guard rejecting a `POST` with an HTML error page (not JSON) before the request ever reached `panda/routes.py`. See the 2026-08-20 CHANGELOG entry and TD-64 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+**If you see this now:** it means the session really has lapsed — refresh the page and log in again; the tables/feature are fine (verify directly: `panda_conversations`/`panda_messages` exist and are queryable via `database/panda_queries.py`, distinct from `CHAT_UNAVAILABLE_RESPONSE`'s "isn't set up yet" 503, which only fires if those tables genuinely don't exist).
+**Where it surfaces:** the Panda chat widget on any authenticated page, most often after the browser tab has sat open past `PERMANENT_SESSION_LIFETIME` (60 minutes by default, `config.py`).
+
 ## Cross-admin data appears (Admin A sees Admin B's students/memberships/cashbook rows)
 
 **Cause:** there is no framework-level tenant isolation — every query must manually filter by `admin_id` (directly, or via a join to a table that has it, e.g. `memberships`/`payments` via `students.admin_id`). This is a manual convention (ADR-2 in [DECISIONS.md](DECISIONS.md)), not something SQLite or Flask enforces.
