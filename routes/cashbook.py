@@ -21,6 +21,7 @@ from database.cashbook_queries import (
     get_transaction_by_id,
     update_manual_transaction
 )
+from database.payment_queries import get_unsynced_payment_count
 from database.audit_queries import get_recent_audit_log
 from database.cashbook_categories import (
     MANUAL_INCOME_CATEGORIES,
@@ -229,6 +230,11 @@ def index():
     revenue_source_chart = _build_category_chart(get_income_category_totals(admin_id))
     payment_method_chart = _build_payment_method_chart(admin_id)
 
+    # TD-43/ADR-53: payments whose automatic Cashbook Income entry failed to
+    # record (even after insert_income_entry()'s own retry) - surfaced here
+    # instead of staying a silent gap in the ledger.
+    unsynced_payment_count = get_unsynced_payment_count(admin_id)
+
     return render_template(
         "cashbook/index.html",
         ledger=ledger,
@@ -252,7 +258,8 @@ def index():
         income_expense_chart=income_expense_chart,
         expense_category_chart=expense_category_chart,
         revenue_source_chart=revenue_source_chart,
-        payment_method_chart=payment_method_chart
+        payment_method_chart=payment_method_chart,
+        unsynced_payment_count=unsynced_payment_count
     )
 
 

@@ -82,6 +82,7 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 
 **Cause:** as of 2026-07-22 (ADR-13), `routes/payment.py`'s `collect()` and `routes/membership.py`'s `create()`/`renew()` wrap their payment-recording sequence in `try/except sqlite3.Error: conn.rollback()`. This is the intended, safe failure mode — previously the same underlying error (most likely a `receipt_number` `UNIQUE` collision) would raise an uncaught `sqlite3.IntegrityError` and produce Flask's default error page instead of a usable message.
 **Fix:** retry the submission — `conn.rollback()` guarantees the membership/payment/cashbook rows from the failed attempt were not partially written, so retrying is safe. If it fails repeatedly for the same admin, inspect `library_settings.next_receipt_number` for that admin directly; a manually edited/duplicated value could be colliding with an existing `payments.receipt_number`.
+**Not the same as (as of 2026-08-21, ADR-53):** if you instead see a *blue/info* "This membership was already created" / "This payment was already recorded" flash and a redirect, that's TD-30's fix working as intended, not an error — it means the exact same form was submitted twice (same `idempotency_key`) and the second submission was correctly recognized as a duplicate rather than creating a second row. See the new entry below.
 
 ## Settings → Notification Settings redirects me to Library Profile
 
@@ -146,3 +147,36 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 ## A Jinja `BuildError: Could not build url for endpoint '...'`
 
 **Cause:** cross-blueprint redirects/links use `url_for('<blueprint>.<function>')` strings, not Python imports — renaming a blueprint or a route function breaks these silently until the URL is actually requested. See [09_DEPENDENCY_MAP.md](09_DEPENDENCY_MAP.md)'s "Cross-blueprint references" section for the known list of these couplings before renaming anything in `routes/student.py`, `routes/membership.py`, `routes/cashbook.py`, or `routes/setting.py`.
+
+## Double-clicking Collect Payment / Create Membership / Renew Membership still creates two rows
+
+**Cause (as of 2026-08-21, TD-30/ADR-53):** double-submit protection relies on a `payments.idempotency_key`/`memberships.idempotency_key` `UNIQUE` column that must be added by hand on any Supabase project provisioned before this fix — this app has no `exec_sql`/DDL RPC (ADR-14), so `database/supabase_migration.sql`'s `CREATE TABLE IF NOT EXISTS` alone doesn't retrofit an already-existing table. Until the column exists, `database/membership_queries.py`'s `insert_membership()`/`database/payment_queries.py`'s `record_payment()` detect the "column not found" error and silently fall back to the pre-fix behavior (always insert, no dedup) — nothing breaks, but nothing is protected either. See **TD-66** in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+**Fix:** run this project's pending `ALTER TABLE` statements (documented inline in `database/supabase_migration.sql`, next to each column's `CREATE TABLE` block) once in the Supabase SQL Editor:
+```sql
+ALTER TABLE memberships ADD COLUMN IF NOT EXISTS idempotency_key TEXT UNIQUE;
+ALTER TABLE payments
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT UNIQUE,
+  ADD COLUMN IF NOT EXISTS cashbook_synced BOOLEAN DEFAULT TRUE;
+```
+A fresh project provisioned via [PROVISIONING.md](PROVISIONING.md) gets these automatically and never hits this.
+
+## Cashbook shows a "payment(s) missing a matching ledger entry" banner
+
+**Cause (as of 2026-08-21, TD-43/ADR-53):** the automatic Cashbook Income entry for a payment (`database/cashbook_queries.py`'s `insert_income_entry()`) failed even after its own one retry — most likely a transient Supabase issue at the moment the payment was collected. The payment itself is real and was **not** rolled back (see ADR-53 in [DECISIONS.md](DECISIONS.md) for why) — `payments.cashbook_synced` was set to `FALSE` on that row instead, and `routes/cashbook.py`'s `index()` surfaces the count via this banner.
+**Fix:** there is no automated backfill yet — manually create the missing Cashbook entry for the affected payment(s) via a normal manual entry (Cashbook → Add), matching the payment's amount/date/category, then update `payments.cashbook_synced = TRUE` for that row directly in Supabase once reconciled. If the banner doesn't appear at all despite a known gap, check whether `payments.cashbook_synced` exists yet on this project — see the entry above.
+
+## `waitress-serve: command not found` (or `ModuleNotFoundError: No module named 'waitress'`)
+
+**Cause (historical — resolved 2026-08-21, ADR-53):** `docs/DEPLOYMENT.md` documented `waitress-serve --call wsgi:create_app` as the production launch command, but `waitress` was missing from `requirements.txt` — a fresh `pip install -r requirements.txt` never actually installed it.
+**If you still see this:** your `requirements.txt` predates the fix — pull the latest and re-run `pip install -r requirements.txt`. `requirements.txt` is UTF-16LE-encoded with a BOM — if you're editing it by hand and see garbled characters in a plain-text editor, that's why; use a tool/editor that respects the file's actual encoding rather than re-saving it as UTF-8, which would corrupt every other line too.
+
+## Dashboard/Membership Distribution 500s with `ValueError: Given lines do not intersect...`
+
+**Cause (found 2026-08-21, TD-68 — pre-existing, unrelated to ADR-53):** `utils/charts.py`'s `generate_membership_chart()` crashes when the pie chart ends up with **exactly two plan categories at an exactly 50/50 split** — the two wedge labels' leader lines land at exactly opposite angles, a degenerate case matplotlib's `connectionstyle="angle"` can't resolve. Confirmed live via a real admin whose Monthly/Custom membership counts happened to land on 6/6.
+**Fix:** none shipped yet — out of scope for the session that found it (see TD-68 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)) — closing it needs either a symmetric-split special case in `generate_membership_chart()` or a different `connectionstyle`.
+**Workaround:** create/renew one more membership under any plan for the affected admin to break the exact tie (any split other than an exact 50/50 across exactly two categories avoids the degenerate angle).
+
+## An operator suspects a deployment is connected to the wrong library's Supabase project
+
+**Cause:** under the one-deployment-per-library pilot model (ADR-53), each deployment must load exactly one library's own `.env`. `python-dotenv`'s `load_dotenv()` (used by both `config.py` and `database/supabase_client.py`) is called with no arguments, so it walks **upward through parent directories** looking for a `.env` if the deployment's own is missing or misnamed — it does not fail loudly, it silently uses whichever `.env` it finds first. If multiple libraries' deployments live under a shared parent folder, a misconfigured one can end up running against a different library's Supabase project entirely.
+**Fix:** check this deployment's log (`instance/smart-library.log`, or console on first run) for the `Connected Supabase project: ...<last-24-chars-of-URL>` line `app.py`'s `_log_connected_supabase_project()` writes at startup, and compare it against the intended project's URL. Then run `python scripts/verify_tenant_isolation.py` (with `--expected-admin-id <id>` if an admin already exists) — a `FAIL` result with unexpected data confirms the wrong project. See [PROVISIONING.md](PROVISIONING.md)'s Step B/D for the full prevention checklist (no `.env` in any parent directory of this deployment).

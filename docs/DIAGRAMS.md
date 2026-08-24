@@ -19,6 +19,7 @@ graph TD
     Root --> Templates["templates/"]
     Root --> Static["static/"]
     Root --> Utils["utils/"]
+    Root --> Scripts["scripts/ (verify_schema.py, verify_tenant_isolation.py — operator tools, not imported by the app, ADR-53)"]
     Root --> Docs["docs/"]
     Root --> Empty["models/ services/ reports/ tests/ backups/ .agents/ (all empty)"]
 
@@ -112,6 +113,7 @@ graph TD
     Cashbook --> CashQ
     Cashbook --> AuditQ
     Cashbook --> CatConst
+    Cashbook --> PaymentQ
     BI --> CashQ
     BI --> BiQ
     AICenter --> AICenterQ
@@ -181,6 +183,8 @@ Also as of 2026-08-19 (Panda Part 5 "Forecast", ADR-51): `panda/forecasting.py` 
 Also as of 2026-08-20 (Panda retention/cash topic expansion, ADR-52, not a sixth part of the progression): `panda/insights.py` gains five small functions (`get_retention_summary`, `get_risk_scoring_coverage`, `get_cash_collection_summary`, `get_expense_breakdown`, `get_expense_health`), all calling into `database/bi_queries.py` (`get_membership_retention`, `get_revenue_collection_summary`, `get_top_expense_categories`, `classify_expense_health`) or `database/membership_queries.py` (`get_admin_students`, already an existing edge from Part 2) — no new edge in either collapsed or literal form, since `panda_insights_py --> bi_queries_py` already exists from Part 1 onward, the same "no new edge" consequence ADR-50 already recorded. `panda/intents.py` gains no new edges either — `_reply_retention()`/`_reply_cash_management()` call `panda/insights.py` the same way every other `_reply_*` handler does.
 
 Also as of 2026-07-25 (Receipt Template Consolidation, unrelated to the SQLite→Supabase migration above): `Payment` gained a new `Payment --> ReceiptSettQ` edge — its new `receipt(payment_id)` route reads this admin's `library_settings` (branding/footer/print toggles) the same way `Setting`'s `receipt_settings()` already does, so the real post-payment receipt page can render the exact same `components/receipt_document.html` partial as the "Receipt Preview" card, with real data instead of the card's hardcoded mock values. `Membership`'s `create()`/`renew()` and `Payment`'s `collect()` now redirect to that page instead of straight to `Student`'s `view()` whenever a payment was actually recorded (see `docs/FILE_REFERENCE.md`'s `routes/payment.py`/`routes/membership.py` cards and `docs/DECISIONS.md`'s new ADR for the full rationale).
+
+Also as of 2026-08-21 (one-deployment-per-library provisioning; TD-30/TD-43 fix, ADR-53): `Cashbook` gains a new `Cashbook --> PaymentQ` edge — `routes/cashbook.py`'s `index()` calls the new `get_unsynced_payment_count(admin_id)` (TD-43's reconciliation banner). `MEMBERSHIPS`/`PAYMENTS` in the ER diagram above each gain a new `idempotency_key UK` column (TD-30's double-submit fix), and `PAYMENTS` also gains `cashbook_synced` (TD-43's fix) — both silently unenforced until a manual `ALTER TABLE` runs on an already-provisioned project (TD-66); a fresh project gets them automatically from `database/supabase_migration.sql`. No other edges changed — `PaymentQ`'s existing `PaymentQ --> CashQ` edge (line 143 above) is what `record_payment()`'s new `_flag_cashbook_unsynced()` and TD-43's retry (inside `CashQ`'s own `insert_income_entry()`) both run through; neither needed a new edge of its own. Two new standalone, unimported scripts (`scripts/verify_schema.py`, `scripts/verify_tenant_isolation.py`) were added for pre-/post-provisioning checks — deliberately outside this dependency graph (they're operator tools, not part of the running app; see `docs/FILE_REFERENCE.md`'s `scripts/` section) and outside diagram 1's folder-structure tree as a new `Root --> Scripts["scripts/ (verify_schema.py, verify_tenant_isolation.py — operator tools, not imported by the app)"]` node.
 
 ## 3. Request flow (Browser → Route → Database → Template)
 
@@ -271,6 +275,7 @@ erDiagram
         real paid_amount
         real pending_amount
         text membership_status
+        text idempotency_key UK "ADR-53, TD-30 fix"
     }
     PAYMENTS {
         int payment_id PK
@@ -278,6 +283,8 @@ erDiagram
         int student_id FK
         text receipt_number UK
         real amount_paid
+        text idempotency_key UK "ADR-53, TD-30 fix"
+        bool cashbook_synced "ADR-53, TD-43 fix"
     }
     CASHBOOK {
         int entry_id PK

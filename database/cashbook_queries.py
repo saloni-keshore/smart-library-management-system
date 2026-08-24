@@ -218,45 +218,63 @@ def insert_income_entry(
 
     Returns the generated reference_id, or None if the write didn't
     succeed (nothing to return - there is no longer a guaranteed copy).
+
+    As of 2026-08-21 (TD-43, ADR-53), this makes one bounded retry (two
+    attempts total) before giving up - most failures at this call site are
+    a transient blip (a brief Supabase hiccup), and retrying once here,
+    inline, is simpler than making every caller (routes/membership.py's
+    create()/renew(), routes/payment.py's collect(), all via
+    record_payment()) handle that themselves. A second attempt regenerates
+    reference_id/entry_id fresh rather than reusing the first attempt's
+    values, since those are derived from a live count/max query, not
+    pre-allocated - reusing stale values across attempts could itself
+    collide. record_payment() (database/payment_queries.py) is responsible
+    for what happens if both attempts fail - see its own
+    _flag_cashbook_unsynced().
     """
 
-    try:
-        supabase = get_supabase_client()
-        reference_id = _generate_reference_id(supabase, reference_prefix)
-        entry_id = _next_entry_id(supabase)
+    supabase = get_supabase_client()
 
-        details = (
-            f"Automatic Income of ₹{amount} recorded under '{category}' for "
-            f"{person or 'N/A'} via {source} ({reference_id})"
-        )
+    for _attempt in range(2):
+        try:
+            reference_id = _generate_reference_id(supabase, reference_prefix)
+            entry_id = _next_entry_id(supabase)
 
-        supabase.table("cashbook").insert({
-            "entry_id": entry_id,
-            "admin_id": admin_id,
-            "type": "Income",
-            "category": category,
-            "person": person,
-            "description": description,
-            "amount": amount,
-            "payment_method": payment_method,
-            "entry_date": entry_date,
-            "reference_id": reference_id,
-            "source": source,
-            "payment_id": payment_id,
-        }).execute()
-        supabase.table("audit_log").insert({
-            "admin_id": admin_id,
-            "entry_id": entry_id,
-            "action": "Auto-Created",
-            "details": details,
-        }).execute()
+            details = (
+                f"Automatic Income of ₹{amount} recorded under '{category}' for "
+                f"{person or 'N/A'} via {source} ({reference_id})"
+            )
 
-        return reference_id
-    except Exception:
-        # Best-effort only - see docstring above for why this must never
-        # raise past the caller's own transaction (routes/membership.py /
-        # routes/payment.py, both out of scope for this migration slice).
-        return None
+            supabase.table("cashbook").insert({
+                "entry_id": entry_id,
+                "admin_id": admin_id,
+                "type": "Income",
+                "category": category,
+                "person": person,
+                "description": description,
+                "amount": amount,
+                "payment_method": payment_method,
+                "entry_date": entry_date,
+                "reference_id": reference_id,
+                "source": source,
+                "payment_id": payment_id,
+            }).execute()
+            supabase.table("audit_log").insert({
+                "admin_id": admin_id,
+                "entry_id": entry_id,
+                "action": "Auto-Created",
+                "details": details,
+            }).execute()
+
+            return reference_id
+        except Exception:
+            # Best-effort only - see docstring above for why this must
+            # never raise past the caller's own transaction
+            # (routes/membership.py / routes/payment.py, both out of scope
+            # for this migration slice).
+            continue
+
+    return None
 
 
 def get_transaction_by_id(admin_id, entry_id):

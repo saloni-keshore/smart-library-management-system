@@ -27,6 +27,15 @@ Cashbook
         {% endif %}
     {% endwith %}
 
+    {% if unsynced_payment_count %}
+        <div class="alert alert-warning">
+            {{ unsynced_payment_count }} payment{{ 's' if unsynced_payment_count != 1 else '' }}
+            missing a matching Cashbook ledger entry. The payment{{ 's were' if unsynced_payment_count != 1 else ' was' }}
+            recorded successfully, but the automatic Income entry could not be created - contact
+            your administrator to reconcile.
+        </div>
+    {% endif %}
+
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
 

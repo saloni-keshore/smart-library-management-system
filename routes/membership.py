@@ -1,3 +1,5 @@
+import secrets
+
 from flask import (
     Blueprint,
     render_template,
@@ -18,6 +20,7 @@ from database.membership_queries import (
     get_plan_pricing,
     get_admission_fee,
     insert_membership,
+    find_membership_by_idempotency_key,
     DiscountColumnsUnavailable,
 )
 from utils.normalization import normalize_category, normalize_free_text
@@ -138,6 +141,18 @@ def create(student_id):
 
     if request.method == "POST":
 
+        # Idempotency (TD-30, ADR-53): the hidden token this form's GET
+        # render embedded (see the render_template call below). A
+        # double-click/back-button resubmit posts the same token twice -
+        # short-circuit here, before touching anything, instead of letting
+        # a second identical membership get created.
+        idempotency_key = request.form.get("idempotency_key") or None
+        if idempotency_key:
+            existing_membership = find_membership_by_idempotency_key(idempotency_key)
+            if existing_membership is not None:
+                flash("This membership was already created.", "info")
+                return redirect(url_for("student.view", student_id=student_id))
+
         plan_name = normalize_category(request.form.get("plan_name"))
         joining_date = request.form.get("joining_date")
         duration_days = _sanitize_int(request.form.get("duration"))
@@ -149,14 +164,16 @@ def create(student_id):
             flash("Membership plan is required.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if not (joining_date or "").strip():
             flash("Joining date is required.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         # Pricing lookup must use the raw, pre-normalization plan value --
@@ -171,14 +188,16 @@ def create(student_id):
             flash("Invalid amount entered.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if paid_amount < 0:
             flash("Paid amount cannot be negative.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         # Total Payable is never taken from client input for standard plans
@@ -196,13 +215,15 @@ def create(student_id):
                 flash("Invalid Total Payable entered.", "danger")
                 return render_template(
                     "memberships/create.html", student=student,
-                    plan_pricing=plan_pricing, admission_fee=admission_fee
+                    plan_pricing=plan_pricing, admission_fee=admission_fee,
+                    idempotency_key=secrets.token_urlsafe(24)
                 )
             if total_fee < 0:
                 flash("Total Payable cannot be negative.", "danger")
                 return render_template(
                     "memberships/create.html", student=student,
-                    plan_pricing=plan_pricing, admission_fee=admission_fee
+                    plan_pricing=plan_pricing, admission_fee=admission_fee,
+                    idempotency_key=secrets.token_urlsafe(24)
                 )
         elif raw_plan in plan_pricing:
             total_fee = plan_pricing[raw_plan]["fee"] + admission_fee
@@ -210,14 +231,16 @@ def create(student_id):
             flash("Membership plan is required.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if total_fee <= 0:
             flash("Total Payable must be greater than zero.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         # Discount is a separate, staff-entered line item on top of Total
@@ -230,7 +253,8 @@ def create(student_id):
             flash("Invalid discount entered.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
         discount_reason = normalize_free_text(request.form.get("discount_reason", ""))
 
@@ -238,14 +262,16 @@ def create(student_id):
             flash("Discount cannot be negative.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if discount_amount >= total_fee:
             flash("Discount cannot be greater than or equal to Total Payable.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         total_fee = total_fee - discount_amount
@@ -254,7 +280,8 @@ def create(student_id):
             flash("Paid cannot exceed Final Payable.", "danger")
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         pending_amount = total_fee - paid_amount
@@ -292,10 +319,11 @@ def create(student_id):
             "discount_reason": discount_reason or None,
             "remarks": remarks,
             "membership_status": "Active",
+            "idempotency_key": idempotency_key,
         }
 
         try:
-            insert_membership(supabase, membership_row)
+            existing_membership = insert_membership(supabase, membership_row)
         except DiscountColumnsUnavailable:
             flash(
                 "Discounts aren't available yet on this system - the database "
@@ -305,7 +333,8 @@ def create(student_id):
             )
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
         except APIError:
             flash(
@@ -315,8 +344,15 @@ def create(student_id):
             )
             return render_template(
                 "memberships/create.html", student=student,
-                plan_pricing=plan_pricing, admission_fee=admission_fee
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
             )
+
+        if existing_membership is not None:
+            # Lost a race to an earlier, identical submission that already
+            # created this membership (TD-30, ADR-53) - not an error.
+            flash("This membership was already created.", "info")
+            return redirect(url_for("student.view", student_id=student_id))
 
         receipt_number = None
         payment_id = None
@@ -333,7 +369,8 @@ def create(student_id):
                     remarks=remarks,
                     category="Admission Fee",
                     description=remarks or f"Admission payment - {plan_name}",
-                    source="Admission"
+                    source="Admission",
+                    idempotency_key=f"{idempotency_key}-payment" if idempotency_key else None
                 )
                 payment_id = get_payment_id_by_receipt_number(receipt_number)
             except APIError:
@@ -345,7 +382,8 @@ def create(student_id):
                 )
                 return render_template(
                     "memberships/create.html", student=student,
-                    plan_pricing=plan_pricing, admission_fee=admission_fee
+                    plan_pricing=plan_pricing, admission_fee=admission_fee,
+                    idempotency_key=secrets.token_urlsafe(24)
                 )
 
         if receipt_number:
@@ -362,7 +400,8 @@ def create(student_id):
 
     return render_template(
         "memberships/create.html", student=student,
-        plan_pricing=plan_pricing, admission_fee=admission_fee
+        plan_pricing=plan_pricing, admission_fee=admission_fee,
+        idempotency_key=secrets.token_urlsafe(24)
     )
 
 
@@ -416,6 +455,18 @@ def renew(student_id):
 
     if request.method == "POST":
 
+        # Idempotency (TD-30, ADR-53): the hidden token this form's GET
+        # render embedded. A double-click/back-button resubmit posts the
+        # same token twice - short-circuit here, before touching the
+        # previous membership's status, instead of expiring it twice or
+        # (the real risk) inserting a second new membership row.
+        idempotency_key = request.form.get("idempotency_key") or None
+        if idempotency_key:
+            existing_membership = find_membership_by_idempotency_key(idempotency_key)
+            if existing_membership is not None:
+                flash("This membership renewal was already recorded.", "info")
+                return redirect(url_for("student.view", student_id=student_id))
+
         plan_name = normalize_category(request.form.get("plan_name"))
         joining_date = request.form.get("joining_date")
         duration_days = _sanitize_int(request.form.get("duration_days"))
@@ -429,13 +480,15 @@ def renew(student_id):
         except ValueError:
             flash("Invalid amount entered.", "danger")
             return render_template(
-                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if paid_amount < 0:
             flash("Paid amount cannot be negative.", "danger")
             return render_template(
-                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if raw_plan == "Custom":
@@ -444,31 +497,36 @@ def renew(student_id):
             except ValueError:
                 flash("Invalid Total Payable entered.", "danger")
                 return render_template(
-                    "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                    "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                    idempotency_key=secrets.token_urlsafe(24)
                 )
             if total_fee < 0:
                 flash("Total Payable cannot be negative.", "danger")
                 return render_template(
-                    "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                    "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                    idempotency_key=secrets.token_urlsafe(24)
                 )
         elif raw_plan in plan_pricing:
             total_fee = plan_pricing[raw_plan]["fee"]
         else:
             flash("Membership plan is required.", "danger")
             return render_template(
-                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if total_fee <= 0:
             flash("Total Payable must be greater than zero.", "danger")
             return render_template(
-                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if paid_amount > total_fee:
             flash("Paid cannot exceed Total Payable.", "danger")
             return render_template(
-                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         pending_amount = total_fee - paid_amount
@@ -516,7 +574,10 @@ def renew(student_id):
             "pending_amount": pending_amount,
             "remarks": remarks,
             "membership_status": "Active",
+            "idempotency_key": idempotency_key,
         }
+
+        existing_membership = None
 
         try:
             if previously_active_ids:
@@ -524,7 +585,12 @@ def renew(student_id):
                     {"membership_status": "Expired"}
                 ).eq("student_id", student_id).eq("membership_status", "Active").execute()
 
-            supabase.table("memberships").insert(membership_row).execute()
+            # insert_membership() (database/membership_queries.py) instead of
+            # a raw .insert() - reused here for its idempotency handling
+            # (TD-30, ADR-53): renew() never sets discount_amount/
+            # discount_reason, so its DiscountColumnsUnavailable branch can
+            # never trigger for this call site.
+            existing_membership = insert_membership(supabase, membership_row)
         except APIError:
             if previously_active_ids:
                 supabase.table("memberships").update(
@@ -536,8 +602,18 @@ def renew(student_id):
                 "danger"
             )
             return render_template(
-                "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                idempotency_key=secrets.token_urlsafe(24)
             )
+
+        if existing_membership is not None:
+            # Lost a race to an earlier, identical submission that already
+            # renewed this membership (TD-30, ADR-53). The "expire previous"
+            # update above is idempotent either way (it only ever matches
+            # rows still 'Active'), so nothing needs reverting - just treat
+            # this as success, not a new renewal.
+            flash("This membership renewal was already recorded.", "info")
+            return redirect(url_for("student.view", student_id=student_id))
 
         receipt_number = None
         payment_id = None
@@ -554,7 +630,8 @@ def renew(student_id):
                     remarks=remarks,
                     category="Membership Renewal",
                     description=remarks or f"Membership renewal - {plan_name}",
-                    source="Renewal"
+                    source="Renewal",
+                    idempotency_key=f"{idempotency_key}-payment" if idempotency_key else None
                 )
                 payment_id = get_payment_id_by_receipt_number(receipt_number)
             except APIError:
@@ -569,7 +646,8 @@ def renew(student_id):
                     "danger"
                 )
                 return render_template(
-                    "memberships/renew.html", student=student, plan_pricing=plan_pricing
+                    "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+                    idempotency_key=secrets.token_urlsafe(24)
                 )
 
         if receipt_number:
@@ -585,5 +663,6 @@ def renew(student_id):
         return redirect(url_for("student.view", student_id=student_id))
 
     return render_template(
-        "memberships/renew.html", student=student, plan_pricing=plan_pricing
+        "memberships/renew.html", student=student, plan_pricing=plan_pricing,
+        idempotency_key=secrets.token_urlsafe(24)
     )

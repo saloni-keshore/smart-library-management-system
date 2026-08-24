@@ -107,6 +107,15 @@ CREATE TABLE IF NOT EXISTS memberships (
     discount_amount DOUBLE PRECISION DEFAULT 0,
     discount_reason TEXT,
 
+    -- Idempotency (TD-30, ADR-53) - a per-page-load token the Create/Renew
+    -- forms embed as a hidden field, so a double-click/back-button resubmit
+    -- of the exact same rendered form hits this UNIQUE constraint instead
+    -- of creating a second Active membership. NULL (no token posted, e.g.
+    -- an older cached page or a direct API call) is exempt from the
+    -- constraint - Postgres UNIQUE allows unlimited NULLs - so this never
+    -- blocks a submission that genuinely has nothing to compare against.
+    idempotency_key TEXT UNIQUE,
+
     remarks TEXT,
     membership_status TEXT DEFAULT 'Active',
 
@@ -137,6 +146,20 @@ CREATE TABLE IF NOT EXISTS memberships (
 -- entered (discount_amount left at 0) is unaffected either way - see
 -- ADR-46.
 
+-- 2026-08-21 (Idempotency fix, TD-30/ADR-53): idempotency_key above is new.
+-- Same manual-application requirement as every other column added after a
+-- project's first provisioning (ADR-14/38/46) - run by hand, once, in the
+-- Supabase SQL Editor:
+--
+--   ALTER TABLE memberships ADD COLUMN IF NOT EXISTS idempotency_key TEXT UNIQUE;
+--
+-- Unlike the discount columns, this one DOES silently degrade if skipped:
+-- database/membership_queries.py's insert_membership() detects the
+-- "column not found" error and retries the same insert without
+-- idempotency_key, so membership creation keeps working exactly as before
+-- on an un-migrated project - it just doesn't get the new double-submit
+-- protection yet. See ADR-53.
+
 
 -- Payments
 
@@ -158,6 +181,19 @@ CREATE TABLE IF NOT EXISTS payments (
 
     remarks TEXT,
 
+    -- Idempotency (TD-30, ADR-53) - same shape/purpose as memberships'
+    -- idempotency_key above; the Collect Payment form's hidden token.
+    idempotency_key TEXT UNIQUE,
+
+    -- Cashbook sync flag (TD-43, ADR-53) - defaults TRUE; flipped to FALSE
+    -- by database/payment_queries.py's record_payment() when the automatic
+    -- Cashbook Income entry (database/cashbook_queries.py's
+    -- insert_income_entry()) fails even after its retry, so the missing
+    -- ledger row is surfaced to the admin (routes/cashbook.py) instead of
+    -- silently lost. The payment itself is never rolled back for this -
+    -- see ADR-53 for why.
+    cashbook_synced BOOLEAN DEFAULT TRUE,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (membership_id)
@@ -167,6 +203,23 @@ CREATE TABLE IF NOT EXISTS payments (
     REFERENCES students(student_id)
 
 );
+
+-- 2026-08-21 (Idempotency + cashbook-sync fix, TD-30/TD-43/ADR-53):
+-- idempotency_key and cashbook_synced above are new. Same manual-application
+-- requirement as every other column added after a project's first
+-- provisioning (ADR-14/38/46) - run by hand, once, in the Supabase SQL
+-- Editor:
+--
+--   ALTER TABLE payments
+--     ADD COLUMN IF NOT EXISTS idempotency_key TEXT UNIQUE,
+--     ADD COLUMN IF NOT EXISTS cashbook_synced BOOLEAN DEFAULT TRUE;
+--
+-- Both silently degrade if skipped, the same way memberships.idempotency_key
+-- does: database/payment_queries.py's record_payment() detects the "column
+-- not found" error and retries without the missing column(s), so payment
+-- collection keeps working exactly as before on an un-migrated project - it
+-- just doesn't get double-submit protection or the unsynced-cashbook banner
+-- yet. See ADR-53.
 
 
 -- Cashbook

@@ -282,19 +282,103 @@ class DiscountColumnsUnavailable(Exception):
     price while silently losing the only record of why."""
 
 
+def _is_unique_violation(error):
+    """True for a Postgres UNIQUE-constraint violation (code 23505) - same
+    detection shape as _is_undefined_column_error() above, just a different
+    code. Used by insert_membership() to recognize "this exact
+    idempotency_key was already inserted" instead of treating it as a
+    generic database error (TD-30, ADR-53)."""
+
+    details = error.args[0] if error.args else ""
+    if isinstance(details, dict):
+        code = details.get("code")
+    else:
+        code = str(details)
+    return "23505" in (code or "")
+
+
+def find_membership_by_idempotency_key(idempotency_key):
+    """The membership row already inserted for this idempotency_key, or
+    None. Used both by insert_membership() below (to detect a race that lost
+    to a concurrent identical submission) and directly by
+    routes/membership.py's create()/renew() (to short-circuit a slower
+    duplicate - e.g. a back-button resubmit - before repeating any of the
+    membership-status/payment side effects those routes perform). Returns
+    None (never raises) if idempotency_key doesn't exist as a column yet on
+    this Supabase project (ADR-53) - the same silent-degrade behavior
+    insert_membership() itself falls back to."""
+
+    if not idempotency_key:
+        return None
+
+    supabase = get_supabase_client()
+    try:
+        resp = (
+            supabase.table("memberships")
+            .select("*")
+            .eq("idempotency_key", idempotency_key)
+            .limit(1)
+            .execute()
+        )
+    except APIError as error:
+        if _is_undefined_column_error(error):
+            return None
+        raise
+    return resp.data[0] if resp.data else None
+
+
 def insert_membership(supabase, payload):
     """Insert a `memberships` row, tolerating discount_amount/discount_reason
-    not existing yet - but only when no real discount was actually entered
-    (both absent/zero, the common case for any admin not using the discount
-    box yet). If a real discount is present and the columns don't exist,
-    raises DiscountColumnsUnavailable instead of retrying without them."""
+    and idempotency_key not existing yet on this Supabase project.
+
+    Discount columns: only silently dropped when no real discount was
+    actually entered (both absent/zero, the common case for any admin not
+    using the discount box yet). If a real discount is present and the
+    columns don't exist, raises DiscountColumnsUnavailable instead of
+    retrying without them - see that class's docstring.
+
+    idempotency_key (TD-30, ADR-53): always silently dropped if the column
+    doesn't exist yet - unlike discount, this is an invisible safety net,
+    not something the admin explicitly asked to record, so degrading to
+    "no double-submit protection on this un-migrated project" is the right
+    default rather than failing membership creation outright.
+
+    Returns None on a normal insert. If payload carries an idempotency_key
+    that was already used by an earlier, distinct request (a genuine
+    double-submit that raced past this function's own pre-check in
+    routes/membership.py), returns that earlier membership row instead of
+    raising - the caller should treat this as "already done", not as an
+    error.
+    """
+
+    idempotency_key = payload.get("idempotency_key")
 
     try:
         supabase.table("memberships").insert(payload).execute()
+        return None
+    except APIError as error:
+        if _is_unique_violation(error) and idempotency_key:
+            existing = find_membership_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                return existing
+            raise
+        if not _is_undefined_column_error(error):
+            raise
+
+    # Undefined-column error: idempotency_key is the more recently added,
+    # always-optional column (ADR-53) - drop it first and retry, before
+    # falling into the pre-existing discount handling below, so a project
+    # missing *only* idempotency_key isn't mistaken for one missing the
+    # (differently-handled) discount columns.
+    without_key = {k: v for k, v in payload.items() if k != "idempotency_key"}
+    try:
+        supabase.table("memberships").insert(without_key).execute()
+        return None
     except APIError as error:
         if not _is_undefined_column_error(error):
             raise
         if payload.get("discount_amount") or payload.get("discount_reason"):
             raise DiscountColumnsUnavailable() from error
-        fallback = {k: v for k, v in payload.items() if k not in _DISCOUNT_FIELDS}
+        fallback = {k: v for k, v in without_key.items() if k not in _DISCOUNT_FIELDS}
         supabase.table("memberships").insert(fallback).execute()
+        return None

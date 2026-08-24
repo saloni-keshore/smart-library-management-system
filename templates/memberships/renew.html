@@ -141,6 +141,7 @@ Renew Membership
         <div class="card-body">
 
             <form method="POST">
+                <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
 
                 <div class="row">
 

@@ -51,6 +51,29 @@ def _configure_logging(app):
     app.logger.addHandler(handler)
 
 
+def _log_connected_supabase_project(app):
+    """Log which Supabase project this process connected to (ADR-53).
+
+    Under the one-deployment-per-library pilot model, every deployment must
+    point at exactly one library's own Supabase project - and
+    python-dotenv's load_dotenv() (database/supabase_client.py, config.py)
+    walks upward through parent directories looking for a .env if this
+    deployment's own is missing, so a misconfigured deployment can silently
+    pick up a *different* library's .env instead of failing outright. This
+    one-line startup log is the operator-facing check: only the last ~24
+    characters of SUPABASE_URL are logged (enough to visually confirm "this
+    is library B's project, not library A's" without exposing anything
+    sensitive in a log file) - never SUPABASE_SECRET_KEY. See
+    docs/PROVISIONING.md for the full go-live checklist this is one step
+    of.
+    """
+
+    if app.testing:
+        return
+    supabase_url = os.environ.get("SUPABASE_URL", "<unset>")
+    app.logger.info("Connected Supabase project: ...%s", supabase_url[-24:])
+
+
 def create_app(test_config=None):
     app = Flask(__name__)
     environment = os.environ.get("APP_ENV", "production").lower()
@@ -63,6 +86,7 @@ def create_app(test_config=None):
         app.config["SECRET_KEY"] = "test-secret-key"
 
     _configure_logging(app)
+    _log_connected_supabase_project(app)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)

@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 
 from flask import (
@@ -16,6 +17,7 @@ from database.payment_queries import (
     record_payment,
     get_payments_for_admin,
     get_payment_id_by_receipt_number,
+    find_payment_by_idempotency_key,
 )
 from database.receipt_settings_queries import get_receipt_settings
 from utils.normalization import normalize_free_text
@@ -94,6 +96,22 @@ def collect(membership_id):
 
     if request.method == "POST":
 
+        # Idempotency (TD-30, ADR-53): the hidden token this form's GET
+        # render embedded. A double-click/back-button resubmit posts the
+        # same token twice - short-circuit here, before touching the
+        # membership balance, instead of decrementing pending_amount twice
+        # for what was really one payment.
+        idempotency_key = request.form.get("idempotency_key") or None
+        if idempotency_key:
+            existing_payment = find_payment_by_idempotency_key(idempotency_key)
+            if existing_payment is not None:
+                flash(
+                    f"This payment was already recorded. Receipt No: "
+                    f"{existing_payment['receipt_number']}",
+                    "info"
+                )
+                return redirect(url_for("payment.receipt", payment_id=existing_payment["payment_id"]))
+
         if pending <= 0:
             flash("This membership has no pending balance to collect.", "warning")
             return redirect(url_for("student.view", student_id=student["student_id"]))
@@ -107,7 +125,8 @@ def collect(membership_id):
             return render_template(
                 "payments/collect.html",
                 membership=membership,
-                student=student
+                student=student,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if amount <= 0:
@@ -115,7 +134,8 @@ def collect(membership_id):
             return render_template(
                 "payments/collect.html",
                 membership=membership,
-                student=student
+                student=student,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         if amount > pending:
@@ -126,7 +146,8 @@ def collect(membership_id):
             return render_template(
                 "payments/collect.html",
                 membership=membership,
-                student=student
+                student=student,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         payment_mode = request.form.get("payment_mode")
@@ -152,7 +173,8 @@ def collect(membership_id):
             return render_template(
                 "payments/collect.html",
                 membership=membership,
-                student=student
+                student=student,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         try:
@@ -166,7 +188,8 @@ def collect(membership_id):
                 remarks=remarks,
                 category="Membership Fee",
                 description=remarks or f"Pending fee payment - {membership['plan_name']}",
-                source="Payments"
+                source="Payments",
+                idempotency_key=idempotency_key
             )
         except APIError:
             # Restore Supabase to its pre-payment values so the source of
@@ -183,7 +206,8 @@ def collect(membership_id):
             return render_template(
                 "payments/collect.html",
                 membership=membership,
-                student=student
+                student=student,
+                idempotency_key=secrets.token_urlsafe(24)
             )
 
         flash(
@@ -198,7 +222,8 @@ def collect(membership_id):
     return render_template(
         "payments/collect.html",
         membership=membership,
-        student=student
+        student=student,
+        idempotency_key=secrets.token_urlsafe(24)
     )
 
 

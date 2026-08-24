@@ -77,6 +77,7 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `pending_amount` | REAL DEFAULT 0 | |
 | `discount_amount` | REAL DEFAULT 0 | Added 2026-08-17 (ADR-46) — Create only, needs a manual `ALTER TABLE` on a pre-existing Supabase project (TD-58) |
 | `discount_reason` | TEXT | Added 2026-08-17 (ADR-46) — optional, freeform |
+| `idempotency_key` | TEXT UNIQUE | Added 2026-08-21 (TD-30 fix, ADR-53) — per-page-load token from Create/Renew's hidden form field; `NULL` for any row inserted with no token (Postgres allows unlimited `NULL`s in a `UNIQUE` column). Needs a manual `ALTER TABLE` on a pre-existing Supabase project (TD-66); silently not enforced (no dedup) until then. |
 | `remarks` | TEXT | |
 | `membership_status` | TEXT DEFAULT `'Active'` | `'Active'` / `'Expired'` — set programmatically, not by a scheduled job (see below) |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
@@ -96,6 +97,8 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `amount_paid` | REAL NOT NULL | |
 | `payment_date` | DATE DEFAULT CURRENT_DATE | |
 | `remarks` | TEXT | |
+| `idempotency_key` | TEXT UNIQUE | Added 2026-08-21 (TD-30 fix, ADR-53) — same shape/purpose as `memberships.idempotency_key` above; the Collect Payment form's hidden token. |
+| `cashbook_synced` | BOOLEAN DEFAULT TRUE | Added 2026-08-21 (TD-43 fix, ADR-53) — flipped to `FALSE` by `record_payment()` when the automatic Cashbook Income entry fails even after its own retry, so `routes/cashbook.py` can surface a reconciliation banner instead of the gap staying silent. The payment row itself is never rolled back for this. |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 
 No `admin_id` column — isolation via `student_id`/`membership_id` join.

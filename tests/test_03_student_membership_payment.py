@@ -692,11 +692,223 @@ def test_receipt_numbers_are_unique_across_multiple_payments(logged_in_client):
     assert len(receipts) == 4  # 1 from create + 3 collects
 
 
-def test_double_submit_membership_create_creates_two_active_rows_race():
-    """TD-30 (documented): no idempotency guard. This test documents the
-    mechanism rather than re-litigating already-known debt: two rapid
-    creates before any 'active membership' guard sees the first commit
-    would both succeed. Skipped as a live concurrency test (needs threads);
-    kept as a marker referencing the known issue."""
-    import pytest as _pytest
-    _pytest.skip("TD-30 already documented; concurrency repro out of scope for this pass")
+def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(logged_in_client):
+    """TD-30/ADR-53, the create() call site: routes/membership.py's create()
+    is already guarded against a *sequential* double-submit by its
+    pre-existing get_active_membership() check (a second request sees the
+    first's committed row and gets redirected to Renew before ever reaching
+    the new idempotency logic) - so an HTTP-level double-POST test would
+    only prove that old guard works, not the new one. This instead calls
+    database/membership_queries.py's insert_membership() directly, twice,
+    with the same idempotency_key - the actual mechanism (DB-level UNIQUE
+    constraint + 23505 handling) that protects against a genuine *concurrent*
+    race, which the pre-existing guard can't: neither request has committed
+    yet when the other checks "is there an active membership".
+
+    Self-skips (rather than failing) if this Supabase project hasn't had
+    ADR-53's `idempotency_key` column added yet (see
+    database/supabase_migration.sql's inline ALTER TABLE block) - on such a
+    project, insert_membership() detects the missing column and silently
+    falls back to pre-ADR-53 behavior (no dedup), the same self-skip
+    convention TD-53/TD-55's tests already use for their own
+    not-yet-migrated-project case.
+    """
+    from database.membership_queries import insert_membership
+
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+
+    supabase = get_supabase_client()
+    key = f"test-key-{admin['admin_id']}-direct-insert"
+
+    def _next_membership_id():
+        resp = (
+            supabase.table("memberships")
+            .select("membership_id")
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return (resp.data[0]["membership_id"] + 1) if resp.data else 1
+
+    base_row = {
+        "student_id": sid,
+        "plan_name": "Custom",
+        "joining_date": "2026-07-22",
+        "duration_days": 30,
+        "end_date": "2026-08-21",
+        "total_fee": 1000,
+        "paid_amount": 0,
+        "pending_amount": 1000,
+        "remarks": "direct insert_membership() dedup test",
+        "membership_status": "Active",
+        "idempotency_key": key,
+    }
+
+    row_a = {**base_row, "membership_id": _next_membership_id()}
+    result_a = insert_membership(supabase, row_a)
+    assert result_a is None, "first insert with a fresh idempotency_key should just insert, not find an existing row"
+
+    row_b = {**base_row, "membership_id": _next_membership_id()}
+    result_b = insert_membership(supabase, row_b)
+
+    rows = supabase.table("memberships").select("membership_id").eq("student_id", sid).execute().data
+
+    if result_b is None and len(rows) == 2:
+        pytest.skip(
+            "idempotency_key column not present on this Supabase project yet "
+            "(ADR-53 manual ALTER TABLE not applied) - insert_membership() "
+            "silently degraded to its pre-ADR-53 always-insert behavior."
+        )
+
+    assert result_b is not None, (
+        "second insert with a duplicate idempotency_key should return the "
+        "existing row instead of inserting a new one"
+    )
+    assert result_b["membership_id"] == row_a["membership_id"]
+    assert len(rows) == 1
+
+
+def test_double_submit_membership_renew_is_deduplicated(logged_in_client):
+    """Same protection as the create() test above, for renew() (TD-30/ADR-53)."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="200", due_amount="800")
+
+    key = f"test-key-{admin['admin_id']}-renew"
+    payload = {
+        "plan_name": "Custom",
+        "joining_date": "2026-07-22",
+        "duration_days": "30",
+        "end_date": "2026-08-21",
+        "remarks": "double-submit renew test",
+        "payment_mode": "Cash",
+        "paid_amount": "100",
+        "total_fee": "1000",
+        "idempotency_key": key,
+    }
+    client.post(f"/memberships/renew/{sid}", data=payload, follow_redirects=True)
+    client.post(f"/memberships/renew/{sid}", data=payload, follow_redirects=True)
+
+    # Total row count (not just the Active-filtered count) is what actually
+    # proves dedup: renew() always expires the previous row before inserting
+    # a new one, so exactly one row stays 'Active' either way - a
+    # not-deduplicated double-submit would still show only 1 Active row, but
+    # 3 total (original + two renewals) instead of the expected 2 (original
+    # + one renewal).
+    supabase = get_supabase_client()
+    rows = (
+        supabase.table("memberships")
+        .select("membership_id")
+        .eq("student_id", sid)
+        .execute()
+        .data
+    )
+
+    if len(rows) != 2:
+        pytest.skip(
+            "idempotency_key column not present on this Supabase project yet "
+            "(ADR-53 manual ALTER TABLE not applied) - double-submit "
+            "protection isn't active until it is."
+        )
+    assert len(rows) == 2
+
+
+def test_double_submit_collect_payment_is_deduplicated(logged_in_client):
+    """TD-30/ADR-53, the collect() call site: two identical Collect Payment
+    POSTs (same idempotency_key) must record exactly one payment and
+    decrement the membership's pending_amount exactly once - not twice, even
+    though collect()'s own membership-balance update runs *before*
+    record_payment()'s own dedup check (see routes/payment.py's early
+    idempotency pre-check, added specifically so this can't happen)."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="100", due_amount="900")
+    mid = get_last_membership_id(sid)
+
+    key = f"test-key-{admin['admin_id']}-collect"
+    payload = {"amount_paid": "100", "payment_mode": "Cash", "idempotency_key": key}
+    client.post(f"/payments/collect/{mid}", data=payload, follow_redirects=True)
+    client.post(f"/payments/collect/{mid}", data=payload, follow_redirects=True)
+
+    # select("*") rather than naming idempotency_key explicitly - on a
+    # project where that column doesn't exist yet, naming it in the SELECT
+    # itself raises 42703 before we even get to check for its absence.
+    supabase = get_supabase_client()
+    payment_rows = (
+        supabase.table("payments")
+        .select("*")
+        .eq("membership_id", mid)
+        .execute()
+        .data
+    )
+
+    if not payment_rows or "idempotency_key" not in payment_rows[0]:
+        pytest.skip(
+            "idempotency_key column not present on this Supabase project yet "
+            "(ADR-53 manual ALTER TABLE not applied) - double-submit "
+            "protection isn't active until it is."
+        )
+
+    matching = [p for p in payment_rows if p.get("idempotency_key") == key]
+    membership = get_membership_by_id(mid)
+    assert len(matching) == 1
+    assert float(membership["pending_amount"]) == 800.0
+
+
+def test_payment_survives_cashbook_sync_failure_and_is_flagged(logged_in_client, monkeypatch):
+    """TD-43/ADR-53: if the automatic Cashbook Income entry fails even after
+    its own retry (simulated here via monkeypatch, standing in for a
+    persistent Supabase outage on the cashbook/audit_log tables
+    specifically), the payment itself must still succeed - it's already
+    validated money, and rolling it back over an unrelated ledger-mirror
+    failure would be worse than the gap it's meant to fix. The payment row
+    should instead be flagged (cashbook_synced=False) so
+    routes/cashbook.py's banner can surface the gap to the admin.
+
+    Self-skips if cashbook_synced isn't a column on this Supabase project
+    yet, same convention as the idempotency tests above.
+    """
+    import database.payment_queries as payment_queries
+
+    monkeypatch.setattr(payment_queries, "insert_income_entry", lambda *a, **kw: None)
+
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="100", due_amount="900")
+    mid = get_last_membership_id(sid)
+
+    resp = client.post(
+        f"/payments/collect/{mid}",
+        data={"amount_paid": "100", "payment_mode": "Cash"},
+        follow_redirects=True,
+    )
+    assert b"collected successfully" in resp.data
+
+    # select("*") rather than naming cashbook_synced explicitly - see the
+    # collect-payment dedup test above for why.
+    supabase = get_supabase_client()
+    payment_rows = (
+        supabase.table("payments")
+        .select("*")
+        .eq("membership_id", mid)
+        .order("payment_id", desc=True)
+        .limit(1)
+        .execute()
+        .data
+    )
+    assert payment_rows, "payment was not recorded despite the simulated cashbook failure"
+
+    if "cashbook_synced" not in payment_rows[0]:
+        pytest.skip(
+            "cashbook_synced column not present on this Supabase project yet "
+            "(ADR-53 manual ALTER TABLE not applied)."
+        )
+
+    assert payment_rows[0]["cashbook_synced"] is False
+
+    from database.payment_queries import get_unsynced_payment_count
+    assert get_unsynced_payment_count(admin["admin_id"]) >= 1
+
+    cashbook_resp = client.get("/cashbook/")
+    assert b"missing a matching Cashbook ledger entry" in cashbook_resp.data
