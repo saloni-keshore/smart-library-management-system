@@ -20,13 +20,23 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
 1. Create a new Supabase project for this library. Note its Project URL and its **service-role** secret key (Project Settings → API) — this app uses the service-role key, not the anon key (see `database/supabase_client.py` and `docs/DECISIONS.md` ADR-2).
 2. Open the SQL Editor on this new project and run `database/supabase_migration.sql` in full, exactly once. It's wrapped in its own `BEGIN;`/`COMMIT;`, so it applies atomically.
    - **Run this only once against a given project.** The `expenses` table is created with a plain `CREATE TABLE` (not `IF NOT EXISTS`) — re-running the script against a project it's already been applied to will fail on that line.
-3. From the repository root, with `SUPABASE_URL`/`SUPABASE_SECRET_KEY` for *this* project set in your shell environment (or a temporary `.env`), run:
+3. **Grant the service-role key privileges on the tables just created (TD-69).** A newly created Supabase project does not reliably auto-grant the service-role-equivalent API key access to tables created by hand in the SQL Editor — without this step, every table read fails with Postgres error `42501 permission denied for table ...`, which `scripts/verify_schema.py` reports as `ERROR` (not `MISSING`), making the real cause non-obvious. In the same SQL Editor, run:
+
+   ```sql
+   GRANT USAGE ON SCHEMA public TO service_role;
+   GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+   GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+   ```
+
+4. From the repository root, with `SUPABASE_URL`/`SUPABASE_SECRET_KEY` for *this* project set in your shell environment (or a temporary `.env`), run:
 
    ```
    python scripts/verify_schema.py
    ```
 
-   Confirm it reports `PASS` and every table as `OK` before continuing. If anything is `MISSING`, re-check step 2 — in particular `ai_center_settings`, `panda_conversations`, and `panda_messages` are the tables most likely to be skipped by an incomplete run (TD-53/TD-55).
+   Confirm it reports `PASS` and every table as `OK` before continuing. If anything is `MISSING`, re-check step 2 — in particular `ai_center_settings`, `panda_conversations`, and `panda_messages` are the tables most likely to be skipped by an incomplete run (TD-53/TD-55). If every table instead reports `ERROR` with a `42501 permission denied` detail, re-check step 3.
 
 ## Step B — Configure the deployment
 
@@ -71,6 +81,7 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
 Before handing a new library environment over for real use, confirm every box:
 
 - [ ] Step A: `database/supabase_migration.sql` applied once to this library's own, dedicated Supabase project.
+- [ ] Step A: the `GRANT`/`ALTER DEFAULT PRIVILEGES` statements (TD-69) were run against this project.
 - [ ] Step A: `scripts/verify_schema.py` reports `PASS` (all tables `OK`, including `ai_center_settings`/`panda_conversations`/`panda_messages`).
 - [ ] Step B: this deployment has its own `.env`, with this library's own `SUPABASE_URL`/`SUPABASE_SECRET_KEY` and a freshly generated `SECRET_KEY`.
 - [ ] Step B: no other `.env` exists anywhere above this deployment's directory.

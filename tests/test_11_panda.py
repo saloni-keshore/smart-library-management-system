@@ -61,7 +61,13 @@ def test_intent_increase_profit_is_recommend_not_action():
     ("What is expected next month?", intents.INTENT_FORECAST),
     ("How do I add a new student?", intents.INTENT_NAV_HELP),
     ("Hello", intents.INTENT_GREETING),
-    ("How many students do I have?", intents.INTENT_UNKNOWN),
+    # Was INTENT_UNKNOWN until 2026-08-24 - a real coverage gap the audit
+    # found (the data already existed via get_student_count(), just wasn't
+    # reachable by this phrasing); _ADMISSIONS_PHRASES gained a literal
+    # entry for it, not a bare "how many students" (which would collide
+    # with a renewals question like "how many students are expiring this
+    # week" - admissions is checked before renewals).
+    ("How many students do I have?", intents.INTENT_ADMISSIONS),
     ("How many admissions this month?", intents.INTENT_ADMISSIONS),
     ("What's my admissions trend?", intents.INTENT_ADMISSIONS),
     ("Best performing course?", intents.INTENT_PURPOSE_PERFORMANCE),
@@ -169,9 +175,11 @@ def test_intent_plain_risk_question_without_retention_wording_stays_risk():
 
 def test_intent_reduce_expenses_does_not_become_retention():
     """"Reduce" alone (no churn/leaving/dropout noun) must not trigger
-    retention - "expenses" isn't a retention-topic noun, and this phrasing
-    doesn't match any other intent either, so it honestly stays unknown."""
-    assert intents.detect_intent("How can I reduce expenses?") == intents.INTENT_UNKNOWN
+    retention - "expenses" isn't a retention-topic noun. Was INTENT_UNKNOWN
+    until 2026-08-24, when the audit's top-ranked coverage gap (no expense
+    topic existed at all) was closed - now correctly resolves to the real
+    expenses-topic reply instead of the placeholder."""
+    assert intents.detect_intent("How can I reduce expenses?") == intents.INTENT_EXPENSES
 
 
 @pytest.mark.parametrize("text", [
@@ -310,22 +318,25 @@ def test_create_and_list_conversation(logged_in_client):
 
 
 def test_send_message_persists_and_falls_back_to_placeholder_for_unrecognized_question(logged_in_client):
-    """"How many students do I have?" matches none of panda/intents.py's
-    keyword lists (student counts aren't one of Part 1's answerable
-    intents yet), so it falls through to prompts.py's honest placeholder -
+    """"What's today's date?" matches none of panda/intents.py's keyword
+    lists (basic date/time utility questions are an explicit, deliberate
+    non-goal - see PANDA_SPEC.md and the 2026-08-24 coverage pass's scope
+    boundary), so it falls through to prompts.py's honest placeholder -
     unlike the revenue/occupancy/renewals questions below, which now get a
-    real, data-backed answer."""
+    real, data-backed answer. (Was "How many students do I have?" until
+    2026-08-24, when that specific gap was closed - see
+    test_intent_detection_examples above.)"""
     client, admin = logged_in_client
     conversation_id = _create_conversation(client)
 
     resp = client.post(
         f"/panda/conversations/{conversation_id}/messages",
-        json={"message": "How many students do I have?"},
+        json={"message": "What's today's date?"},
     )
     assert resp.status_code == 201
     data = resp.get_json()
     assert data["user_message"]["role"] == "user"
-    assert data["user_message"]["content"] == "How many students do I have?"
+    assert data["user_message"]["content"] == "What's today's date?"
     assert data["assistant_message"]["role"] == "assistant"
     assert "not connected to a real" in data["assistant_message"]["content"]
 

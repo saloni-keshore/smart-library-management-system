@@ -21,10 +21,13 @@ number Panda shows always agrees with the page that owns it:
 
 `get_top_risk_students()` (added for Part 2, "Analyze") is the one function
 here that isn't a pure wrapper - `database/ai_center_queries.py`'s
-`compute_student_risk()` is single-student only, so this loops it over the
-admin's own roster to build a top-N view. It reuses that function's scoring
-verbatim (no new risk logic) rather than duplicating it, matching this
-module's existing reuse convention.
+`compute_student_risk_batch()` scores the admin's own roster in one batched
+pass to build a top-N view (originally a per-student loop over
+`compute_student_risk()`; switched 2026-08-24 after that loop measured 30+
+seconds for a 17-student roster - TD-60). It reuses that function's scoring
+verbatim (no new risk logic, same underlying `_score_student_risk()`
+either way) rather than duplicating it, matching this module's existing
+reuse convention.
 
 `panda/notifications.py` turns these raw numbers into user-facing insight
 cards; this module never formats a message and never decides a threshold -
@@ -88,9 +91,25 @@ for this addition: an aggregate "why" tally across every at-risk student
 building a cross-student aggregate would be new analysis logic, not reuse
 (the same line ADR-49/TD-61 already drew for revenue's category
 breakdown) - see ADR-52.
+
+`get_cash_balance()`/`get_profit_loss_summary()` (added 2026-08-25, closing
+the pre-pilot audit's top-ranked finding, ADR-55) are the same "pure
+wrapper" reuse every function above already follows -
+`database.cashbook_queries.get_cash_balance()` (Cash-payment-method income
+minus Cash-payment-method expense, all-time) and `.get_total_income()`/
+`.get_total_expense()`/`.get_monthly_profit()` already existed, already
+correct, and were already used elsewhere in the app (Cashbook's own
+reports) - simply never reachable from Panda before now. No new calculation
+was written for either. The two are deliberately kept as separate
+functions/intents, never merged into one reply: cash balance is
+Cash-payment-method transactions only ("what's physically in the drawer"),
+profit/loss spans every payment method - a real library can have a
+positive cash balance and a negative overall profit at the same time, and
+conflating them in one reply would misinform an owner relying on this
+number to make a decision. See ADR-55.
 """
 
-from database.ai_center_queries import compute_student_risk
+from database.ai_center_queries import compute_student_risk_batch
 from database.bi_queries import (
     classify_expense_health,
     get_action_items,
@@ -103,7 +122,13 @@ from database.bi_queries import (
     get_top_expense_categories,
     last_n_months,
 )
-from database.cashbook_queries import get_pending_fees
+from database.cashbook_queries import (
+    get_cash_balance as _get_cash_balance,
+    get_monthly_profit,
+    get_pending_fees,
+    get_total_expense,
+    get_total_income,
+)
 from database.membership_queries import get_admin_students
 from panda import forecasting
 from routes.notification import get_notification_summary
@@ -147,6 +172,17 @@ def get_admissions_trend(admin_id):
     return get_monthly_new_memberships(admin_id)
 
 
+def get_student_count(admin_id):
+    """This admin's total roster size (added 2026-08-24 to answer "how many
+    students do I have" honestly - a total headcount, not the same fact as
+    get_admissions_trend()'s per-month new-admission counts). Reuses
+    `database/membership_queries.get_admin_students()`, already the source
+    of truth for this admin's roster everywhere else in this module (e.g.
+    get_top_risk_students(), get_risk_scoring_coverage()) - no new query."""
+
+    return len(get_admin_students(admin_id))
+
+
 def get_purpose_performance(admin_id):
     """Per-purpose student count and revenue, sorted by student count desc -
     see `database/bi_queries.py.get_purpose_breakdown()`. The first entry is
@@ -157,20 +193,22 @@ def get_purpose_performance(admin_id):
 
 def get_top_risk_students(admin_id, limit=TOP_RISK_STUDENTS_LIMIT):
     """This admin's top `limit` High-risk students (AI Center's own
-    High/Medium/Low buckets, ADR-39/40), scored by looping
-    `database/ai_center_queries.py.compute_student_risk()` over up to
-    `MAX_STUDENTS_SCORED_FOR_CHAT` of their students. Returns [] if nobody
-    is currently High risk - never manufactures a result, same "a check
-    that finds nothing contributes nothing" rule panda/notifications.py
-    already follows."""
+    High/Medium/Low buckets, ADR-39/40), scored via
+    `database/ai_center_queries.py.compute_student_risk_batch()` over up to
+    `MAX_STUDENTS_SCORED_FOR_CHAT` of their students - a constant number of
+    Supabase round trips regardless of how many students that is, not one
+    per student (see that function's docstring for why this changed
+    2026-08-24: the old per-student loop measured 30+ seconds for a
+    17-student roster, TD-60). The cap itself is unchanged - still applied
+    here, before scoring, exactly as before. Returns [] if nobody is
+    currently High risk - never manufactures a result, same "a check that
+    finds nothing contributes nothing" rule panda/notifications.py already
+    follows."""
 
     students = get_admin_students(admin_id)[:MAX_STUDENTS_SCORED_FOR_CHAT]
 
-    scored = []
-    for student in students:
-        result = compute_student_risk(admin_id, student["student_id"])
-        if result is not None and result["level"] == "High":
-            scored.append(result)
+    scored_by_student = compute_student_risk_batch(admin_id, students=students)
+    scored = [result for result in scored_by_student.values() if result["level"] == "High"]
 
     scored.sort(key=lambda r: r["score"])
     return scored[:limit]
@@ -314,3 +352,42 @@ def get_expense_health(admin_id):
     `database/bi_queries.py.classify_expense_health()`."""
 
     return classify_expense_health(admin_id)
+
+
+def get_cash_balance(admin_id):
+    """Cash on hand right now - Cash-payment-method income minus
+    Cash-payment-method expense, all-time (added 2026-08-25, ADR-55). Pure
+    wrapper around `database/cashbook_queries.py.get_cash_balance()` - no
+    new calculation. Deliberately distinct from `get_profit_loss_summary()`
+    below - see that function's docstring and this module's own docstring
+    for why the two must never be presented as the same number."""
+
+    return _get_cash_balance(admin_id)
+
+
+def get_profit_loss_summary(admin_id):
+    """This admin's real profit/loss picture - all-time net (income minus
+    expense, every payment method combined) plus the same figure broken out
+    per month (added 2026-08-25, ADR-55). Composes three existing
+    `database/cashbook_queries.py` functions verbatim -
+    `get_total_income()`, `get_total_expense()`, `get_monthly_profit()` -
+    `net_profit` is the only value computed here, and it's a one-line
+    subtraction of two numbers those functions already returned, not a new
+    aggregation. `current_month` (this run's actual current month, 'YYYY-MM')
+    lets a caller label that entry as still in progress rather than a
+    finished month's total. Deliberately distinct from `get_cash_balance()`
+    above: this spans every payment method, not just Cash - a business can
+    be cash-positive and still running at a loss overall (or vice versa),
+    and a reply combining both numbers must say so explicitly rather than
+    implying they're the same measurement."""
+
+    total_income = get_total_income(admin_id)
+    total_expense = get_total_expense(admin_id)
+
+    return {
+        "total_income": total_income,
+        "total_expense": total_expense,
+        "net_profit": total_income - total_expense,
+        "monthly": get_monthly_profit(admin_id),
+        "current_month": last_n_months(1)[0],
+    }

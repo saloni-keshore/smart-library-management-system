@@ -35,6 +35,7 @@ from postgrest.exceptions import APIError
 
 from database.ai_center_settings_queries import get_effective_settings
 from database.membership_queries import get_admin_students, get_days_left, get_memberships_for_admin
+from database.payment_queries import get_payments_for_admin
 from database.supabase_client import get_supabase_client
 
 
@@ -286,19 +287,13 @@ def _duration_signal(latest_membership):
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def compute_student_risk(admin_id, student_id):
-    """Full risk breakdown for one student: score, level, ranked reasons +
-    their matched actions, and the key-info figures shown alongside them.
-    Returns None if student_id doesn't belong to admin_id."""
+def _score_student_risk(student, settings, memberships, payments):
+    """The actual scoring math, factored out of compute_student_risk() so it
+    can run against either freshly-fetched (single-student) or pre-batched
+    (compute_student_risk_batch()) memberships/payments/settings without
+    duplicating - and risking drifting - the scoring logic itself. Pure: no
+    Supabase access happens in here."""
 
-    student = get_student_detail(admin_id, student_id)
-    if student is None:
-        return None
-
-    settings = get_effective_settings(admin_id)
-
-    memberships = _memberships_for_student(student_id)
-    payments = _payments_for_student(student_id)
     latest_membership = max(memberships, key=lambda m: m["membership_id"]) if memberships else None
 
     payment_risk, payment_reason, payment_action = _payment_delay_signal(latest_membership, payments)
@@ -345,3 +340,84 @@ def compute_student_risk(admin_id, student_id):
             "last_payment_date": last_payment_date,
         },
     }
+
+
+def compute_student_risk(admin_id, student_id):
+    """Full risk breakdown for one student: score, level, ranked reasons +
+    their matched actions, and the key-info figures shown alongside them.
+    Returns None if student_id doesn't belong to admin_id.
+
+    4 Supabase round trips (student detail, settings, memberships,
+    payments) - fine for AI Center's single-student page, but see
+    compute_student_risk_batch() for anywhere this would otherwise run in a
+    loop over multiple students."""
+
+    student = get_student_detail(admin_id, student_id)
+    if student is None:
+        return None
+
+    settings = get_effective_settings(admin_id)
+    memberships = _memberships_for_student(student_id)
+    payments = _payments_for_student(student_id)
+
+    return _score_student_risk(student, settings, memberships, payments)
+
+
+def compute_student_risk_batch(admin_id, students=None):
+    """Same scoring as compute_student_risk(), for every one of this admin's
+    students in one pass - added 2026-08-24 to fix TD-60/the real latency it
+    documented (see docs/11_FUTURE_WORK.md and docs/CHANGELOG.md): looping
+    compute_student_risk() per student cost ~4 sequential Supabase round
+    trips *per student* (get_student_detail, get_effective_settings,
+    _memberships_for_student, _payments_for_student) - 17 students measured
+    at 30+ seconds in production-shaped testing, well past any realistic web
+    request timeout, and get_effective_settings(admin_id) in particular was
+    re-fetching the exact same admin-wide row on every single iteration.
+
+    This does the same work with a constant, roster-size-independent number
+    of round trips: `students` (or a fresh get_admin_students(admin_id) if
+    not given) fetched once, settings fetched once, and
+    `database/membership_queries.get_memberships_for_admin()` /
+    `database/payment_queries.get_payments_for_admin()` - both already-used,
+    already-correct admin-wide batch reads (Dashboard, Business
+    Intelligence, and Notifications already rely on the exact same two
+    functions) - fetched once each and grouped by student_id in Python,
+    instead of one `.eq("student_id", ...)` Supabase call per student per
+    table. Reuses `_score_student_risk()` for the actual math, so scores are
+    identical to compute_student_risk()'s, not a separate/approximated
+    calculation - see tests/test_11_panda.py's parity test.
+
+    Does not change MAX_STUDENTS_SCORED_FOR_CHAT (TD-60's cap) at all -
+    callers still decide how many students to pass in; this only changes how
+    cheaply those students get scored. Returns {student_id: <same shape as
+    compute_student_risk()>} for every student in `students` (or this
+    admin's whole roster) - {} if there are none.
+    """
+
+    if students is None:
+        students = get_admin_students(admin_id)
+    if not students:
+        return {}
+
+    settings = get_effective_settings(admin_id)
+
+    memberships_by_student = {}
+    for membership in get_memberships_for_admin(admin_id):
+        memberships_by_student.setdefault(membership["student_id"], []).append(membership)
+
+    payments_by_student = {}
+    for payment in get_payments_for_admin(admin_id):
+        payments_by_student.setdefault(payment["student_id"], []).append(payment)
+
+    results = {}
+    for student in students:
+        student_id = student["student_id"]
+        memberships = sorted(
+            memberships_by_student.get(student_id, []), key=lambda m: m["membership_id"]
+        )
+        payments = sorted(
+            payments_by_student.get(student_id, []), key=lambda p: p["payment_date"] or ""
+        )
+        results[student_id] = _score_student_risk(student, settings, memberships, payments)
+
+    return results

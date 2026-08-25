@@ -16,6 +16,7 @@ just checked afterwards in Python - the same cross-tenant-isolation shape
 every other *_queries.py module in this app uses.
 """
 
+import httpx
 from postgrest.exceptions import APIError
 
 from database.settings_queries import _now_iso
@@ -24,9 +25,26 @@ from database.supabase_client import get_supabase_client
 
 class ChatStorageUnavailable(Exception):
     """Raised when panda_conversations/panda_messages don't exist yet on
-    this Supabase project. Distinct from "conversation not found" (which is
-    a normal, expected 404 - the tables exist, this admin just doesn't own
-    that id)."""
+    this Supabase project (a real `APIError` from PostgREST - e.g.
+    PGRST205, "relation does not exist"). Distinct from "conversation not
+    found" (a normal, expected 404 - the tables exist, this admin just
+    doesn't own that id), and distinct from ChatStorageTemporarilyUnavailable
+    below (a one-off network blip, not a setup problem)."""
+
+
+class ChatStorageTemporarilyUnavailable(Exception):
+    """Raised when a transient network/connection error (`httpx.TransportError`
+    - a dropped connection, timeout, DNS blip; not an HTTP error response,
+    which PostgREST already turns into `APIError` above) happens while
+    talking to Supabase. Added 2026-08-24 after a real `httpx.RemoteProtocolError`
+    ("Server disconnected") was observed live crashing `add_message()` as an
+    unhandled 500 - `except APIError` alone never catches this class, since
+    it's a transport-layer failure, not a parsed API error response.
+    Distinct from ChatStorageUnavailable on purpose: telling an admin to
+    "ask your project owner to run the CREATE TABLE statements" (that
+    message) would be actively wrong for what's actually a likely-to-
+    succeed-on-retry blip - panda/routes.py maps this to its own honest
+    "try again in a moment" response instead."""
 
 
 def _table(name):
@@ -45,6 +63,8 @@ def create_conversation(admin_id, title=None):
         }).execute()
     except APIError as exc:
         raise ChatStorageUnavailable from exc
+    except httpx.TransportError as exc:
+        raise ChatStorageTemporarilyUnavailable from exc
 
     return response.data[0]
 
@@ -62,6 +82,8 @@ def list_conversations(admin_id):
         )
     except APIError as exc:
         raise ChatStorageUnavailable from exc
+    except httpx.TransportError as exc:
+        raise ChatStorageTemporarilyUnavailable from exc
 
     return response.data
 
@@ -81,6 +103,8 @@ def get_conversation(admin_id, conversation_id):
         )
     except APIError as exc:
         raise ChatStorageUnavailable from exc
+    except httpx.TransportError as exc:
+        raise ChatStorageTemporarilyUnavailable from exc
 
     return response.data[0] if response.data else None
 
@@ -103,6 +127,8 @@ def get_messages(admin_id, conversation_id):
         )
     except APIError as exc:
         raise ChatStorageUnavailable from exc
+    except httpx.TransportError as exc:
+        raise ChatStorageTemporarilyUnavailable from exc
 
     return response.data
 
@@ -133,5 +159,7 @@ def add_message(admin_id, conversation_id, role, content):
         _table("panda_conversations").update(update).eq("conversation_id", conversation_id).execute()
     except APIError as exc:
         raise ChatStorageUnavailable from exc
+    except httpx.TransportError as exc:
+        raise ChatStorageTemporarilyUnavailable from exc
 
     return response.data[0]

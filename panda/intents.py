@@ -42,6 +42,59 @@ not attempt a cross-student "why are students at risk" aggregate (out of
 scope - see ADR-52); it inherits get_top_risk_students()'s existing
 100-student scoring cap (TD-60) and says so honestly when that cap is
 actually hit.
+
+2026-08-24 coverage pass (post-audit): a third topic-specific intent,
+INTENT_EXPENSES, closes the audit's top-ranked gap - a direct expense
+question ("how much are my expenses?", "what are my biggest expenses?")
+used to fall all the way through to the generic placeholder even though
+the exact data it needs (get_expense_breakdown()/get_expense_health()) was
+already being read for the cash-management reply - see
+_reply_expenses(). Same day: _reply_admissions() was broadened to also
+report this admin's total roster size and best admission month (still one
+query, get_admissions_trend()'s dict already had every month in it - see
+that function), closing the "how many students do I have?"/"which month
+had the most admissions?" gaps; _RENEWAL_PHRASES gained "expires" (the
+present-tense-singular form "expire"/"expiring"/"expired" didn't cover);
+_RISK_PHRASES gained "need attention"; and a forward-looking occupancy
+question ("will occupancy increase?") now reaches _reply_forecast()
+instead of the present-state occupancy reply - see
+_is_future_occupancy_request(). None of these needed a new query or
+changed any existing reply's data source, only wider keyword coverage and,
+for admissions, reading more of a dict Part 2 was already fetching in
+full.
+
+2026-08-25 wording fix (final pre-pilot audit): _reply_admissions()'s
+roster-count line said "You have N student(s) on your roster in total"
+with no scope qualifier, even though get_student_count() counts every
+student this admin has ever admitted (get_admin_students() has no status
+filter) - a library with any real turnover has this number diverge from
+"currently enrolled," which is what a non-technical owner asking "how many
+students do I have?" most naturally means. Now says "...in total (all-time,
+including students with lapsed memberships)." No calculation changed -
+get_student_count() is untouched - only the sentence around it.
+
+2026-08-25 cash balance / profit-loss coverage pass (ADR-55): closes the
+two top-ranked gaps from a live read-only audit against a real admin
+account ("sona", 17 real students) - "How much cash do I have?" and "Tell
+me about my profit or loss?" both fell all the way through to the generic
+placeholder before this, even though the exact real data both need
+(database/cashbook_queries.py's get_cash_balance()/get_total_income()/
+get_total_expense()/get_monthly_profit()) already existed and was already
+correct, just never wired into Panda. INTENT_CASH_BALANCE
+(_reply_cash_balance()) answers with a single defined number - cash-
+payment-method income minus cash-payment-method expense, all-time -
+deliberately never called "bank balance"/"total money available"/"total
+collections", none of which this number actually represents.
+INTENT_PROFIT_LOSS (_reply_profit_loss()) answers with an explicit
+all-time net (income minus expense, every payment method) plus a recent-
+months breakdown that marks the current month as still in progress rather
+than presenting a partial month as a finished total. Neither intent is a
+new calculation - both are thin panda/insights.py wrappers around
+functions Cashbook's own reports already trusted. The two are kept
+strictly separate, in both keyword coverage and reply text: a real library
+can have a positive cash balance and a negative overall profit
+simultaneously (Cash-only transactions vs. every payment method), and each
+reply says so explicitly rather than letting an owner conflate the two.
 """
 
 import re
@@ -60,6 +113,9 @@ INTENT_RETENTION = "retention"
 INTENT_FORECAST = "forecast"
 INTENT_RECOMMEND = "recommend"
 INTENT_CASH = "cash_management"
+INTENT_CASH_BALANCE = "cash_balance"
+INTENT_PROFIT_LOSS = "profit_loss"
+INTENT_EXPENSES = "expenses"
 INTENT_NAV_HELP = "nav_help"
 INTENT_GREETING = "greeting"
 INTENT_UNKNOWN = "unknown"
@@ -70,10 +126,34 @@ _DELETE_VERBS = ("delete", "remove", "cancel", "terminate")
 _PRICING_VERBS = ("increase", "decrease", "raise", "lower", "change", "update", "modify", "set")
 _PRICING_NOUNS = ("fee", "fees", "price", "prices", "pricing", "rate", "rates")
 
-_RISK_PHRASES = ("risk", "leave", "leaving", "churn", "dropout", "drop out")
+# "need attention"/"needs attention" added 2026-08-24 (audit finding:
+# "which students need attention" is a real synonym for "who is at risk",
+# but shared no keyword with the rest of this list).
+_RISK_PHRASES = (
+    "risk", "leave", "leaving", "churn", "dropout", "drop out",
+    "need attention", "needs attention",
+)
 _FORECAST_PHRASES = (
     "forecast", "predict", "prediction", "projection", "next month", "next week",
     "expected", "coming month", "upcoming month", "next 30 days", "outlook",
+)
+# Forward-looking occupancy questions ("will occupancy increase?") added
+# 2026-08-24 (audit finding: this matched _OCCUPANCY_PHRASES's bare
+# "occupancy" - checked much later - and never reached forecast, so a
+# genuinely forward-looking question got a present-state occupancy reply
+# instead). Deliberately scoped to occupancy vocabulary specifically, not a
+# blanket "will X increase/decrease" pattern - forecast is checked this
+# early (2nd) precisely so action-request wording keeps priority, but a
+# generic "will"+direction-word combination here would also grab unrelated
+# topics checked later in this same function (e.g. "how will retention
+# improve" already matches retention's own unambiguous bare "retention"
+# keyword and must keep winning there, not get short-circuited into
+# forecast by a generic "will"+"improve" match with no occupancy word in
+# it). See _is_future_occupancy_request() below.
+_FUTURE_MARKERS = ("will",)
+_FUTURE_DIRECTION_WORDS = (
+    "increase", "decrease", "grow", "improve", "decline", "drop", "rise",
+    "fall", "go up", "go down",
 )
 _RECOMMEND_PHRASES = (
     "recommend", "suggest", "suggestion", "how can i increase", "how do i increase",
@@ -91,17 +171,45 @@ _OCCUPANCY_PHRASES = (
     "occupancy", "occupied", "seat", "seats", "capacity",
     "utilization", "utilisation", "shift", "shifts",
 )
-_RENEWAL_PHRASES = ("renewal", "renewals", "renew", "expiring", "expire", "expired")
+# "expires" added 2026-08-24 (2026-08-24 audit finding: "expire"/"expiring"/
+# "expired" don't cover the present-tense-singular form, so "who expires
+# today"/"who expires this week" fell through to the unknown placeholder
+# even though "who is expiring soon" already worked).
+_RENEWAL_PHRASES = ("renewal", "renewals", "renew", "expiring", "expires", "expire", "expired")
 # Specific multi-word phrases only - a bare "admission"/"admissions" would
 # also match a locality-flavored question like "which locality gives me the
 # highest admissions", which has no real answer (no locality data exists,
 # see PANDA_SPEC.md) and must keep falling through to the unknown fallback,
 # not get a real-but-wrong (locality-less) admissions-trend answer instead.
+# The roster-count and best-month/direction phrasings below were added
+# 2026-08-24 (audit finding) - deliberately still literal phrases, not a
+# bare "how many students" (that would collide with "how many students are
+# expiring this week", a renewals question, since admissions is checked
+# before renewals below).
 _ADMISSIONS_PHRASES = (
     "admissions trend", "admission trend", "how many admissions",
     "new admissions", "admission count", "admissions this month",
     "admissions this year", "monthly admissions",
+    "how many students do i have", "how many active students",
+    "how many total students", "how many students in total",
+    "which month had the most admissions", "best admission month",
+    "are admissions increasing", "is admissions increasing",
+    "admissions increasing", "admissions decreasing", "admissions growing",
 )
+# Expenses (added 2026-08-24, closing the audit's top-ranked coverage gap):
+# "expense"/"expenses"/"expenditure" mean nothing else in this app's domain
+# (same "unambiguous alone" treatment _RETENTION_PHRASES gives
+# "retain"/"retention" below), so a bare mention is enough - generalizes to
+# phrasings never spelled out here ("expense report", "monthly expenses",
+# "biggest expense category"...), not just the ones the audit listed.
+# "spend"/"spent"/"spending" cover phrasings with no "expense" root at all
+# ("how much did I spend?"). "money going" is a literal two-word phrase,
+# same shape as _CASH_PHRASES's "cash going" below - "where is my money
+# going" has no expense/spend root either. "reduce expenses" is safe
+# regardless of check order relative to retention: _RETENTION_VERBS
+# includes "reduce", but "expenses" isn't in _RETENTION_NOUNS, so
+# _is_retention_request() only fires on an actual churn/leaving noun.
+_EXPENSE_PHRASES = ("expense", "expenses", "expenditure", "spend", "spent", "spending", "money going")
 _PURPOSE_PHRASES = (
     "best course", "best performing course", "top course", "which course",
     "best purpose", "most popular purpose", "most popular course",
@@ -131,6 +239,35 @@ _CASH_PHRASES = (
     "collect cash", "collect fees", "collecting fees", "pending fees",
     "cash going", "where is my cash", "improve collection", "improve cash",
 )
+
+# Cash balance (added 2026-08-25, pre-pilot audit, ADR-55): distinct from
+# cash MANAGEMENT above ("how can I manage cash", "where is my cash going")
+# - this is "how much cash do I physically have right now", a single
+# number (database/cashbook_queries.get_cash_balance()), not a
+# collection-rate/expense-breakdown topic reply. "cashbox"/"cash box" are
+# unambiguous alone (same "unambiguous alone" treatment _EXPENSE_PHRASES
+# gives "expense"/"expenses" - this app has no other meaning for either).
+# Every other real phrasing ("how much cash do I have", "what's my cash
+# balance", "how much physical cash do I have") needs BOTH the word "cash"
+# AND one of _CASH_BALANCE_MARKERS present - a flat phrase list would miss
+# reasonable rewordings the required variations didn't spell out, but a
+# bare "cash" match alone would wrongly catch "how much cash did I
+# collect?" (a collection question, not a balance question - deliberately
+# left unmatched here, see _is_cash_balance_request()'s own docstring).
+# "do i have" (not bare "have") is deliberate: bare "have" would also match
+# a rewording like "how much cash have I collected", which is a collection
+# question, not a balance one; "do i have" doesn't appear in that ordering.
+_CASH_BALANCE_STANDALONE_PHRASES = ("cashbox", "cash box")
+_CASH_BALANCE_MARKERS = ("balance", "on hand", "in hand", "physical", "do i have", "drawer")
+
+# Profit/loss (added 2026-08-25, pre-pilot audit, ADR-55): bare words,
+# unambiguous alone in this app's domain (same treatment
+# _RETENTION_PHRASES/_EXPENSE_PHRASES already give "retain"/"expense") -
+# "profit"/"loss" mean nothing else here. Checked AFTER _RECOMMEND_PHRASES
+# in detect_intent() specifically so "how can I increase profit?"/"improve
+# profit" (already in _RECOMMEND_PHRASES) keep resolving to Recommend, not
+# this - see detect_intent()'s docstring.
+_PROFIT_LOSS_PHRASES = ("profit", "profitable", "loss", "lose", "lost", "losing")
 
 
 def _normalize(text):
@@ -166,6 +303,26 @@ def _is_retention_request(normalized):
     )
 
 
+def _is_cash_balance_request(normalized):
+    """"cashbox"/"cash box" are unambiguous alone; every other real
+    phrasing needs the word "cash" AND a balance-flavored marker
+    (_CASH_BALANCE_MARKERS) both present - see _CASH_BALANCE_MARKERS'
+    comment for why a bare "cash" match alone isn't used (it would also
+    catch "how much cash did I collect?", a collection question)."""
+
+    return _contains_any(normalized, _CASH_BALANCE_STANDALONE_PHRASES) or (
+        _contains_any(normalized, ("cash",)) and _contains_any(normalized, _CASH_BALANCE_MARKERS)
+    )
+
+
+def _is_future_occupancy_request(normalized):
+    return (
+        _contains_any(normalized, _FUTURE_MARKERS)
+        and _contains_any(normalized, _FUTURE_DIRECTION_WORDS)
+        and _contains_any(normalized, _OCCUPANCY_PHRASES)
+    )
+
+
 def detect_intent(text):
     """Ordered keyword matching - first match wins. Action requests are
     checked first since misclassifying one as an answerable question would
@@ -190,17 +347,33 @@ def detect_intent(text):
     contains "should i" (a recommend keyword) - the more specific,
     answerable intent must win. Cash management (ADR-52) is checked before
     recommend for the same specificity reason, though no actual keyword
-    overlap with _RECOMMEND_PHRASES was found. Explain-revenue is checked
-    after recommend, before the plain revenue check, so a genuinely
-    recommend-flavored question that happens to also contain "why" (rare)
-    still gets its own honest reply rather than being answered as if it
-    asked for an explanation."""
+    overlap with _RECOMMEND_PHRASES was found. Expenses (added 2026-08-24)
+    is checked right after cash, before recommend, for the same specificity
+    reason - no actual keyword overlap with cash or recommend was found
+    either, since neither mentions "expense"/"spend"/"spending". Explain-
+    revenue is checked after recommend, before the plain revenue check, so a
+    genuinely recommend-flavored question that happens to also contain
+    "why" (rare) still gets its own honest reply rather than being answered
+    as if it asked for an explanation. A forward-looking occupancy question
+    ("will occupancy increase?", added 2026-08-24) is checked alongside
+    forecast, before retention/risk, for the same "more specific real
+    answer must win" reason as the churn-vs-forecast case above. Cash
+    balance (added 2026-08-25, ADR-55) is checked before cash management -
+    "what's my cash balance"/"how much cash do I have" is a more specific,
+    different question than "how can I manage cash", and no actual keyword
+    overlap between the two was found (cash management's phrases are all
+    verb-flavored - "manage"/"improve"/"collect" - none contain
+    _CASH_BALANCE_MARKERS' words). Profit/loss (added 2026-08-25, ADR-55) is
+    checked right after recommend, before explain-revenue - deliberately
+    after recommend so "how can I increase profit?"/"improve profit"
+    (_RECOMMEND_PHRASES) keep resolving to Recommend, since bare "profit" is
+    also one of _PROFIT_LOSS_PHRASES and would otherwise shadow it."""
 
     normalized = _normalize(text)
 
     if _is_action_request(normalized):
         return INTENT_ACTION_REQUEST
-    if _contains_any(normalized, _FORECAST_PHRASES):
+    if _contains_any(normalized, _FORECAST_PHRASES) or _is_future_occupancy_request(normalized):
         return INTENT_FORECAST
     if _is_retention_request(normalized):
         return INTENT_RETENTION
@@ -210,10 +383,16 @@ def detect_intent(text):
         return INTENT_ADMISSIONS
     if _contains_any(normalized, _PURPOSE_PHRASES):
         return INTENT_PURPOSE_PERFORMANCE
+    if _is_cash_balance_request(normalized):
+        return INTENT_CASH_BALANCE
     if _contains_any(normalized, _CASH_PHRASES):
         return INTENT_CASH
+    if _contains_any(normalized, _EXPENSE_PHRASES):
+        return INTENT_EXPENSES
     if _contains_any(normalized, _RECOMMEND_PHRASES):
         return INTENT_RECOMMEND
+    if _contains_any(normalized, _PROFIT_LOSS_PHRASES):
+        return INTENT_PROFIT_LOSS
     if _is_explain_revenue_request(normalized):
         return INTENT_EXPLAIN_REVENUE
     if _contains_any(normalized, _REVENUE_PHRASES):
@@ -394,12 +573,95 @@ def _reply_retention(admin_id):
     )
 
 
+def _reply_cash_balance(admin_id):
+    """Cash-balance reply (added 2026-08-25, pre-pilot audit, ADR-55) - a
+    single real number, insights.get_cash_balance() (itself a pure wrapper
+    around database/cashbook_queries.py's get_cash_balance()), with an
+    explicit definition attached so it's never mistaken for "total money
+    available"/"bank balance"/"total collections" - it's Cash-payment-
+    method transactions specifically, all-time. Deliberately never calls
+    this "bank balance" or "total collections" - see this file's module
+    docstring and panda/insights.py's for why cash balance and profit/loss
+    (INTENT_PROFIT_LOSS, _reply_profit_loss() below) must stay two separate
+    replies, never merged into one."""
+
+    balance = insights.get_cash_balance(admin_id)
+    amount_text = f"₹{balance:,.0f}" if balance >= 0 else f"-₹{abs(balance):,.0f}"
+
+    return (
+        f"🐼 Your current cash balance is {amount_text} — cash-payment-method "
+        "income minus cash-payment-method expense, all-time. This is what's "
+        "physically on hand (cash payments only, not UPI/Card/etc.), not the "
+        "same thing as your overall profit or loss across all payment methods "
+        "— ask me about profit/loss separately for that."
+    )
+
+
+def _reply_profit_loss(admin_id):
+    """Profit/loss reply (added 2026-08-25, pre-pilot audit, ADR-55) -
+    composes insights.get_profit_loss_summary() (itself a pure wrapper
+    around database/cashbook_queries.py's get_total_income()/
+    get_total_expense()/get_monthly_profit(), all already-computed real
+    numbers) into an all-time figure plus a recent-months breakdown, always
+    stating the period explicitly (never a bare, unscoped number) and
+    marking the current month partial rather than presenting it as a
+    finished month's total. Deliberately never conflates this with cash
+    balance (_reply_cash_balance() above) - profit/loss spans every payment
+    method, cash balance only tracks Cash - see this function's own closing
+    line and panda/insights.py's module docstring."""
+
+    summary = insights.get_profit_loss_summary(admin_id)
+    total_income, total_expense = summary["total_income"], summary["total_expense"]
+    net = summary["net_profit"]
+    monthly, current_month = summary["monthly"], summary["current_month"]
+
+    if total_income == 0 and total_expense == 0:
+        return "🐼 No income or expenses recorded yet, so there's no profit or loss to report."
+
+    if net > 0:
+        overall = f"a net profit of ₹{net:,.0f}"
+    elif net < 0:
+        overall = f"a net loss of ₹{abs(net):,.0f}"
+    else:
+        overall = "neither a profit nor a loss — you're breaking even"
+
+    lines = [
+        f"- All-time: ₹{total_income:,.0f} income − ₹{total_expense:,.0f} expense = "
+        f"{overall} (every payment method combined, not just cash on hand)."
+    ]
+
+    if monthly:
+        recent_months = sorted(monthly.items())[-3:]
+        month_lines = []
+        for month, amount in recent_months:
+            if amount > 0:
+                direction = f"₹{amount:,.0f} profit"
+            elif amount < 0:
+                direction = f"₹{abs(amount):,.0f} loss"
+            else:
+                direction = "broke even"
+            partial_note = " (this month is still in progress)" if month == current_month else ""
+            month_lines.append(f"  - {month}: {direction}{partial_note}")
+        lines.append("- By month:\n" + "\n".join(month_lines))
+
+    return "🐼 Here's your real profit/loss picture:\n" + "\n".join(lines)
+
+
 def _reply_cash_management(admin_id):
     """Cash-management-topic reply (ADR-52) - composes the collection
     summary, expense breakdown, and expense-health check into one
     topic-focused message. Every sub-question in this reply already maps
     onto an existing, already-computed real number - no new query or
-    calculation was written for this intent."""
+    calculation was written for this intent.
+
+    The expense-category breakdown is explicitly labeled "all-time" (added
+    2026-08-24) - get_expense_breakdown() has no monthly figure to show
+    (get_top_expense_categories() is all-time only, see TD-61), and this
+    line used to sit directly between two *this-month* figures (collection
+    rate, then expense health) with nothing distinguishing it - a real audit
+    of this reply flagged that a category's all-time share (e.g. "Electricity
+    Bill 91.6%") reads as this month's share in that position. No underlying
+    number changed, only the label."""
 
     collection = insights.get_cash_collection_summary(admin_id)
     expenses = insights.get_expense_breakdown(admin_id)
@@ -425,7 +687,7 @@ def _reply_cash_management(admin_id):
             f"  - {item['category']}: ₹{item['amount']:,.0f} ({item['percentage']}%)"
             for item in expenses[:3]
         )
-        lines.append(f"- Where your cash is going (top expense categories):\n{top_lines}")
+        lines.append(f"- Where your cash is going (top expense categories, all-time):\n{top_lines}")
     else:
         lines.append("- No expenses recorded yet.")
 
@@ -437,7 +699,47 @@ def _reply_cash_management(admin_id):
     return "🐼 Here's your real cash picture:\n" + "\n".join(lines)
 
 
+def _reply_expenses(admin_id):
+    """Expense-topic reply (added 2026-08-24, closing the audit's top-ranked
+    coverage gap) - composes the same expense-category breakdown and
+    expense-health check _reply_cash_management() already uses, minus the
+    fee-collection section (a different question - see that function). No
+    new query: both insights.get_expense_breakdown()/get_expense_health()
+    already existed and were already being computed, just previously only
+    reachable through cash-flavored wording."""
+
+    expenses = insights.get_expense_breakdown(admin_id)
+    health = insights.get_expense_health(admin_id)
+
+    if not expenses:
+        return "🐼 No expenses recorded yet."
+
+    top_lines = "\n".join(
+        f"  - {item['category']}: ₹{item['amount']:,.0f} ({item['percentage']}%)"
+        for item in expenses[:3]
+    )
+    lines = [
+        f"- Your biggest expense categories (all-time):\n{top_lines}",
+        f"- Expense health this month: {health['status']} "
+        f"(spending {health['ratio_pct']}% of this month's income).",
+    ]
+
+    return "🐼 Here's your real expense picture:\n" + "\n".join(lines)
+
+
 def _reply_admissions(admin_id):
+    """Admissions-topic reply - broadened 2026-08-24 to also report this
+    admin's total roster size and best admission month, closing the "how
+    many students do I have?"/"which month had the most admissions?"/"are
+    admissions increasing?" gaps the audit found: previously this only ever
+    compared the latest two calendar months. Still one query for the trend
+    itself - get_admissions_trend() already returns every month it has, the
+    "best month" line just reads more of the same dict rather than only its
+    last two entries. get_student_count() is a second, trivial query (a
+    plain len() over get_admin_students(), already used elsewhere in this
+    same module) - a genuinely different fact (total headcount) from the
+    trend, not a substitute for it."""
+
     trend = insights.get_admissions_trend(admin_id)
 
     if not trend:
@@ -445,15 +747,32 @@ def _reply_admissions(admin_id):
 
     months = sorted(trend.items())
     latest_month, latest_count = months[-1]
+    best_month, best_count = max(trend.items(), key=lambda item: item[1])
+    student_count = insights.get_student_count(admin_id)
 
     if len(months) < 2:
-        return f"🐼 {latest_count} new admission(s) in {latest_month}."
+        lines = [f"🐼 {latest_count} new admission(s) in {latest_month}."]
+    else:
+        previous_month, previous_count = months[-2]
+        if latest_count > previous_count:
+            direction = "up"
+        elif latest_count < previous_count:
+            direction = "down"
+        else:
+            direction = "flat"
+        lines = [
+            f"🐼 Admissions are {direction} this month: {latest_count} new admission(s) "
+            f"in {latest_month} (vs {previous_count} in {previous_month})."
+        ]
+        if best_month != latest_month:
+            lines.append(f"Your best month so far was {best_month} with {best_count} new admission(s).")
 
-    previous_month, previous_count = months[-2]
-    return (
-        f"🐼 {latest_count} new admission(s) in {latest_month} "
-        f"(vs {previous_count} in {previous_month})."
+    lines.append(
+        f"You have {student_count} student(s) on your roster in total "
+        "(all-time, including students with lapsed memberships)."
     )
+
+    return " ".join(lines)
 
 
 def _reply_purpose_performance(admin_id):
@@ -550,6 +869,9 @@ _HANDLERS = {
     INTENT_FORECAST: _reply_forecast,
     INTENT_RECOMMEND: _reply_recommend,
     INTENT_CASH: _reply_cash_management,
+    INTENT_CASH_BALANCE: _reply_cash_balance,
+    INTENT_PROFIT_LOSS: _reply_profit_loss,
+    INTENT_EXPENSES: _reply_expenses,
     INTENT_NAV_HELP: _reply_nav_help,
     INTENT_GREETING: _reply_greeting,
 }

@@ -12,7 +12,7 @@ database/panda_queries.py itself, not just checked here.
 
 from flask import Blueprint, jsonify, request, session
 
-from database.panda_queries import ChatStorageUnavailable
+from database.panda_queries import ChatStorageTemporarilyUnavailable, ChatStorageUnavailable
 from panda import services
 
 panda_bp = Blueprint("panda", __name__, url_prefix="/panda")
@@ -26,6 +26,18 @@ CHAT_UNAVAILABLE_RESPONSE = {
         "owner to run the panda_conversations/panda_messages CREATE TABLE "
         "statements in database/supabase_migration.sql."
     ),
+}
+
+# Distinct from CHAT_UNAVAILABLE_RESPONSE above on purpose (2026-08-24) - a
+# transient network blip talking to Supabase (database.panda_queries's
+# ChatStorageTemporarilyUnavailable) is a "try again in a moment" condition,
+# not a "this deployment was never set up" one; telling an admin to ask
+# their project owner to run CREATE TABLE statements for a one-off dropped
+# connection would be actively wrong. static/js/panda.js reads this same
+# `message` field, same as CHAT_UNAVAILABLE_RESPONSE.
+CHAT_TEMPORARILY_UNAVAILABLE_RESPONSE = {
+    "error": "chat_temporarily_unavailable",
+    "message": "Panda couldn't reach the database just now. Please try again in a moment.",
 }
 
 
@@ -64,6 +76,8 @@ def conversations():
         return jsonify({"conversations": services.list_conversations(admin_id)})
     except ChatStorageUnavailable:
         return jsonify(CHAT_UNAVAILABLE_RESPONSE), 503
+    except ChatStorageTemporarilyUnavailable:
+        return jsonify(CHAT_TEMPORARILY_UNAVAILABLE_RESPONSE), 503
 
 
 @panda_bp.route("/conversations/<int:conversation_id>/messages", methods=["GET", "POST"])
@@ -92,3 +106,5 @@ def messages(conversation_id):
         return jsonify(thread)
     except ChatStorageUnavailable:
         return jsonify(CHAT_UNAVAILABLE_RESPONSE), 503
+    except ChatStorageTemporarilyUnavailable:
+        return jsonify(CHAT_TEMPORARILY_UNAVAILABLE_RESPONSE), 503

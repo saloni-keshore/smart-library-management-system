@@ -31,15 +31,25 @@ document.addEventListener("DOMContentLoaded", function () {
     var currentConversationId = null;
     var insightsLoaded = false;
 
-    // Shown whenever a Panda request comes back unauthenticated (401), or
-    // the server rejected it before it reached a Panda route at all (e.g.
-    // the app-wide CSRF guard in app.py's enforce_request_security aborts
-    // with an HTML error page, not JSON, when the session has lapsed) -
-    // the session/CSRF token from the page load no longer matches, so
-    // "please try again" would just fail the same way again. Distinct from
-    // CHAT_UNAVAILABLE_RESPONSE's message (panda/routes.py), which is a
-    // real, different condition (chat tables not migrated yet).
+    // Shown only when the response actually carries session/CSRF-lapse
+    // evidence: a 401 (routes.py's own _require_admin() check), or a 400
+    // with an unparseable (HTML) body - specifically app.py's app-wide CSRF
+    // guard in enforce_request_security, which is the one place a 400
+    // response is *not* JSON, aborting before a Panda route even runs
+    // because the session/CSRF token from the page load no longer matches.
+    // Distinct from CHAT_UNAVAILABLE_RESPONSE's message (panda/routes.py),
+    // a real, different condition (chat tables not migrated yet).
     var SESSION_EXPIRED_MESSAGE = "Your session has expired. Please refresh the page and log in again.";
+
+    // Shown for a non-JSON/unparseable response that ISN'T the CSRF-guard's
+    // 400 above - a genuine backend or network failure (e.g. an unhandled
+    // 500 from a transient Supabase hiccup - see
+    // database.panda_queries.ChatStorageTemporarilyUnavailable, added
+    // 2026-08-24) rather than anything to do with this admin's session.
+    // Telling the admin to "log in again" for a one-off backend blip that
+    // has nothing to do with their login would be actively misleading -
+    // this is the honest "it's not you, try again" alternative.
+    var SERVICE_UNAVAILABLE_MESSAGE = "Panda couldn't reach the server just now. Please try again in a moment.";
 
     function escapeHtml(value) {
         var div = document.createElement("div");
@@ -58,16 +68,30 @@ document.addEventListener("DOMContentLoaded", function () {
                 return { ok: response.ok, status: response.status, data: data };
             }).catch(function () {
                 // Non-JSON body (e.g. the CSRF-guard's HTML error page from
-                // a lapsed session) - surface it as a normal failed result
-                // instead of rejecting the whole promise, so callers can
-                // still inspect the status code.
+                // a lapsed session, or a raw 500 HTML error page from an
+                // unrelated backend failure) - surface it as a normal
+                // failed result instead of rejecting the whole promise, so
+                // callers can still inspect the status code and tell the
+                // two apart (see isSessionLapse()/isBackendFailure() below).
                 return { ok: false, status: response.status, data: {}, parseError: true };
             });
         });
     }
 
+    // Session/CSRF-lapse evidence only: a real 401, or the CSRF guard's
+    // specific 400+non-JSON combination. A parse failure on any *other*
+    // status code (500, 502, 503...) is not session evidence - see
+    // isBackendFailure() below, which is what those actually mean.
     function isSessionLapse(result) {
-        return result.status === 401 || result.parseError === true;
+        return result.status === 401 || (result.status === 400 && result.parseError === true);
+    }
+
+    // A non-JSON response that isn't the session-lapse case above - a
+    // genuine backend/network failure (unhandled exception, transient
+    // Supabase blip, proxy timeout...), not anything about this admin's
+    // login state.
+    function isBackendFailure(result) {
+        return result.parseError === true && !isSessionLapse(result);
     }
 
     // ------------------------------------------------------------------
@@ -200,6 +224,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!result.ok) {
                 var error = new Error(result.data.error || "chat_unavailable");
                 error.sessionLapse = isSessionLapse(result);
+                error.serviceUnavailable = isBackendFailure(result);
                 throw error;
             }
             currentConversationId = result.data.conversation.conversation_id;
@@ -226,14 +251,18 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!result.ok) {
                 appendMessage("assistant", isSessionLapse(result)
                     ? SESSION_EXPIRED_MESSAGE
-                    : (result.data.message || "Panda's chat history isn't available right now."));
+                    : isBackendFailure(result)
+                        ? SERVICE_UNAVAILABLE_MESSAGE
+                        : (result.data.message || "Panda's chat history isn't available right now."));
                 return;
             }
             appendMessage("assistant", result.data.assistant_message.content);
         }).catch(function (error) {
             appendMessage("assistant", error && error.sessionLapse
                 ? SESSION_EXPIRED_MESSAGE
-                : "Something went wrong reaching Panda. Please try again.");
+                : error && error.serviceUnavailable
+                    ? SERVICE_UNAVAILABLE_MESSAGE
+                    : "Something went wrong reaching Panda. Please try again.");
         }).finally(function () {
             sendBtn.disabled = false;
         });
@@ -276,7 +305,9 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!result.ok) {
                 var message = isSessionLapse(result)
                     ? SESSION_EXPIRED_MESSAGE
-                    : (result.data.message || "Chat history isn't available yet.");
+                    : isBackendFailure(result)
+                        ? SERVICE_UNAVAILABLE_MESSAGE
+                        : (result.data.message || "Chat history isn't available yet.");
                 historyList.innerHTML = '<li class="panda-history-empty">' + escapeHtml(message) + '</li>';
                 return;
             }

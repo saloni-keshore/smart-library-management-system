@@ -4,6 +4,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from flask import Flask, abort, render_template, request, session
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import DevelopmentConfig, ProductionConfig
 from utils.security import csrf_token, validate_csrf
@@ -34,21 +35,39 @@ DEFAULT_NAV_NOTIFICATION_PREFS = {
 }
 
 def _configure_logging(app):
+    """Attach a rotating local-file handler plus a stdout handler.
+
+    The file handler alone is not enough on a host with an ephemeral/
+    unreadable filesystem (e.g. Render, which only captures stdout/stderr
+    as "Logs") - Python's logging module has no automatic console fallback
+    once *any* handler is attached to a logger (verified: the root
+    logger's lastResort handler only fires when literally zero handlers
+    exist anywhere in the hierarchy), so without an explicit StreamHandler
+    here, every app.logger call - including _log_connected_supabase_project()'s
+    "Connected Supabase project: ..." line, which the deployment runbooks
+    (docs/DEPLOYMENT.md, docs/PROVISIONING.md) require an operator to read
+    before declaring go-live - would be written only to a local file no
+    platform log viewer can see.
+    """
     if app.testing:
         return
     log_directory = Path(app.instance_path)
     log_directory.mkdir(parents=True, exist_ok=True)
     log_path = log_directory / "smart-library.log"
-    if any(
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    app.logger.setLevel(app.config["LOG_LEVEL"])
+    if not any(
         isinstance(handler, RotatingFileHandler)
         and Path(handler.baseFilename) == log_path
         for handler in app.logger.handlers
     ):
-        return
-    handler = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=5)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    app.logger.setLevel(app.config["LOG_LEVEL"])
-    app.logger.addHandler(handler)
+        file_handler = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=5)
+        file_handler.setFormatter(formatter)
+        app.logger.addHandler(file_handler)
+    if not any(isinstance(handler, logging.StreamHandler) for handler in app.logger.handlers):
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        app.logger.addHandler(stream_handler)
 
 
 def _log_connected_supabase_project(app):
@@ -76,6 +95,20 @@ def _log_connected_supabase_project(app):
 
 def create_app(test_config=None):
     app = Flask(__name__)
+    # Trust exactly one reverse-proxy hop for client IP / scheme (Render,
+    # like most PaaS hosts, terminates TLS at an edge proxy and forwards
+    # requests to this process over plain HTTP) - without this, every
+    # request looks like a single, unencrypted connection from the proxy's
+    # own internal IP regardless of the real client: `request.is_secure`
+    # would always be False (so the HSTS header in set_security_headers()
+    # below would never actually be set, even in production over real
+    # HTTPS), and `request.remote_addr` (utils/security.py's rate_limited()
+    # keys login/forgot-password attempt limits by it) would collapse every
+    # visitor into one shared bucket instead of one per real client. Safe
+    # for local dev/tests too - ProxyFix only substitutes values when an
+    # X-Forwarded-* header is actually present, which a direct, non-proxied
+    # connection never sends.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
     environment = os.environ.get("APP_ENV", "production").lower()
     app.config.from_object(DevelopmentConfig if environment == "development" else ProductionConfig)
     if test_config:
