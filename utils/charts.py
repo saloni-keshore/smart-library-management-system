@@ -13,6 +13,27 @@ from database.payment_queries import get_payments_for_admin
 from utils.normalization import normalize_category
 
 
+def _leader_line_connectionstyle(dx, dy):
+    """Return the matplotlib ``angle`` connectionstyle for a pie/donut label
+    leader line pointing from the wedge centroid ``(dx, dy)``.
+
+    matplotlib builds an ``angle`` connection by intersecting a ray at
+    ``angleA`` with one at ``angleB``; when the two are equal or exactly
+    180 deg apart the rays are parallel and it raises
+    ``ValueError: Given lines do not intersect`` (matplotlib/bezier.py
+    ``get_intersection``). ``angleA`` is always ``0`` here, so any wedge
+    whose centroid sits on the horizontal axis triggers it - most commonly
+    a **single-slice pie**, whose one wedge is centred at 180 deg. Nudge
+    ``angleB`` off the degenerate value by 1 deg (imperceptible on a leader
+    line this short) so the corner always resolves.
+    """
+    angle_b = float(np.degrees(np.arctan2(dy, dx)))
+    m = angle_b % 180.0
+    if m < 1.0 or m > 179.0:
+        angle_b += 1.0
+    return f"angle,angleA=0,angleB={angle_b}"
+
+
 def _smooth_curve(x, y, samples_per_segment=30):
     """Catmull-Rom interpolation that still passes exactly through every point."""
 
@@ -303,7 +324,7 @@ def generate_membership_chart(admin_id):
                 arrowstyle="-",
                 color="#cbd5e1",
                 lw=1,
-                connectionstyle=f"angle,angleA=0,angleB={np.degrees(np.arctan2(point['y'], point['x']))}"
+                connectionstyle=_leader_line_connectionstyle(point["x"], point["y"])
             ),
             zorder=5
         )
@@ -471,7 +492,7 @@ def generate_membership_distribution_donut(admin_id):
                     arrowstyle="-",
                     color="#cbd5e1",
                     lw=1,
-                    connectionstyle=f"angle,angleA=0,angleB={np.degrees(np.arctan2(point['y'], point['x']))}"
+                    connectionstyle=_leader_line_connectionstyle(point["x"], point["y"])
                 ),
                 zorder=5
             )

@@ -172,13 +172,12 @@ A fresh project provisioned via [PROVISIONING.md](PROVISIONING.md) gets these au
 ## `waitress-serve: command not found` (or `ModuleNotFoundError: No module named 'waitress'`)
 
 **Cause (historical — resolved 2026-08-21, ADR-53):** `docs/DEPLOYMENT.md` documented `waitress-serve --call wsgi:create_app` as the production launch command, but `waitress` was missing from `requirements.txt` — a fresh `pip install -r requirements.txt` never actually installed it.
-**If you still see this:** your `requirements.txt` predates the fix — pull the latest and re-run `pip install -r requirements.txt`. `requirements.txt` is UTF-16LE-encoded with a BOM — if you're editing it by hand and see garbled characters in a plain-text editor, that's why; use a tool/editor that respects the file's actual encoding rather than re-saving it as UTF-8, which would corrupt every other line too.
+**If you still see this:** your `requirements.txt` predates the fix — pull the latest and re-run `pip install -r requirements.txt`. (`requirements.txt` was UTF-16LE-encoded with a BOM until 2026-08-27; it is now plain UTF-8. If you regenerate it from PowerShell use `pip freeze | Out-File -Encoding utf8 requirements.txt` so it stays UTF-8 — a UTF-16 file breaks `pip install` on Render's Linux build image. See TD-75.)
 
 ## Dashboard/Membership Distribution 500s with `ValueError: Given lines do not intersect...`
 
-**Cause (found 2026-08-21, TD-68 — pre-existing, unrelated to ADR-53):** `utils/charts.py`'s `generate_membership_chart()` crashes when the pie chart ends up with **exactly two plan categories at an exactly 50/50 split** — the two wedge labels' leader lines land at exactly opposite angles, a degenerate case matplotlib's `connectionstyle="angle"` can't resolve. Confirmed live via a real admin whose Monthly/Custom membership counts happened to land on 6/6.
-**Fix:** none shipped yet — out of scope for the session that found it (see TD-68 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)) — closing it needs either a symmetric-split special case in `generate_membership_chart()` or a different `connectionstyle`.
-**Workaround:** create/renew one more membership under any plan for the affected admin to break the exact tie (any split other than an exact 50/50 across exactly two categories avoids the degenerate angle).
+**Cause (TD-68):** `utils/charts.py`'s `generate_membership_chart()` / `generate_membership_distribution_donut()` crashed when a pie/donut wedge's centroid landed exactly on the horizontal axis — an **exact 50/50 two-plan split**, or **any plan that is exactly 50% of the roster** — so its leader-line `connectionstyle="angle"` got two parallel rays, which `matplotlib/bezier.py`'s `get_intersection()` can't resolve. First seen 2026-08-21 (a test admin on a 6/6 Monthly/Custom split), then again live on the first Render deployment.
+**Fix (shipped 2026-08-28):** both functions now build the leader-line `connectionstyle` via `_leader_line_connectionstyle(dx, dy)`, which nudges `angleB` 1 deg off any multiple of 180. Pull the latest and redeploy — no workaround needed. (The old workaround was to create/renew one more membership to break the exact tie; still valid if you're on an older build.)
 
 ## An operator suspects a deployment is connected to the wrong library's Supabase project
 
