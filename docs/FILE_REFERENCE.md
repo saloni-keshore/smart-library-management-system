@@ -24,6 +24,25 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 - **Depended on by:** `app.py` (`from config import DevelopmentConfig, ProductionConfig`).
 - **Future modification notes:** New env-driven settings belong here, as a `Config`/`DevelopmentConfig`/`ProductionConfig` attribute, not as an ad hoc `os.environ.get(...)` scattered in a route.
 
+### `wsgi.py`
+- **Purpose:** Production WSGI entry point. A one-line module that re-exports `create_app` so a WSGI server can build the app via the factory.
+- **Responsibilities:** `from app import create_app` — nothing else. Used as `waitress-serve --call wsgi:create_app`.
+- **Depends on:** `app.create_app`.
+- **Depended on by:** the production start command only (not imported by application code). `render.yaml`'s `startCommand` names it.
+- **Future modification notes:** Keep this free of side effects — it must stay importable without starting a server.
+
+### `requirements.txt`
+- **Purpose:** Pinned production dependency set (exact `==` versions), installed by `render.yaml`'s `buildCommand` and in local venvs.
+- **Responsibilities:** Lists Flask/Werkzeug/Jinja, `supabase` + its transitive stack, `matplotlib`/`numpy`/`pillow` (charts), `waitress` (prod WSGI server), `python-dotenv`, `cryptography`/`PyJWT`, and `pytest`.
+- **Future modification notes:** **Must be saved as UTF-8** — it was UTF-16 LE until 2026-08-27, which parses fine on Windows but makes `pip install -r requirements.txt` fail on Linux (Render's build image). `contourpy==1.3.3` forces Python ≥3.11; keep [.python-version](../.python-version) (`3.11.9`) in sync with the runtime that installs this.
+
+### `render.yaml`
+- **Purpose:** Render Blueprint (Infrastructure-as-Code) describing the one web service that runs this app. Added 2026-08-27.
+- **Responsibilities:** Declares `runtime: python`, `buildCommand: pip install -r requirements.txt`, `startCommand: waitress-serve --host=0.0.0.0 --port=$PORT --call wsgi:create_app`, `healthCheckPath: /`, and the env vars — `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, `LOG_LEVEL=INFO`, `SECRET_KEY` (`generateValue: true`), and `SUPABASE_URL`/`SUPABASE_SECRET_KEY` (`sync: false`, so Render prompts and never stores them in the repo). Python version is not set here — it comes from [.python-version](../.python-version).
+- **Depends on:** `requirements.txt`, `wsgi.py`, `.python-version`.
+- **Depended on by:** Render only (read when you create a Blueprint service or on each push if `autoDeploy` is on).
+- **Future modification notes:** This is one deployment for one library (ADR-53) — do not turn it into a multi-service file for multiple libraries. If you add a required env var to `config.py` or `database/supabase_client.py`, add it here too (as `sync: false` if it is a secret). Backups (`backups/`) and Library Profile uploads (`static/uploads/settings/`) still write to Render's ephemeral disk and are lost on redeploy — see **TD-73**; adding a Render Disk or moving to Supabase Storage would change this file.
+
 ---
 
 ## `database/`

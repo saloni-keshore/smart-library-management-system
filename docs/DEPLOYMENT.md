@@ -13,3 +13,17 @@
 7. Backups are Supabase's responsibility at the infrastructure level (point-in-time recovery / scheduled dumps, configured in the Supabase project itself) — the app's own Settings → Data & Backup → "Create Backup" is a manual, per-admin data export (JSON), not a substitute for a real database backup strategy. Both this export and Library Profile's logo/stamp/signature upload write to this deployment's **local disk** (`<app root>/backups/`, `static/uploads/settings/`) with no fallback to Supabase Storage — on a host with an ephemeral filesystem and no persistent disk attached, uploaded branding images are lost on every restart/redeploy (see **TD-73** in `11_FUTURE_WORK.md`).
 
 Because there's no local file to share or lock, multiple independent web workers *of the same deployment* can safely point at that deployment's own Supabase project concurrently — the constraint SQLite had (no shared file over a network filesystem) no longer applies. This does not extend across libraries: each library's workers/hosts point at that library's project only.
+
+## Render Blueprint (`render.yaml`)
+
+Added 2026-08-27. `render.yaml` at the repo root encodes steps 1, 2 (variable *names* only), and 4 above so the service can be created from the Render dashboard with **New + → Blueprint** instead of filling the fields in by hand:
+
+- `buildCommand: pip install -r requirements.txt`
+- `startCommand: waitress-serve --host=0.0.0.0 --port=$PORT --call wsgi:create_app` — `$PORT` is injected by Render; this is the `--host=0.0.0.0 --port=<proxy port>` form step 4 requires behind a TLS-terminating proxy.
+- `healthCheckPath: /` — the login page (`routes/auth.py`, `GET /`) returns `200`; it does hit Supabase on each load, so the health check only passes once `SUPABASE_URL`/`SUPABASE_SECRET_KEY` are set.
+- Env vars: `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, `LOG_LEVEL=INFO` inline; `SECRET_KEY` via `generateValue: true` (Render generates a strong per-deployment value — satisfies the "freshly generated, never shared across deployments" requirement in step 2); `SUPABASE_URL`/`SUPABASE_SECRET_KEY` as `sync: false` so Render prompts for this library's own project values and never stores them in the repo.
+- Python version is **not** in `render.yaml` — it still comes from `.python-version` (`3.11.9`), which Render's native Python runtime reads automatically.
+
+Steps 3, 5, 6, 7 are still manual and unchanged — the Blueprint does not run `scripts/verify_schema.py` / `scripts/verify_tenant_isolation.py`, apply `database/supabase_migration.sql`, or read the `Connected Supabase project: ...` log line for you.
+
+**`requirements.txt` must be UTF-8.** It was UTF-16 LE (with BOM) until 2026-08-27; `pip` on Render's Linux build image cannot parse that (it installs fine from a Windows shell, which masked the problem locally). If you regenerate it with `pip freeze > requirements.txt` from PowerShell, force the encoding: `pip freeze | Out-File -Encoding utf8 requirements.txt`.
