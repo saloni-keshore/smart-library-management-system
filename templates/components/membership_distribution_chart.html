@@ -32,14 +32,18 @@
 
                 <div class="distribution-chart-wrapper">
 
-                    <img
-                        src="{{ url_for('static', filename='charts/membership_distribution_donut.png') }}"
+                    <canvas
+                        id="distribution-donut-canvas"
                         class="distribution-donut-img chart-scale-in"
-                        alt="Membership Plan Distribution Donut Chart">
+                        aria-label="Membership Plan Distribution Donut Chart" role="img"></canvas>
 
                 </div>
 
             </div>
+
+            <script>
+                window.membershipDistributionChart = {{ distribution_chart_data | tojson }};
+            </script>
 
         </div>
 

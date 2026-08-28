@@ -8,7 +8,8 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 |---|---|---|
 | `app.py` | Flask app factory, blueprint registration, entry point | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
 | `config.py` | Env-driven config classes used by `app.py`; also the app's `load_dotenv()` call site | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
-| `requirements.txt` | Python deps — currently only `Flask`, `Werkzeug` (missing `matplotlib`/`numpy`, see [11_FUTURE_WORK.md](11_FUTURE_WORK.md)) | |
+| `requirements.txt` | Pinned Python deps (`==` versions) — Flask/Werkzeug/Jinja, `supabase` + its stack, `waitress`, `python-dotenv`, `cryptography`, `pytest`. Must be UTF-8. No `matplotlib`/`numpy` since 2026-08-28 (ADR-56 — charts are client-side now) | |
+| `vercel.json` / `api/index.py` / `.vercelignore` | Vercel serverless deploy config (secondary/testing host alongside Render) — see [DEPLOYMENT.md](DEPLOYMENT.md) | |
 | `README.md` | **Empty (0 bytes)** — no project-level README exists | [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
 | `.claude/` | Claude Code local settings (`settings.local.json`) | |
 | `.agents/` | Empty directory, no files | [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) |
@@ -88,9 +89,8 @@ Full breakdown: [06_TEMPLATES_REFERENCE.md](06_TEMPLATES_REFERENCE.md).
 |---|---|
 | `css/style.css` | Main global stylesheet (sidebar theme vars, layout, base component styles) |
 | `css/business_intelligence.css`, `css/cashbook.css`, `css/membership_distribution.css`, `css/settings.css`, `css/login.css` | Page-specific stylesheets, each with their own `:root` design-token variables |
-| `js/*.js` (7 files) | Per-page Chart.js wiring, dashboard skeleton loaders, login toggle, settings form + transaction modal logic |
-| `charts/` | 3 server-generated PNGs (`revenue.png`, `membership.png`, `membership_distribution_donut.png`), overwritten in place by `utils/charts.py` |
-| `uploads/settings/` | Per-admin uploaded branding assets (logo/stamp/signature), named `{type}_{admin_id}_{filename}` |
+| `js/*.js` | Per-page Chart.js wiring (incl. `dashboard-charts.js`, which renders the Dashboard/Distribution charts), skeleton loaders, login toggle, settings form + transaction modal logic |
+| `uploads/settings/` | **Legacy (ADR-57).** Branding images (logo/stamp/signature) now upload to a public Supabase Storage bucket (`library-branding`) via `database/branding_storage.py`; `library_settings.*_path` holds the full URL. Any files left here are pre-migration and still resolve via `utils/branding.py`'s `branding_src()` |
 | `images/` | Empty directory, no files |
 
 Full breakdown: [07_STATIC_ASSETS.md](07_STATIC_ASSETS.md).
@@ -99,7 +99,8 @@ Full breakdown: [07_STATIC_ASSETS.md](07_STATIC_ASSETS.md).
 
 | Path | Purpose |
 |---|---|
-| `charts.py` | Server-side matplotlib chart generation (revenue line chart, membership pie chart, membership distribution donut) |
+| `chart_data.py` | Chart.js `{labels, datasets}` builders for the Dashboard/Distribution charts (`build_revenue_chart_data`, `build_membership_chart_data`, `build_plan_distribution_chart_data`) — replaced the matplotlib `charts.py` on 2026-08-28 (ADR-56); rendering is client-side now |
+| `normalization.py` | Shared input-normalization helpers (see ADR-36) |
 
 Detail: [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md).
 

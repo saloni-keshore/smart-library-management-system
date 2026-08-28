@@ -20,12 +20,12 @@ This `docs/` folder documents the **actual, current implementation** of the Smar
 | File | Contents |
 |---|---|
 | [03_PROJECT_STRUCTURE.md](03_PROJECT_STRUCTURE.md) | Annotated file/folder tree — one-line purpose for every file |
-| [FILE_REFERENCE.md](FILE_REFERENCE.md) | Per-file deep-dive cards (Purpose, Responsibilities, Functions/Classes, Depends on, Depended on by, Future modification notes) for `app.py`, every route, every database module, every template folder, and `utils/charts.py` |
+| [FILE_REFERENCE.md](FILE_REFERENCE.md) | Per-file deep-dive cards (Purpose, Responsibilities, Functions/Classes, Depends on, Depended on by, Future modification notes) for `app.py`, every route, every database module, every template folder, `utils/`, and the deploy files (`render.yaml`, `vercel.json`, …) |
 | [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md) | Every table, column, relationship, and migration script, with known inconsistencies flagged |
 | [05_ROUTES_REFERENCE.md](05_ROUTES_REFERENCE.md) | Every blueprint and route: method, path, template, auth check, purpose |
 | [06_TEMPLATES_REFERENCE.md](06_TEMPLATES_REFERENCE.md) | Layout system, every template and component, context variables expected |
 | [07_STATIC_ASSETS.md](07_STATIC_ASSETS.md) | CSS/JS/chart images/uploads — what each file does |
-| [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) | `utils/charts.py` in detail, plus what the empty `models/`, `services/`, `reports/`, `tests/`, `backups/`, `.agents/` folders were apparently meant to hold |
+| [08_UTILS_SERVICES_MODELS.md](08_UTILS_SERVICES_MODELS.md) | `utils/` (`chart_data.py`, `normalization.py`, `security.py`) in detail, plus what the empty `models/`, `services/`, `reports/`, `.agents/` folders were apparently meant to hold |
 | [09_DEPENDENCY_MAP.md](09_DEPENDENCY_MAP.md) | Text form of the module dependency graph, plus cross-blueprint `url_for` couplings (runtime-only, not imports) |
 | [10_FEATURE_MODULES.md](10_FEATURE_MODULES.md) | End-to-end walkthrough per feature (route → query → template) |
 

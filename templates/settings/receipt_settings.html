@@ -28,9 +28,9 @@
           action="{{ url_for('setting.receipt_settings') }}"
           id="receiptSettingsForm"
           data-library-name="{{ settings.library_name if settings else '' }}"
-          data-logo-url="{{ url_for('static', filename=settings.logo_path) if settings and settings.logo_path else '' }}"
-          data-stamp-url="{{ url_for('static', filename=settings.stamp_path) if settings and settings.stamp_path else '' }}"
-          data-signature-url="{{ url_for('static', filename=settings.signature_path) if settings and settings.signature_path else '' }}">
+          data-logo-url="{{ branding_src(settings.logo_path) if settings else '' }}"
+          data-stamp-url="{{ branding_src(settings.stamp_path) if settings else '' }}"
+          data-signature-url="{{ branding_src(settings.signature_path) if settings else '' }}">
 
         <div class="row g-4">
 
@@ -93,7 +93,7 @@
                         <div class="row g-3">
                             <div class="col-md-4 text-center">
                                 {% if settings and settings.logo_path %}
-                                <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="Logo" class="settings-doc-preview-img mb-2">
+                                <img src="{{ branding_src(settings.logo_path) }}" alt="Logo" class="settings-doc-preview-img mb-2">
                                 {% else %}
                                 <div class="text-muted small mb-2">No logo uploaded.</div>
                                 {% endif %}
@@ -105,7 +105,7 @@
                             </div>
                             <div class="col-md-4 text-center">
                                 {% if settings and settings.stamp_path %}
-                                <img src="{{ url_for('static', filename=settings.stamp_path) }}" alt="Stamp" class="settings-doc-preview-img mb-2">
+                                <img src="{{ branding_src(settings.stamp_path) }}" alt="Stamp" class="settings-doc-preview-img mb-2">
                                 {% else %}
                                 <div class="text-muted small mb-2">No stamp uploaded.</div>
                                 {% endif %}
@@ -117,7 +117,7 @@
                             </div>
                             <div class="col-md-4 text-center">
                                 {% if settings and settings.signature_path %}
-                                <img src="{{ url_for('static', filename=settings.signature_path) }}" alt="Signature" class="settings-doc-preview-img mb-2">
+                                <img src="{{ branding_src(settings.signature_path) }}" alt="Signature" class="settings-doc-preview-img mb-2">
                                 {% else %}
                                 <div class="text-muted small mb-2">No signature uploaded.</div>
                                 {% endif %}

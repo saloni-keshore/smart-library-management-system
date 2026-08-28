@@ -10,7 +10,7 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
 
 ## Prerequisites
 
-- **Python 3.11 or newer.** Verified during this session: a clean `pip install -r requirements.txt` fails on Python 3.10 (`contourpy==1.3.3 Requires-Python >=3.11` — a transitive `matplotlib` dependency, used by `utils/charts.py`) and succeeds cleanly on 3.11. This wasn't documented anywhere before now.
+- **Python 3.11 or newer** (pinned by `.python-version` = `3.11.9`). Historically forced by `contourpy`/`matplotlib`; as of 2026-08-28 (ADR-56) those are removed and no dependency requires 3.11 any more, but the pin is kept for a consistent, tested runtime across deployments.
 - The ability to create a virtual environment.
 - Access to create a new Supabase project (a Supabase account with project-creation permission).
 - This repository, checked out fresh or already available locally.
@@ -37,6 +37,8 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
    ```
 
    Confirm it reports `PASS` and every table as `OK` before continuing. If anything is `MISSING`, re-check step 2 — in particular `ai_center_settings`, `panda_conversations`, and `panda_messages` are the tables most likely to be skipped by an incomplete run (TD-53/TD-55). If every table instead reports `ERROR` with a `42501 permission denied` detail, re-check step 3.
+
+5. **Storage — nothing to do.** The `library-branding` bucket for Library Profile logo/stamp/signature images (ADR-57) is created automatically, public, the first time an admin uploads one (`database/branding_storage.py` `_ensure_bucket()`, using the service-role key). Set `SUPABASE_STORAGE_BUCKET` in `.env` only if you need a different bucket name.
 
 ## Step B — Configure the deployment
 

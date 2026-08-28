@@ -1,20 +1,20 @@
 import csv
 import io
 import json
-import os
 import re
 import secrets
 from datetime import datetime
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for, flash, session,
-    current_app, jsonify, send_file, Response
+    jsonify, send_file, Response
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
+from database.branding_storage import upload_branding_image, delete_branding_image
 from database.settings_queries import (
     get_library_settings, save_library_settings, clear_library_logo
 )
@@ -34,6 +34,7 @@ from database.security_settings_queries import (
     get_security_settings, save_security_settings
 )
 from routes.auth import validate_password
+from utils.branding import branding_src
 from utils.normalization import (
     normalize_name,
     normalize_phone,
@@ -52,6 +53,12 @@ setting_bp = Blueprint(
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class UploadStorageUnavailable(Exception):
+    """Raised by _save_upload() when Supabase Storage can't be reached to
+    store a branding image. Callers catch this and save the rest of the
+    form instead of returning a 500. See ADR-57 / TD-73."""
 
 MEMBERSHIP_SETTING_FIELDS = {
     "monthly_fee": ("Monthly Plan Fee", "currency"),
@@ -459,21 +466,33 @@ def library_profile():
             flash(message, "danger")
             return redirect(url_for("setting.library_profile"))
 
-        if logo_file and logo_file.filename:
-            logo_path = _save_upload(logo_file, admin_id, "logo")
-        elif remove_logo:
-            logo_path = None
-        else:
-            logo_path = existing["logo_path"] if existing else None
+        # Branding-image storage is best-effort: on a read-only-filesystem
+        # host (e.g. serverless) _save_upload() raises UploadStorageUnavailable
+        # and we keep the previously-stored path, save every other field, and
+        # tell the admin the image part didn't stick (see TD-73) instead of
+        # failing the whole form with a 500.
+        uploads_unavailable = False
+        try:
+            if logo_file and logo_file.filename:
+                logo_path = _save_upload(logo_file, admin_id, "logo")
+            elif remove_logo:
+                logo_path = None
+            else:
+                logo_path = existing["logo_path"] if existing else None
 
-        if stamp_file and stamp_file.filename:
-            stamp_path = _save_upload(stamp_file, admin_id, "stamp")
-        else:
+            if stamp_file and stamp_file.filename:
+                stamp_path = _save_upload(stamp_file, admin_id, "stamp")
+            else:
+                stamp_path = existing["stamp_path"] if existing else None
+
+            if signature_file and signature_file.filename:
+                signature_path = _save_upload(signature_file, admin_id, "signature")
+            else:
+                signature_path = existing["signature_path"] if existing else None
+        except UploadStorageUnavailable:
+            uploads_unavailable = True
+            logo_path = None if remove_logo else (existing["logo_path"] if existing else None)
             stamp_path = existing["stamp_path"] if existing else None
-
-        if signature_file and signature_file.filename:
-            signature_path = _save_upload(signature_file, admin_id, "signature")
-        else:
             signature_path = existing["signature_path"] if existing else None
 
         data = {
@@ -499,22 +518,31 @@ def library_profile():
 
         save_library_settings(admin_id, data)
 
+        upload_warning = (
+            "Your profile was saved. Image uploads aren't available on this deployment."
+            if uploads_unavailable else None
+        )
+
         if is_ajax:
             saved = get_library_settings(admin_id)
             return jsonify(
                 success=True,
-                message="Library Profile Updated Successfully",
+                message=upload_warning or "Library Profile Updated Successfully",
+                warning=upload_warning,
                 settings={
                     "library_name": saved["library_name"],
                     "registration_date": saved["created_at"][:16],
                     "last_updated": saved["updated_at"][:16],
-                    "logo_url": url_for("static", filename=saved["logo_path"]) if saved["logo_path"] else None,
+                    "logo_url": branding_src(saved["logo_path"]) or None,
                     "stamp_filename": saved["stamp_path"].split("/")[-1] if saved["stamp_path"] else None,
                     "signature_filename": saved["signature_path"].split("/")[-1] if saved["signature_path"] else None,
                 }
             )
 
-        flash("Library profile saved successfully.", "success")
+        if upload_warning:
+            flash(upload_warning, "warning")
+        else:
+            flash("Library profile saved successfully.", "success")
         return redirect(url_for("setting.library_profile"))
 
     library_id = f"LIB{admin_id:04d}"
@@ -534,10 +562,9 @@ def remove_library_logo():
     existing = get_library_settings(admin_id)
 
     if existing and existing["logo_path"]:
-        file_path = os.path.join(current_app.static_folder, existing["logo_path"])
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
+        # Best-effort: remove the Storage object (or legacy local file).
+        # A failed cleanup must not stop the DB row from being cleared.
+        delete_branding_image(existing["logo_path"])
         clear_library_logo(admin_id)
 
     return jsonify(success=True, message="Logo removed successfully.")
@@ -791,12 +818,11 @@ def data_backup():
     admin_id = session["admin_id"]
 
     backup_info = get_backup_info(admin_id)
-    backups_dir = os.path.join(current_app.root_path, "backups")
 
     return render_template(
         "settings/data_backup.html",
         last_backup_at=backup_info["last_backup_at"] if backup_info else None,
-        backup_location=backups_dir,
+        backup_location="Downloaded to your device",
     )
 
 
@@ -853,23 +879,26 @@ def backup_create():
 
     admin_id = session["admin_id"]
 
-    backups_dir = os.path.join(current_app.root_path, "backups")
-    os.makedirs(backups_dir, exist_ok=True)
-
     backup_filename = f"library_backup_{admin_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    backup_path = os.path.join(backups_dir, backup_filename)
 
     export = {
         "exported_at": datetime.now().isoformat(),
         "admin_id": admin_id,
         "tables": _collect_admin_backup_data(admin_id),
     }
-    with open(backup_path, "w", encoding="utf-8") as backup_file:
-        json.dump(export, backup_file, indent=2, default=str)
 
+    # Built and streamed from memory (no local file) so this works on a
+    # read-only-filesystem host too; record_backup() only logs the filename
+    # to Supabase, it never touches disk.
+    payload = json.dumps(export, indent=2, default=str).encode("utf-8")
     record_backup(admin_id, backup_filename)
 
-    return send_file(backup_path, as_attachment=True, download_name=backup_filename)
+    return send_file(
+        io.BytesIO(payload),
+        mimetype="application/json",
+        as_attachment=True,
+        download_name=backup_filename,
+    )
 
 
 # ==========================================================
@@ -968,15 +997,33 @@ def _allowed_upload(file):
     )
 
 
+_UPLOAD_CONTENT_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+}
+
+
 def _save_upload(file, admin_id, field_name):
-    """Save an uploaded file under static/uploads/settings/ and return the
-    path to store in the database (relative to static/)."""
+    """Upload a branding image to Supabase Storage (ADR-57) and return its
+    full public URL to store in `library_settings`.
 
-    upload_dir = os.path.join(current_app.static_folder, "uploads", "settings")
-    os.makedirs(upload_dir, exist_ok=True)
+    Raises UploadStorageUnavailable if Storage is unreachable so the caller
+    can save the rest of the form instead of 500ing (same degradation as
+    when local disk was read-only). See TD-73."""
 
-    original_name = secure_filename(file.filename)
-    stored_name = f"{field_name}_{admin_id}_{secrets.token_hex(8)}_{original_name}"
-    file.save(os.path.join(upload_dir, stored_name))
+    data = file.read()
+    file.stream.seek(0)
 
-    return f"uploads/settings/{stored_name}"
+    extension = secure_filename(file.filename).rsplit(".", 1)[-1].lower()
+    if extension not in _UPLOAD_CONTENT_TYPES:
+        extension = "png"
+    object_path = f"admin_{admin_id}/{field_name}_{secrets.token_hex(8)}.{extension}"
+
+    try:
+        return upload_branding_image(
+            object_path, data, _UPLOAD_CONTENT_TYPES[extension]
+        )
+    except Exception as exc:
+        raise UploadStorageUnavailable(str(exc)) from exc

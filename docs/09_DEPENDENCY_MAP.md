@@ -20,8 +20,8 @@ routes/dashboard.py            → database.supabase_client.get_supabase_client 
                                   get_admin_students, get_days_left — as of 2026-07-23, ADR-23, replacing the
                                   raw SQLite JOINs and DAYS_LEFT_SQL this route used before; no SQLite dependency
                                   left in this route)
-                                → utils.charts (generate_revenue_chart — Supabase, ADR-25;
-                                  generate_membership_chart — Supabase, ADR-23)
+                                → utils.chart_data (build_revenue_chart_data, build_membership_chart_data —
+                                  client-side Chart.js payloads, ADR-56, replacing utils.charts)
                                 → database.cashbook_categories (constants only)
                                 → database.cashbook_queries (get_pending_fees — Supabase, ADR-23;
                                   get_total_fee_revenue/get_today_fee_collection — Supabase, ADR-25; this
@@ -47,7 +47,8 @@ routes/membership_distribution.py → database.supabase_client (via database.mem
                                 → database.payment_queries.get_payments_for_admin (as of 2026-07-24, ADR-25,
                                   replacing the batched SQLite payments lookup for receipt_number/payment_mode/
                                   payment_date/last_amount_paid — this route has no SQLite dependency left)
-                                → utils.charts.generate_membership_distribution_donut (Supabase, ADR-23)
+                                → utils.chart_data.build_plan_distribution_chart_data (client-side Chart.js
+                                  doughnut payload, ADR-56, replacing utils.charts.generate_membership_distribution_donut)
                                 → database.cashbook_queries (get_pending_fees, get_total_fee_revenue — both Supabase)
                                 → database.membership_queries (get_membership_counts, get_memberships_for_admin,
                                   get_effective_status — as of 2026-07-23, ADR-23, replacing two raw SQLite
@@ -205,15 +206,16 @@ routes/cashbook.py    add_transaction() → url_for('dashboard.dashboard') optio
 routes/setting.py     all routes → url_for('setting.index')             self-referencing redirects
 ```
 
-## `utils/charts.py` — called by, not calling
+## `utils/chart_data.py` — called by, not calling
 
 ```
-routes/dashboard.py               → utils.charts.generate_revenue_chart
-                                   → utils.charts.generate_membership_chart
-routes/membership_distribution.py → utils.charts.generate_membership_distribution_donut
+routes/dashboard.py               → utils.chart_data.build_revenue_chart_data      (dashboard() + revenue_chart())
+                                   → utils.chart_data.build_membership_chart_data
+routes/membership_distribution.py → utils.chart_data.build_plan_distribution_chart_data   (fed the plan_counts dict)
+tests/test_05_*.py               → utils.chart_data._monthly_revenue_for_year
 ```
 
-`utils/charts.py` itself is not a pure function of data passed in — it queries the DB on its own. As of 2026-07-23 (ADR-23), `generate_membership_chart`/`generate_membership_distribution_donut` import `database.membership_queries.get_memberships_for_admin` (Supabase). As of 2026-07-24 (ADR-25), `generate_revenue_chart` imports `database.payment_queries.get_payments_for_admin` (Supabase) too — this module has no SQLite dependency left at all.
+Added 2026-08-28 (ADR-56), replacing the deleted `utils/charts.py` (matplotlib PNGs). Charts now render client-side with Chart.js. `build_revenue_chart_data`/`build_membership_chart_data` import `database.payment_queries.get_payments_for_admin` / `database.membership_queries.get_memberships_for_admin` (Supabase) and `utils.normalization.normalize_category`; `build_plan_distribution_chart_data` and `_monthly_revenue_for_year`/`_plan_counts` are pure functions of data passed in. No chart/plotting library, no `matplotlib`/`numpy`.
 
 ## Template include/extend graph (high level)
 

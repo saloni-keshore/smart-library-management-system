@@ -10,7 +10,7 @@
 4. Serve with a production WSGI server: `waitress-serve --call wsgi:create_app`, behind HTTPS. **If this deployment sits behind a reverse proxy that terminates TLS** (a load balancer, Render, or any similar PaaS — i.e. almost always in practice), pass `--host=0.0.0.0 --port=<the port the proxy forwards to>` so waitress actually listens where the proxy expects it; `app.py`'s `create_app()` (as of 2026-08-25) wraps the WSGI app in `ProxyFix(x_for=1, x_proto=1)` so `request.is_secure` (the HSTS header) and `request.remote_addr` (the login rate limiter) correctly reflect the real client rather than the proxy's own connection — this assumes exactly **one** trusted proxy hop between the client and this process; a deployment shape with more hops (e.g. a CDN in front of the PaaS host's own edge proxy) would need a larger `x_for`/`x_proto` count.
 5. Check this deployment's log for the `Connected Supabase project: ...` startup line and visually confirm it matches the intended project before declaring go-live. As of 2026-08-25, this line (and all other `app.logger` output) goes to stdout in addition to the local `instance/smart-library.log` file — on a host with no readable/persistent local filesystem (Render, etc.), stdout (the host's own "Logs" view) is the only place this line will actually be visible.
 6. Run `python scripts/verify_tenant_isolation.py` (before, and again right after, the first admin registers) to confirm this project contains only this one library's data — see PROVISIONING.md.
-7. Backups are Supabase's responsibility at the infrastructure level (point-in-time recovery / scheduled dumps, configured in the Supabase project itself) — the app's own Settings → Data & Backup → "Create Backup" is a manual, per-admin data export (JSON), not a substitute for a real database backup strategy. Both this export and Library Profile's logo/stamp/signature upload write to this deployment's **local disk** (`<app root>/backups/`, `static/uploads/settings/`) with no fallback to Supabase Storage — on a host with an ephemeral filesystem and no persistent disk attached, uploaded branding images are lost on every restart/redeploy (see **TD-73** in `11_FUTURE_WORK.md`).
+7. Backups are Supabase's responsibility at the infrastructure level (point-in-time recovery / scheduled dumps, configured in the Supabase project itself) — the app's own Settings → Data & Backup → "Create Backup" is a manual, per-admin data export (JSON), not a substitute for a real database backup strategy. As of 2026-08-28 this export is streamed from memory (no local file) and Library Profile's logo/stamp/signature images are stored in a Supabase Storage bucket (`library-branding`, auto-created), so neither writes to local disk any more — **TD-73 is resolved** and an ephemeral/read-only filesystem host no longer loses branding images.
 
 Because there's no local file to share or lock, multiple independent web workers *of the same deployment* can safely point at that deployment's own Supabase project concurrently — the constraint SQLite had (no shared file over a network filesystem) no longer applies. This does not extend across libraries: each library's workers/hosts point at that library's project only.
 
@@ -27,3 +27,28 @@ Added 2026-08-27. `render.yaml` at the repo root encodes steps 1, 2 (variable *n
 Steps 3, 5, 6, 7 are still manual and unchanged — the Blueprint does not run `scripts/verify_schema.py` / `scripts/verify_tenant_isolation.py`, apply `database/supabase_migration.sql`, or read the `Connected Supabase project: ...` log line for you.
 
 **`requirements.txt` must be UTF-8.** It was UTF-16 LE (with BOM) until 2026-08-27; `pip` on Render's Linux build image cannot parse that (it installs fine from a Windows shell, which masked the problem locally). If you regenerate it with `pip freeze > requirements.txt` from PowerShell, force the encoding: `pip freeze | Out-File -Encoding utf8 requirements.txt`.
+
+## Vercel (`vercel.json`) — secondary / testing host
+
+Added 2026-08-28 (ADR-56). The app can also run on Vercel's serverless Python runtime **alongside** an existing Render deployment, pointing at the **same Supabase project** and using the **same `SECRET_KEY`** (one library, multiple hosts — permitted by ADR-53; a shared `SECRET_KEY` is required so a session cookie issued by one host validates on the other). Render is unaffected: it reads only `render.yaml` / `.python-version` / `wsgi.py`, none of which Vercel touches, and the new Vercel files below are ignored by Render.
+
+**Vercel Hobby is licensed for non-commercial use only (Vercel ToS).** Use this target for testing/preview; a production host for real libraries needs Vercel Pro.
+
+Files (all Vercel-only):
+
+- `api/index.py` — the WSGI entrypoint: `app = create_app()`. Vercel's `@vercel/python` builder imports this and serves the `app` callable.
+- `vercel.json` — `@vercel/python` build of `api/index.py` with `includeFiles: "**"` (bundle everything left after `.vercelignore`), and one route sending every path to the function. Flask serves `/static/*` itself (the CSS/JS is small); optimise later by serving `static/` from Vercel's CDN if it matters.
+- `.vercelignore` — trims `.venv/`, `tests/`, `scripts/`, `docs/`, `*.md`, `database/*.db`, `backups/`, `instance/`, `.env`, `__pycache__/` from the upload so the function stays well under Vercel's 250 MB unzipped limit.
+- Python version: from the existing `.python-version` (`3.11.9`). Confirm it in the Vercel project's Settings if the build picks a different default.
+
+Set these in the Vercel project's **Environment Variables** (Production): `SECRET_KEY` (the *exact* value the Render service generated — copy it from Render → Environment), `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (same values as Render), `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, `LOG_LEVEL=INFO`. Do **not** set `DATABASE_PATH`.
+
+What differs from Render on this host, by design (ADR-56):
+
+- **Charts** render client-side with Chart.js (from the jsdelivr CDN) — no server-side matplotlib, no `static/charts/*.png`. Same on Render now.
+- **Backup download** (`POST /settings/backup/create`) builds the JSON in memory and streams it — no local file.
+- **Startup logging** falls back to stdout only if `instance/` isn't writable (it isn't on Vercel); the `Connected Supabase project: ...` line still prints — read it in the Vercel **function logs** to confirm the project matches Render's.
+- **Logo/stamp/signature uploads** go to a public Supabase Storage bucket (`library-branding`, auto-created on first upload) as of 2026-08-28 (ADR-57), so they work identically on Render and Vercel and survive redeploys. `library_settings.*_path` holds the full public URL. A deployment that already had images on local disk before this change should run `python scripts/migrate_branding_to_storage.py --apply` once (or the admin can just re-upload); a legacy relative-path row shows a broken image on Vercel until then.
+- `MAX_CONTENT_LENGTH` (5 MB) exceeds Vercel's ~4.5 MB request-body cap — a 4.5–5 MB upload gets a Vercel 413 before Flask (TD-77).
+
+Deploy: `npm i -g vercel`, then `vercel` (preview) from the repo root; set the env vars; `vercel --prod` once the preview checks out. Steps 3/5/6 from the top of this doc (apply `supabase_migration.sql`, verify schema, verify tenant isolation) are already done for the shared project by the Render setup — don't re-run the migration.

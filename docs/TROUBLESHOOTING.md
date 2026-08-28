@@ -4,15 +4,13 @@ Common issues, why they happen in this specific codebase, and how to fix or work
 
 ## `ModuleNotFoundError: No module named 'matplotlib'` (or `numpy`)
 
-**Cause (historical — resolved, verified 2026-07-22):** `requirements.txt` used to list only `Flask`/`Werkzeug` while `utils/charts.py` imports `matplotlib`/`numpy`. `requirements.txt` now includes both (`matplotlib>=3.7.0`, `numpy>=1.26.0`) — TD-8 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) is Resolved.
-**If you still see this:** your virtualenv predates the fix — re-run `pip install -r requirements.txt`, don't hand-`pip install` just the two packages (the pinned versions matter).
-**Where it surfaces (if it recurs):** any request to `GET /dashboard` or `GET /membership-distribution/` — both call into `utils/charts.py` synchronously, so the request itself 500s.
+**Cause (historical — no longer possible):** until 2026-08-28 `utils/charts.py` imported `matplotlib`/`numpy` to render chart PNGs. As of ADR-56 that file is deleted, both packages are out of `requirements.txt`, and all charts render client-side with Chart.js (`utils/chart_data.py` just builds `{labels, datasets}` dicts). Nothing in the app imports matplotlib any more.
+**If you still see this:** you're on a stale virtualenv with old code — `git pull` and re-run `pip install -r requirements.txt`.
 
-## Dashboard/Distribution charts show stale or another admin's data
+## Dashboard/Distribution charts don't appear (blank chart area)
 
-**Cause:** `utils/charts.py` writes to fixed, shared filenames (`static/charts/revenue.png`, `membership.png`, `membership_distribution_donut.png`) regardless of which admin triggered generation. The chart only regenerates when the Dashboard or Distribution route actually runs — it isn't recomputed on every static-file request. Between two different admins' page loads, one can briefly see the other's chart.
-**Fix (short-term):** reload the page again as the affected admin — it self-corrects the moment their own dashboard route runs.
-**Fix (real):** namespace the output filename by `admin_id` (`revenue_{admin_id}.png`) in `utils/charts.py`, and update the three template components that reference the static path. Tracked as [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-1.
+**Cause:** the charts render in the browser with Chart.js loaded from `https://cdn.jsdelivr.net/npm/chart.js@4.4.4/...` (same as the Cashbook/BI pages). If Chart.js can't load — offline, a strict Content-Security-Policy that blocks `cdn.jsdelivr.net`, or an ad/script blocker — `dashboard-charts.js` has nothing to draw with and the `<canvas>` stays empty. Tracked as **TD-76** in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+**Fix:** allow `cdn.jsdelivr.net` in the CSP, or vendor `chart.js@4.4.4/dist/chart.umd.min.js` into `static/js/` and point the chart-page `<script>` tags at `url_for('static', ...)` (do it for Dashboard, Distribution, Cashbook and BI together). A genuinely empty chart with `labels: []` is not this bug — that's the "No membership data yet" placeholder for a library with no memberships.
 
 ## Dashboard/Membership Distribution/Cashbook/BI show different "revenue" or "collection rate" numbers
 
@@ -176,8 +174,7 @@ A fresh project provisioned via [PROVISIONING.md](PROVISIONING.md) gets these au
 
 ## Dashboard/Membership Distribution 500s with `ValueError: Given lines do not intersect...`
 
-**Cause (TD-68):** `utils/charts.py`'s `generate_membership_chart()` / `generate_membership_distribution_donut()` crashed when a pie/donut wedge's centroid landed exactly on the horizontal axis — an **exact 50/50 two-plan split**, or **any plan that is exactly 50% of the roster** — so its leader-line `connectionstyle="angle"` got two parallel rays, which `matplotlib/bezier.py`'s `get_intersection()` can't resolve. First seen 2026-08-21 (a test admin on a 6/6 Monthly/Custom split), then again live on the first Render deployment.
-**Fix (shipped 2026-08-28):** both functions now build the leader-line `connectionstyle` via `_leader_line_connectionstyle(dx, dy)`, which nudges `angleB` 1 deg off any multiple of 180. Pull the latest and redeploy — no workaround needed. (The old workaround was to create/renew one more membership to break the exact tie; still valid if you're on an older build.)
+**Cause (TD-68, historical — no longer possible):** `utils/charts.py`'s matplotlib pie/donut leader-line `connectionstyle="angle"` crashed on an exact 50/50 two-plan split (or any plan at exactly 50% of the roster). Mitigated 2026-08-28 morning by an `angleB`-nudge helper, then made impossible the same day (ADR-56): `utils/charts.py` and matplotlib are deleted entirely — the doughnuts render with Chart.js now, which has no such degenerate case. If you hit this, you're running old code — pull the latest.
 
 ## An operator suspects a deployment is connected to the wrong library's Supabase project
 

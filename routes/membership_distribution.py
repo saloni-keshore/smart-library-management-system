@@ -6,7 +6,7 @@ from database.membership_queries import (
     get_membership_counts, get_memberships_for_admin, get_effective_status
 )
 from database.payment_queries import get_payments_for_admin
-from utils.charts import generate_membership_distribution_donut
+from utils.chart_data import build_plan_distribution_chart_data
 from utils.normalization import normalize_category
 
 membership_distribution_bp = Blueprint(
@@ -33,8 +33,6 @@ def index():
         return redirect("/")
 
     admin_id = session["admin_id"]
-
-    generate_membership_distribution_donut(admin_id)
 
     # This admin's memberships (each row already carries full_name/mobile) -
     # Supabase `students`/`memberships` (ADR-23). Each row's latest
@@ -123,5 +121,6 @@ def index():
         most_popular_plan_pct=most_popular_plan_pct,
         upcoming_renewals=upcoming_renewals,
         total_revenue=total_revenue,
-        total_pending=total_pending
+        total_pending=total_pending,
+        distribution_chart_data=build_plan_distribution_chart_data(plan_counts)
     )

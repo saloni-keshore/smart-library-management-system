@@ -37,7 +37,7 @@ cashbook_bp = Blueprint(
     url_prefix="/cashbook"
 )
 
-# Existing application color palette (see utils/charts.py and
+# Existing application color palette (see utils/chart_data.py and
 # static/css/membership_distribution.css) - reused here, not invented.
 CHART_PALETTE = [
     "#2563eb",  # primary blue

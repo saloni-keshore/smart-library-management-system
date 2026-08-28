@@ -1,33 +1,39 @@
 # Utils, Services, Models — and the empty placeholder folders
 
-## `utils/charts.py` — the only file in `utils/`
+## `utils/`
 
-Uses **matplotlib** (`matplotlib.use("Agg")` for headless rendering) and **numpy** — not PIL, not Chart.js server-side. As of 2026-07-24 (ADR-25), reads via `database.membership_queries.get_memberships_for_admin()`/`database.payment_queries.get_payments_for_admin()` (both Supabase) instead of raw SQLite queries; has had no SQLite dependency of any kind since that cutover, well before Phase 11 (ADR-32) removed SQLite from the app entirely (routes don't pass data in; they just call the generator function and then render a template that points at the resulting static PNG).
+Three files: `chart_data.py`, `normalization.py`, `security.py`.
 
-**Helpers:**
-- `_smooth_curve(x, y, samples_per_segment=30)` — Catmull-Rom spline interpolation so the revenue line chart curves smoothly while still passing exactly through each real monthly data point.
-- `_format_currency_short(value, _pos=None)` — matplotlib tick formatter producing compact ₹ labels (e.g. `₹12.5K`).
+### `utils/chart_data.py` — Chart.js payload builders
 
-**Chart generators** (each takes only `admin_id`, runs its own SQL, writes a PNG, returns `None`):
-| Function | Query | Output | Called from |
+Added 2026-08-28 (ADR-56), replacing the deleted `utils/charts.py` (which used **matplotlib** + **numpy** to write PNGs into `static/charts/`). Those two packages, and the whole matplotlib transitive stack, were removed from `requirements.txt` — nothing else imported them — so the app installs lean and runs on a read-only serverless filesystem (Vercel). All charts render client-side with Chart.js now, the same way the Business Intelligence and Cashbook pages already did.
+
+Every function returns a plain `{labels, datasets}` dict; no plotting library, no disk I/O.
+
+| Function | Reads | Returned to | Rendered by |
 |---|---|---|---|
-| `generate_revenue_chart(admin_id)` | `payments` join `students`, monthly `SUM(amount_paid)` | `static/charts/revenue.png` | `routes/dashboard.py` |
-| `generate_membership_chart(admin_id)` | `memberships` join `students`, count by `plan_name` | `static/charts/membership.png` | `routes/dashboard.py` |
-| `generate_membership_distribution_donut(admin_id)` | Same as above, larger chart with a fixed `PLAN_CHART_COLORS` map, center total-count label, "No membership data yet" empty state | `static/charts/membership_distribution_donut.png` | `routes/membership_distribution.py` |
+| `build_revenue_chart_data(admin_id, period="this_year")` | `database.payment_queries.get_payments_for_admin` → `_monthly_revenue_for_year(payments, year)` (filtered to `this_year`/`last_year`) | `routes/dashboard.py` `dashboard()` (initial) + `revenue_chart()` (period switch, as JSON) | `static/js/dashboard-charts.js` → `#revenue-chart-canvas` (line) |
+| `build_membership_chart_data(admin_id)` | `database.membership_queries.get_memberships_for_admin`, grouped by `normalize_category(plan_name)`, ranked by count | `routes/dashboard.py` `dashboard()` | `dashboard-charts.js` → `#membership-chart-canvas` (doughnut) |
+| `build_plan_distribution_chart_data(plan_counts)` | the `plan_counts` dict `routes/membership_distribution.py` already computes (zero-count plans dropped) | `routes/membership_distribution.py` `index()` | `dashboard-charts.js` → `#distribution-donut-canvas` (doughnut) |
 
-**Important side effect to know before touching this file:** because these three functions overwrite the *same* filename every time regardless of which admin triggered them, and the resulting PNG is served as a shared static file to every admin's browser, one admin's chart data is briefly visible to another admin whose page happens to load in between generation and their own next page load. See [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+Constants: `MONTHS`, `REVENUE_LINE_COLOR`/`REVENUE_FILL_COLOR`, `PLAN_CHART_COLORS` (keys UPPERCASE, matching `normalize_category`), `PLAN_CHART_FALLBACK_COLOR`; helper `plan_color(label)` normalizes any-casing labels before the colour lookup. Empty `labels` from `build_membership_chart_data`/`build_plan_distribution_chart_data` tells the JS to render a "No membership data yet" placeholder.
 
-## Empty placeholder folders
+### `utils/normalization.py`
 
-These exist in the repo but contain **zero files** (confirmed via directory listing, not just "no tracked files" — they're genuinely empty, nothing to migrate or reference):
+Shared input-normalization helpers (Category → UPPERCASE, Name/Location → Title Case, free-text/phone → trim only) — see ADR-36 and this file's card in [FILE_REFERENCE.md](FILE_REFERENCE.md).
 
-| Folder | Apparent original intent (per old, now-removed planning docs) | Current reality |
+### `utils/security.py`
+
+CSRF token generation/validation and the in-process login/forgot-password rate limiter — see [FILE_REFERENCE.md](FILE_REFERENCE.md).
+
+## Empty / near-empty placeholder folders
+
+| Folder | Apparent original intent | Current reality |
 |---|---|---|
-| `models/` | ORM-style model classes (Student, Payment, Admin, Alert) | No ORM is used anywhere; all persistence is via `database/*_queries.py` and inline `database/supabase_client.py` calls (PostgREST, not raw SQL, as of Phase 6-11's migration — see [DECISIONS.md](DECISIONS.md)). Nothing to put here under the current architecture unless an ORM migration is planned. |
-| `services/` | A business-logic layer separate from routes | Business logic currently lives directly in `routes/*.py` (validation, calculations) and `database/*_queries.py` (aggregation, e.g. `bi_queries.py`'s health-score math). No separate service layer exists. |
-| `reports/` | Generated PDF/Excel/CSV report output | No report-generation code exists anywhere in the project (no ReportLab/openpyxl/pandas usage found; `requirements.txt` only has Flask/Werkzeug). `routes/report.py` is a pure redirect shim to Business Intelligence. |
-| `tests/` | Unit/integration/DB tests | **No automated tests exist at all.** This is the most consequential empty folder — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md). |
-| `backups/` | Database backup scripts/output | No backup script exists; `database/library.db` has no automated backup mechanism. |
-| `.agents/` | Unknown — not referenced by any old doc or code | No references found anywhere in the codebase. |
+| `models/` | ORM-style model classes | No ORM anywhere; persistence is `database/*_queries.py` + inline `database/supabase_client.py` (PostgREST). Nothing to put here. |
+| `services/` | A business-logic layer separate from routes | Business logic lives in `routes/*.py` and `database/*_queries.py`. No service layer exists. |
+| `reports/` | Generated PDF/Excel/CSV report output | No report-generation code exists (no ReportLab/openpyxl/pandas). `routes/report.py` is a redirect shim to Business Intelligence. |
+| `backups/` | Database backup output | Holds runtime-generated per-admin JSON exports only (gitignored); `routes/setting.py`'s `backup_create()` streams from memory now (ADR-56) and no longer writes here. |
+| `.agents/` | Unknown | Not referenced anywhere. |
 
-None of these are wired into `app.py`, imported by any route, or referenced by any template. They can be safely populated when the corresponding feature is actually built, or removed if the project decides not to pursue that direction — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) for the recommendation.
+`tests/` is **not** empty — it holds a full pytest suite (`tests/conftest.py` + `tests/test_00..15_*.py`, 250+ tests) run against a real Supabase project, added in the 2026-07-22 QA sprint (TD-20 Resolved).

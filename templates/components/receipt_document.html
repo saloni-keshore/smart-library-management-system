@@ -8,7 +8,7 @@
 <div class="receipt-preview-doc">
     <div class="text-center mb-2" id="previewLogoWrap">
         {% if settings and settings.logo_path %}
-        <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="Logo" class="receipt-preview-logo">
+        <img src="{{ branding_src(settings.logo_path) }}" alt="Logo" class="receipt-preview-logo">
         {% endif %}
     </div>
 
@@ -55,12 +55,12 @@
     <div class="d-flex justify-content-between align-items-end">
         <div id="previewStampWrap">
             {% if settings and settings.stamp_path %}
-            <img src="{{ url_for('static', filename=settings.stamp_path) }}" alt="Stamp" class="receipt-preview-mark">
+            <img src="{{ branding_src(settings.stamp_path) }}" alt="Stamp" class="receipt-preview-mark">
             {% endif %}
         </div>
         <div id="previewSignatureWrap">
             {% if settings and settings.signature_path %}
-            <img src="{{ url_for('static', filename=settings.signature_path) }}" alt="Signature" class="receipt-preview-mark">
+            <img src="{{ branding_src(settings.signature_path) }}" alt="Signature" class="receipt-preview-mark">
             {% endif %}
         </div>
     </div>

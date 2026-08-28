@@ -59,15 +59,18 @@
 
                     <div class="chart-frame" data-chart-frame>
 
-                        <img
-                            id="revenue-chart-img"
-                            src="{{ url_for('static', filename='charts/revenue.png') }}"
+                        <canvas
+                            id="revenue-chart-canvas"
                             class="chart-image"
-                            alt="Revenue Chart">
+                            aria-label="Revenue Chart" role="img"></canvas>
 
                     </div>
 
                 </div>
+
+                <script>
+                    window.dashboardRevenueChart = {{ revenue_chart_data | tojson }};
+                </script>
 
             </div>
 

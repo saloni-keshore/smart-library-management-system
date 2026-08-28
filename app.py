@@ -7,6 +7,7 @@ from flask import Flask, abort, render_template, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import DevelopmentConfig, ProductionConfig
+from utils.branding import branding_src
 from utils.security import csrf_token, validate_csrf
 
 from routes.auth import auth_bp
@@ -51,19 +52,29 @@ def _configure_logging(app):
     """
     if app.testing:
         return
-    log_directory = Path(app.instance_path)
-    log_directory.mkdir(parents=True, exist_ok=True)
-    log_path = log_directory / "smart-library.log"
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     app.logger.setLevel(app.config["LOG_LEVEL"])
-    if not any(
-        isinstance(handler, RotatingFileHandler)
-        and Path(handler.baseFilename) == log_path
-        for handler in app.logger.handlers
-    ):
-        file_handler = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=5)
-        file_handler.setFormatter(formatter)
-        app.logger.addHandler(file_handler)
+    # The rotating local-file handler is best-effort: a read-only filesystem
+    # (e.g. a serverless host like Vercel, where only /tmp is writable) makes
+    # both the instance/ mkdir and opening the log file raise OSError while
+    # the WSGI app is still being built - which would turn every cold start
+    # into a 500. The stdout StreamHandler added below is what platform log
+    # viewers actually read anyway (TD-72), so if the file handler can't be
+    # attached we simply carry on with stdout only.
+    try:
+        log_directory = Path(app.instance_path)
+        log_directory.mkdir(parents=True, exist_ok=True)
+        log_path = log_directory / "smart-library.log"
+        if not any(
+            isinstance(handler, RotatingFileHandler)
+            and Path(handler.baseFilename) == log_path
+            for handler in app.logger.handlers
+        ):
+            file_handler = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=5)
+            file_handler.setFormatter(formatter)
+            app.logger.addHandler(file_handler)
+    except OSError:
+        pass
     if not any(isinstance(handler, logging.StreamHandler) for handler in app.logger.handlers):
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
@@ -120,6 +131,10 @@ def create_app(test_config=None):
 
     _configure_logging(app)
     _log_connected_supabase_project(app)
+
+    # Templates resolve stored branding-image references (Supabase Storage
+    # URL, or a legacy static/ path) through this - see utils/branding.py.
+    app.jinja_env.globals["branding_src"] = branding_src
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)

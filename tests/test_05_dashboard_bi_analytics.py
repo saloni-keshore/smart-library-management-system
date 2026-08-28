@@ -86,21 +86,29 @@ def test_dashboard_revenue_chart_endpoint_switches_period(logged_in_client):
 
     resp_this_year = client.get("/dashboard/revenue-chart?period=this_year")
     assert resp_this_year.status_code == 200
-    assert "image_url" in resp_this_year.get_json()
+    this_year_json = resp_this_year.get_json()
+    # Chart.js-ready {labels, datasets} payload (was a PNG image_url).
+    assert this_year_json["labels"] == [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+    assert len(this_year_json["datasets"][0]["data"]) == 12
 
     resp_last_year = client.get("/dashboard/revenue-chart?period=last_year")
     assert resp_last_year.status_code == 200
-    assert "image_url" in resp_last_year.get_json()
+    last_year_json = resp_last_year.get_json()
+    assert len(last_year_json["datasets"][0]["data"]) == 12
 
-    # Cache-busting: the two responses must not resolve to the same URL,
-    # otherwise the browser would keep showing whichever period rendered
-    # first (the whole reason a "?t=" query string was added).
-    assert resp_this_year.get_json()["image_url"] != resp_last_year.get_json()["image_url"]
+    # The two periods must genuinely read different data: the one real
+    # payment is dated this year, so this_year has a non-zero month and
+    # last_year is all zeros.
+    assert sum(this_year_json["datasets"][0]["data"]) == 500
+    assert sum(last_year_json["datasets"][0]["data"]) == 0
 
     # Unknown period values must not error - they fall back to this_year.
     resp_bogus = client.get("/dashboard/revenue-chart?period=bogus")
     assert resp_bogus.status_code == 200
-    assert "image_url" in resp_bogus.get_json()
+    assert resp_bogus.get_json()["datasets"][0]["data"] == this_year_json["datasets"][0]["data"]
 
 
 def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
@@ -111,7 +119,7 @@ def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
     from datetime import date
     from database.supabase_client import get_supabase_client
     from database.payment_queries import get_payments_for_admin
-    from utils.charts import _monthly_revenue_for_year
+    from utils.chart_data import _monthly_revenue_for_year
 
     sid = _admitted_student_with_membership(
         client, admin["admin_id"], paid_amount="500", due_amount="0"

@@ -11,10 +11,8 @@ It is **multi-tenant**: every logged-in admin only ever sees their own data. Iso
 - **Backend:** Flask (`requirements.txt` pins only `Flask>=2.3.0` and `Werkzeug>=2.3.0`)
 - **Database:** Supabase (PostgreSQL), accessed via the `supabase-py` PostgREST client (`database/supabase_client.py`); no ORM, `.eq()`/`.in_()`-filtered queries in `database/*_queries.py` modules or inline in routes. **As of 2026-07-25 (ADR-32, Phase 11), Supabase is the only database in the app** — SQLite (`database/db.py`, `database/schema.sql`, and every `database/migrate_*.py` script) was removed entirely once the incremental table-by-table migration (ADR-16 through ADR-31, tracked in [DECISIONS.md](DECISIONS.md)) reached its last table (`admins`). See [DECISIONS.md](DECISIONS.md) for the full migration history and [MIRROR_TRACKER.md](MIRROR_TRACKER.md) for how each table's SQLite mirror was removed.
 - **Templates:** Jinja2 (bundled with Flask)
-- **Frontend:** Bootstrap 5.3.7 + Bootstrap Icons 1.11.3 (via CDN), Chart.js (client-side interactive charts), Google Fonts "Poppins"
-- **Server-rendered charts:** `matplotlib` + `numpy` (used by `utils/charts.py` to render PNGs saved to `static/charts/`)
-
-> **Known gap:** `matplotlib` and `numpy` are imported by `utils/charts.py` but are **not listed in `requirements.txt`**. A clean `pip install -r requirements.txt` will not have them, and the app will crash the first time a chart-generating route (dashboard, membership distribution) runs. See [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+- **Frontend:** Bootstrap 5.3.7 + Bootstrap Icons 1.11.3 (via CDN), Chart.js 4.4.4 (via CDN — all charts render client-side), Google Fonts "Poppins"
+- **Charts:** every charting page (Dashboard, Membership Distribution, Cashbook, Business Intelligence) builds a `{labels, datasets}` payload server-side and renders it in the browser with Chart.js. There is no server-side image generation — `utils/charts.py`/`matplotlib`/`numpy` were removed 2026-08-28 (ADR-56) so the app runs on a read-only serverless filesystem; `utils/chart_data.py` holds the Dashboard/Distribution payload builders.
 
 There is no ORM and no build step for CSS/JS (plain hand-authored files served directly from `static/`). Supabase's schema lives in `database/supabase_migration.sql`, hand-maintained (no migrations framework/runner) — see [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md).
 
@@ -22,7 +20,6 @@ There is no ORM and no build step for CSS/JS (plain hand-authored files served d
 
 ```
 pip install -r requirements.txt
-pip install matplotlib numpy   # required by utils/charts.py but missing from requirements.txt
 # Set SUPABASE_URL / SUPABASE_SECRET_KEY (e.g. via .env) - see database/supabase_client.py
 python app.py                  # runs with debug=True on the Flask default port (5000)
 ```

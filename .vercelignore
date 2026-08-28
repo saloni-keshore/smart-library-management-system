@@ -1,0 +1,20 @@
+# Keep the serverless bundle small. Render is unaffected by this file.
+.venv/
+venv/
+env/
+.git/
+tests/
+scripts/
+docs/
+*.md
+database/*.db
+database/library.db
+backups/
+instance/
+.env
+.env.*
+!.env.example
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/

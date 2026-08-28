@@ -40,14 +40,18 @@
 
                     <div class="chart-wrapper">
 
-                       <img 
-                           src="{{ url_for('static', filename='charts/membership.png') }}"
+                       <canvas
+                           id="membership-chart-canvas"
                            class="membership-chart-img"
-                           alt="Membership Distribution Chart">
+                           aria-label="Membership Distribution Chart" role="img"></canvas>
 
                     </div>
 
                 </div>
+
+                <script>
+                    window.dashboardMembershipChart = {{ membership_chart_data | tojson }};
+                </script>
 
             </div>
 

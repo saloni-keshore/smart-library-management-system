@@ -1,4 +1,3 @@
-import time
 from datetime import date, timedelta
 
 from flask import (
@@ -7,14 +6,12 @@ from flask import (
     session,
     redirect,
     request,
-    jsonify,
-    url_for
+    jsonify
 )
 from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
-from utils.charts import ( generate_revenue_chart,
-                           generate_membership_chart )
+from utils.chart_data import build_revenue_chart_data, build_membership_chart_data
 from database.cashbook_categories import (
     MANUAL_INCOME_CATEGORIES,
     MANUAL_EXPENSE_CATEGORIES,
@@ -44,8 +41,6 @@ def dashboard():
         return redirect("/")
 
     admin_id = session["admin_id"]
-    generate_revenue_chart(admin_id)
-    generate_membership_chart(admin_id)
 
     supabase = get_supabase_client()
 
@@ -173,7 +168,9 @@ def dashboard():
         manual_income_categories=MANUAL_INCOME_CATEGORIES,
         manual_expense_categories=MANUAL_EXPENSE_CATEGORIES,
         payment_methods=PAYMENT_METHODS,
-        dash_show_pending_fees=dash_show_pending_fees
+        dash_show_pending_fees=dash_show_pending_fees,
+        revenue_chart_data=build_revenue_chart_data(admin_id, "this_year"),
+        membership_chart_data=build_membership_chart_data(admin_id)
     )
 
 
@@ -189,8 +186,4 @@ def revenue_chart():
     if period not in ("this_year", "last_year"):
         period = "this_year"
 
-    generate_revenue_chart(admin_id, period)
-
-    image_url = url_for("static", filename="charts/revenue.png") + "?t=" + str(time.time())
-
-    return jsonify({"image_url": image_url})
+    return jsonify(build_revenue_chart_data(admin_id, period))

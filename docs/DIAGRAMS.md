@@ -37,8 +37,7 @@ graph TD
     Templates --> FeatureDirs["auth/ dashboard/ enquiries/ students/ memberships/ payments/ cashbook/ business_intelligence/ ai_center/ notification/ settings/ reports/"]
 
     Static --> CSS["css/ (7 files, incl. panda.css)"]
-    Static --> JS["js/ (8 files, incl. panda.js)"]
-    Static --> Charts["charts/ (3 server-generated PNGs)"]
+    Static --> JS["js/ (8 files, incl. panda.js, dashboard-charts.js)"]
     Static --> Uploads["uploads/settings/ (per-admin branding)"]
     Static --> Images["images/ (empty)"]
 ```
@@ -85,7 +84,7 @@ graph TD
         CatConst["cashbook_categories.py (constants only)"]
     end
 
-    Charts["utils/charts.py (matplotlib)"]
+    Charts["utils/chart_data.py (Chart.js payloads)"]
     SupabaseClient["database/supabase_client.py — get_supabase_client()"]
 
     Auth --> SupabaseClient
@@ -160,7 +159,7 @@ graph TD
     DB --> SQLite[("library.db (SQLite)")]
     SupabaseClient --> SupabaseDB[("Supabase (PostgreSQL) — admins, enquiries, students, memberships, payments, cashbook, audit_log, library_settings, membership_settings, backup_log, security_settings, ai_center_settings, panda_conversations, panda_messages")]
 
-    Auth -.->|render_template| Templates["Jinja templates → static PNGs / Chart.js JSON"]
+    Auth -.->|render_template| Templates["Jinja templates → Chart.js JSON (client-side rendering)"]
     Dashboard -.->|render_template| Templates
     Cashbook -.->|render_template| Templates
     BI -.->|render_template| Templates
@@ -400,7 +399,7 @@ graph LR
         security_settings_queries_py["security_settings_queries.py"]
     end
 
-    charts_py["utils/charts.py"]
+    charts_py["utils/chart_data.py"]
 
     app_py --> auth_py
     app_py --> dashboard_py

@@ -10,8 +10,8 @@ Settings > Receipt Settings (see docs/11_FUTURE_WORK.md TD-22). Every route
 that ever creates a payment now goes through record_payment() here instead.
 
 As of 2026-07-24 (ADR-25), Supabase `payments` is the source of truth for
-every *read* (`routes/payment.py`'s `index()`, `utils/charts.py`'s
-`generate_revenue_chart()`, `database/cashbook_queries.py`'s
+every *read* (`routes/payment.py`'s `index()`, `utils/chart_data.py`'s
+`build_revenue_chart_data()`, `database/cashbook_queries.py`'s
 `get_today_fee_collection()`/`get_total_fee_revenue()`, etc. - see
 docs/MIRROR_TRACKER.md). As of 2026-07-24 (ADR-28, Phase 10 - the third
 mirror-write fully removed), Supabase is also this table's only *write*
