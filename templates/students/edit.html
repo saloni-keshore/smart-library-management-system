@@ -103,6 +103,7 @@
                         <label class="form-label fw-bold">Status</label>
                         <select class="form-select" name="status">
                             <option value="Active" {% if student.status == "Active" %}selected{% endif %}>Active</option>
+                            <option value="Pending" {% if student.status == "Pending" %}selected{% endif %}>Pending</option>
                             <option value="Inactive" {% if student.status == "Inactive" %}selected{% endif %}>Inactive</option>
                         </select>
                     </div>

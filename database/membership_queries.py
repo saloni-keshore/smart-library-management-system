@@ -93,6 +93,52 @@ def get_active_membership(student_id):
     return None
 
 
+def promote_student_if_fully_paid(supabase, student_id):
+    """Flip a provisional ('Pending') student to 'Active' once they have at
+    least one membership and no outstanding balance across their
+    memberships. One-directional: only ever 'Pending' -> 'Active', never a
+    demotion, and never touches a student an operator has explicitly set
+    'Active' or 'Inactive' (Student > Edit).
+
+    Called at the end of the admission money steps -
+    routes/membership.py's create() and routes/payment.py's collect() -
+    so a student isn't fully admitted until membership + payment are
+    actually complete (the fee is fully paid). Best-effort: the money
+    write it follows has already succeeded, so any failure here is
+    swallowed rather than rolled back or surfaced - same principle as the
+    enquiry-status sync writes in routes/student.py.
+    """
+
+    try:
+        student_resp = (
+            supabase.table("students")
+            .select("student_id, status")
+            .eq("student_id", student_id)
+            .execute()
+        )
+        student = student_resp.data[0] if student_resp.data else None
+        if student is None or student["status"] != "Pending":
+            return
+
+        memberships_resp = (
+            supabase.table("memberships")
+            .select("pending_amount")
+            .eq("student_id", student_id)
+            .execute()
+        )
+        memberships = memberships_resp.data or []
+        if not memberships:
+            return
+        if any(float(m["pending_amount"] or 0) > 0 for m in memberships):
+            return
+
+        supabase.table("students").update(
+            {"status": "Active"}
+        ).eq("student_id", student_id).execute()
+    except APIError:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Cross-table reads (Supabase has no server-side JOIN in the client used
 # here, so every module below that used to run `memberships m JOIN students

@@ -116,6 +116,15 @@ This has had **three distinct real causes** found across two sessions — don't 
 **Cause (by design, since 2026-08-30, ADR-59):** the mobile field on Add/Edit Enquiry and Edit Student is now validated. `utils/normalization.py`'s `clean_mobile()` strips spaces/dashes/brackets and an optional leading `+91` or `0`, then requires **exactly 10 digits** — anything else (letters, too few/many digits) is rejected and the form re-shown. `admission()` runs the *inherited* enquiry number through the same check and, if a pre-ADR-59 enquiry carries a malformed number, redirects you to **Edit Enquiry** with "…isn't a valid 10-digit number. Edit the enquiry before admitting."
 **Fix:** enter a real 10-digit mobile. A number pasted with `+91`, spaces or dashes is fine — it's cleaned automatically and stored as the bare 10 digits. If admission is blocked, fix the number on the enquiry first, then admit. This does **not** apply to Settings → Library Profile's contact phone or the admin-account mobile, which keep their own rules.
 
+## A student I admitted shows "Pending", not "Active" / the Students list shows "N admissions are incomplete"
+
+**By design, since 2026-08-30 (ADR-61):** admission is a two-step flow — "Admit Student" creates the record, then you create the membership and take payment. The student is created as **`Pending`** and only becomes **`Active`** once a membership exists **and its full fee is paid** (no pending balance). Pressing Back, switching pages, or closing the tab before finishing leaves the student `Pending` on purpose — nothing is silently completed.
+**Fix:** on the Students list or the student's profile, use **Complete Admission** (→ create the membership) and/or **Collect Payment** until the balance is ₹0. The student flips to `Active` automatically at that point (`database/membership_queries.py`'s `promote_student_if_fully_paid()`, called from `membership.create()` and `payment.collect()`). A student on a deliberate part-payment / instalment plan will stay `Pending` until fully paid — that's the same mechanism, not a bug (TD-81). Pre-ADR-61 students created straight as `Active` with no membership are surfaced by the same banner but are not auto-changed (TD-82); fix them the same way or set the status by hand in Edit Student.
+
+## "Address is required." / "Join date is required." on the admission form
+
+**By design, since 2026-08-30 (ADR-61):** these two fields are now checked server-side, not just by the browser. A blank/invalid value is rejected and **no student record is created** — fill both in and resubmit. (Everything else on the admission form is inherited from the enquiry and validated separately — see the mobile entry above.)
+
 ## How do I delete / remove a student? An Inactive student still shows in the list
 
 **By design:** there is no delete-student action. To retire a student, open **Edit Student → Status → Inactive**. Since 2026-08-30 (ADR-60) this:

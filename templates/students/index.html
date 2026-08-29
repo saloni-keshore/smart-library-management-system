@@ -22,6 +22,19 @@ Students
         {% endif %}
     {% endwith %}
 
+    {% if incomplete_count and incomplete_count > 0 %}
+
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            {% if incomplete_count == 1 %}1 admission is incomplete{% else %}{{ incomplete_count }} admissions are incomplete{% endif %} &mdash; the membership hasn't been created or the fee isn't fully paid. These students stay <em>Pending</em> until it is.
+
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+
+        </div>
+
+    {% endif %}
+
     <!-- Header -->
 
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -104,7 +117,15 @@ Students
 
                     <td>
 
-                        {% if student.status != "Active" %}
+                        {% if student.status == "Pending" %}
+
+                        <span class="badge bg-warning text-dark">
+
+                            Pending
+
+                        </span>
+
+                        {% elif student.status != "Active" %}
 
                         <span class="badge bg-secondary">
 
@@ -183,6 +204,16 @@ Students
                                         Edit
                                     </a>
                                 </li>
+
+                                {% if student.status == 'Pending' and not student.membership_id %}
+                                <li>
+                                    <a class="dropdown-item text-primary"
+                                       href="{{ url_for('membership.create', student_id=student.student_id) }}">
+                                        <i class="bi bi-mortarboard-fill me-2"></i>
+                                        Complete Admission
+                                    </a>
+                                </li>
+                                {% endif %}
 
                                 {% if student.membership_status == 'Active' %}
                                 <li>

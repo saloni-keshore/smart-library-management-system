@@ -80,6 +80,14 @@ def index():
         if current is None or m["membership_id"] > current["membership_id"]:
             membership_by_student[m["student_id"]] = m
 
+    # An admission is "incomplete" when it never got a membership, or the
+    # membership still has a balance owing - i.e. the student isn't fully
+    # admitted. New records sit at status 'Pending' until
+    # promote_student_if_fully_paid() clears them; 'Active' is also counted
+    # here so admissions created before the Pending flow existed (and left
+    # half-done) still surface. Flagged on the list, never auto-modified.
+    incomplete_count = 0
+
     for student in students:
         m = membership_by_student.get(student["student_id"], {})
         student["membership_id"] = m.get("membership_id")
@@ -90,7 +98,21 @@ def index():
             get_effective_status(m["membership_status"], m["end_date"]) if m else None
         )
 
-    return render_template("students/index.html", students=students)
+        student["admission_incomplete"] = (
+            student["status"] in ("Pending", "Active")
+            and (
+                student["membership_id"] is None
+                or float(student["pending_amount"] or 0) > 0
+            )
+        )
+        if student["admission_incomplete"]:
+            incomplete_count += 1
+
+    return render_template(
+        "students/index.html",
+        students=students,
+        incomplete_count=incomplete_count,
+    )
 
 
 @student_bp.route("/admission/<int:enquiry_id>", methods=["GET", "POST"])
@@ -153,6 +175,20 @@ def admission(enquiry_id):
             flash("Shift is required.", "danger")
             return redirect(url_for("student.admission", enquiry_id=enquiry_id))
 
+        # Address / Join Date are entered on this form (not inherited). They
+        # are HTML-`required`, but that is bypassable (JS off, a direct
+        # POST) - re-check server-side so an admission can't be finalized
+        # with them blank. Rejected here means nothing is created; the
+        # operator refills the form and resubmits (and anything that still
+        # slips through can be fixed in Student > Edit while the record is
+        # still 'Pending').
+        if not address:
+            flash("Address is required.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
+        if join_date is None:
+            flash("Join date is required.", "danger")
+            return redirect(url_for("student.admission", enquiry_id=enquiry_id))
+
         # This mobile identifies one person (ADR-58) - if they're already a
         # student, don't admit them a second time; send the operator to the
         # existing record (where "Renew" / "Log Another Enquiry" live).
@@ -192,7 +228,14 @@ def admission(enquiry_id):
             "purpose": normalize_category(enquiry["purpose"]),
             "shift": normalize_category(enquiry["preferred_shift"]),
             "join_date": join_date,
-            "status": "Active",
+            # Provisional until the membership + payment steps actually
+            # complete (fee fully paid) - database.membership_queries.
+            # promote_student_if_fully_paid() flips this to 'Active' from
+            # membership.create()/payment.collect(). Pressing Back or
+            # navigating away after this point leaves a visible 'Pending'
+            # record, never a silently fully-admitted one (ADR - admission
+            # flow).
+            "status": "Pending",
         }
 
         # student_id is assigned explicitly, not left to Supabase's
@@ -223,7 +266,11 @@ def admission(enquiry_id):
         except APIError:
             pass
 
-        flash("Student admitted successfully. Please create membership.", "success")
+        flash(
+            "Student admitted successfully. The student stays Pending until "
+            "the membership is created and the fee is fully paid.",
+            "success",
+        )
         return redirect(url_for("membership.create", student_id=new_student_id))
 
     return render_template("students/admission.html", enquiry=enquiry)
@@ -377,10 +424,12 @@ def edit(student_id):
         # Keep the originating enquiry's status in step with the student's
         # (a phone number is one person - ADR-58): deactivating a student
         # marks their enquiry "Inactive" so the Enquiries list/view stops
-        # showing a stale "Admitted"; reactivating restores "Admitted".
-        # Best-effort - the student update above already succeeded.
+        # showing a stale "Admitted"; reactivating restores "Admitted". A
+        # 'Pending' student (admission underway, not yet fully paid) also
+        # counts as "Admitted" here - only an explicit "Inactive" breaks
+        # the link. Best-effort - the student update above already succeeded.
         if student.get("enquiry_id"):
-            enquiry_status = "Admitted" if status == "Active" else "Inactive"
+            enquiry_status = "Inactive" if status == "Inactive" else "Admitted"
             try:
                 supabase.table("enquiries").update(
                     {"status": enquiry_status}

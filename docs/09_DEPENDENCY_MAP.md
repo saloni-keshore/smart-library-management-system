@@ -75,7 +75,9 @@ routes/membership.py           → database.supabase_client.get_supabase_client 
                                   Supabase as of 2026-07-24, ADR-24)
                                 → database.membership_queries (get_effective_status, get_active_membership —
                                   now Supabase-backed since create() is its only caller, ADR-20 —
-                                  get_plan_pricing, get_admission_fee - added 2026-07-21 - TD-6/TD-7)
+                                  get_plan_pricing, get_admission_fee - added 2026-07-21 - TD-6/TD-7;
+                                  promote_student_if_fully_paid - added 2026-08-30, ADR-61 - create() calls it
+                                  after the membership insert + payment to flip a fully-paid 'Pending' student to 'Active')
                                 (as of 2026-07-24, ADR-29: no database.db.get_connection dependency left at all -
                                   create()/renew()'s SQLite mirror-writes were removed outright)
 routes/payment.py              → database.supabase_client.get_supabase_client   (memberships table, Supabase/
@@ -87,6 +89,9 @@ routes/payment.py              → database.supabase_client.get_supabase_client 
                                 → database.payment_queries.record_payment (added 2026-07-22 - see routes/membership.py
                                   note above, same fix; as of 2026-07-24 (ADR-28), Supabase-only and strict -
                                   collect()'s except clause is except APIError, wrapping only this call)
+                                → database.membership_queries.promote_student_if_fully_paid (added 2026-08-30, ADR-61 -
+                                  collect() calls it when a collection brings pending to 0, to flip a still-'Pending'
+                                  student to 'Active'; best-effort, swallows APIError)
                                 (as of 2026-07-24, ADR-29: no database.db.get_connection dependency left at all -
                                   collect()'s SQLite mirror-write was removed outright)
 routes/cashbook.py              → database.cashbook_queries (insert_transaction, get_total_income/expense,

@@ -56,8 +56,8 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `enquiry_id` | INTEGER FK → `enquiries` | Null if admitted without a prior enquiry |
 | `full_name`, `mobile` | NOT NULL | |
 | `address`, `id_proof`, `purpose`, `shift` | TEXT | |
-| `join_date` | DATE | |
-| `status` | TEXT DEFAULT `'Active'` | |
+| `join_date` | DATE | Required server-side on the admission form as of 2026-08-30 (ADR-61) — a blank/unparsable value is rejected, not stored as `NULL`, at that entry point |
+| `status` | TEXT DEFAULT `'Active'` | Free text, no DB constraint. Values in use: `'Active'`, `'Inactive'` (ADR-60), and **`'Pending'`** as of 2026-08-30 (ADR-61) — a just-admitted student is `'Pending'` until they have a membership with no balance owing, then `database/membership_queries.py`'s `promote_student_if_fully_paid()` flips them to `'Active'`. New rows from `admission()` now insert `'Pending'`, not `'Active'` |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 | — | **UNIQUE(`mobile`, `admin_id`)** | Same mobile number can exist for different admins, not twice for the same admin |
 

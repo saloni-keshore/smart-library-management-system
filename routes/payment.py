@@ -19,6 +19,7 @@ from database.payment_queries import (
     get_payment_id_by_receipt_number,
     find_payment_by_idempotency_key,
 )
+from database.membership_queries import promote_student_if_fully_paid
 from database.receipt_settings_queries import get_receipt_settings
 from utils.normalization import normalize_free_text
 
@@ -209,6 +210,13 @@ def collect(membership_id):
                 student=student,
                 idempotency_key=secrets.token_urlsafe(24)
             )
+
+        # If this payment clears the balance, a still-provisional student
+        # (admitted but never fully paid) becomes 'Active' - the same
+        # promotion membership.create() does at the front of this flow.
+        # Best-effort; the payment itself has already succeeded.
+        if new_pending == 0:
+            promote_student_if_fully_paid(supabase, student["student_id"])
 
         flash(
             f"Payment of ₹{amount:.0f} collected successfully. Receipt No: {receipt_number}",

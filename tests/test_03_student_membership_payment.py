@@ -33,7 +33,7 @@ def test_admission_requires_login(client):
     assert resp.status_code == 302
 
 
-def test_admission_success_creates_student_and_sets_enquiry_admitted(logged_in_client):
+def test_admission_success_creates_pending_student_and_sets_enquiry_admitted(logged_in_client):
     client, admin = logged_in_client
     make_enquiry(client)
     eid = get_last_enquiry_id(admin["admin_id"])
@@ -50,7 +50,30 @@ def test_admission_success_creates_student_and_sets_enquiry_admitted(logged_in_c
     student = get_student_by_id(sid)
     assert student is not None
     assert student["enquiry_id"] == eid
-    assert student["status"] == "Active"
+    # The student is provisional until the membership is created and the fee
+    # is fully paid - not 'Active' straight off the admission form. Pressing
+    # Back / navigating away from the next step leaves this 'Pending' row,
+    # never a silently fully-admitted one.
+    assert student["status"] == "Pending"
+
+
+def test_admission_then_navigate_away_leaves_student_pending(logged_in_client):
+    """After 'Admit Student', abandoning the membership step (here: just
+    GETting another page) must leave the student 'Pending' with no
+    membership - it must not have become 'Active'."""
+    client, admin = logged_in_client
+    make_enquiry(client)
+    eid = get_last_enquiry_id(admin["admin_id"])
+    admit_student(client, eid)
+    sid = get_last_student_id(admin["admin_id"])
+
+    client.get("/dashboard")
+    client.get("/students/")
+
+    student = get_student_by_id(sid)
+    assert student["status"] == "Pending"
+    assert get_last_membership_id(sid) is None
+    assert get_enquiry_by_id(eid)["status"] == "Admitted"
 
 
 def test_admission_nonexistent_enquiry(logged_in_client):
@@ -86,12 +109,27 @@ def test_admission_duplicate_mobile_blocked(logged_in_client):
     assert count == 1
 
 
-def test_admission_empty_join_date(logged_in_client):
+def test_admission_empty_join_date_rejected(logged_in_client):
+    """Join Date is entered on the admission form and is now checked
+    server-side (not just HTML `required`): a blank one is rejected and no
+    student row is created, so the operator can refill it."""
     client, admin = logged_in_client
     make_enquiry(client)
     eid = get_last_enquiry_id(admin["admin_id"])
     resp = admit_student(client, eid, join_date="")
-    assert resp.status_code == 200
+    assert b"Join date is required" in resp.data
+    assert get_last_student_id(admin["admin_id"]) is None
+
+
+def test_admission_empty_address_rejected(logged_in_client):
+    """Same server-side check for Address - a blank one must not finalize
+    an incomplete admission."""
+    client, admin = logged_in_client
+    make_enquiry(client)
+    eid = get_last_enquiry_id(admin["admin_id"])
+    resp = admit_student(client, eid, address="")
+    assert b"Address is required" in resp.data
+    assert get_last_student_id(admin["admin_id"]) is None
 
 
 def test_admission_future_join_date(logged_in_client):
@@ -250,15 +288,31 @@ def test_students_list_shows_inactive_badge_over_live_membership(logged_in_clien
     assert b"Inactive" in client.get("/students/").data
 
 
-def test_students_list_shows_no_membership_when_student_has_none(logged_in_client):
-    """An Active student with no membership row shows 'No membership', not
-    the old misleading 'Expired'."""
+def test_students_list_shows_pending_badge_for_incomplete_admission(logged_in_client):
+    """A freshly-admitted student with no membership is 'Pending' - the
+    list shows that badge (never 'Expired', and not yet 'No membership'
+    which is now only the Active-but-membership-less case), plus the
+    incomplete-admissions banner."""
     client, admin = logged_in_client
     _, sid = _new_enquiry_and_admit(client, admin["admin_id"])  # admitted, no membership
     assert get_last_membership_id(sid) is None
     resp = client.get("/students/")
-    # "No membership" is produced only by the new else-branch; the old code
-    # rendered "Expired" for this same (membership-less) case.
+    # The student row's own status cell renders the amber Pending badge, and
+    # the incomplete-admissions banner is shown. (Not asserting "Expired" is
+    # absent from the whole page - the notification chrome in the layout can
+    # legitimately contain that word.)
+    assert b'bg-warning text-dark' in resp.data and b"Pending" in resp.data
+    assert b"admissions are incomplete" in resp.data or b"admission is incomplete" in resp.data
+
+
+def test_students_list_shows_no_membership_for_active_membershipless_student(logged_in_client):
+    """The 'No membership' branch still renders for an *Active* student
+    with no membership row (e.g. one an operator set Active by hand, or a
+    legacy pre-'Pending' admission)."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    _set_student_status(client, sid, "Active")
+    resp = client.get("/students/")
     assert b"No membership" in resp.data
 
 
@@ -416,6 +470,87 @@ def test_membership_create_zero_pay_full_due_no_payment_row(logged_in_client):
     supabase = get_supabase_client()
     payment_rows = supabase.table("payments").select("payment_id").eq("membership_id", mid).execute().data
     assert len(payment_rows) == 0
+
+
+# ---------------------------------------------------------------------------
+# Provisional 'Pending' -> 'Active' promotion (admission completion)
+# ---------------------------------------------------------------------------
+
+def test_membership_create_full_payment_promotes_student_to_active(logged_in_client):
+    """Fee fully paid at membership creation -> the provisional 'Pending'
+    student is promoted to 'Active'."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    assert get_student_by_id(sid)["status"] == "Pending"
+
+    create_membership(client, sid, paid_amount="1000", due_amount="0")
+    assert get_student_by_id(sid)["status"] == "Active"
+
+
+def test_membership_create_partial_payment_keeps_student_pending(logged_in_client):
+    """A balance still owing -> student stays 'Pending' until it is
+    cleared."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="300", due_amount="700")
+    assert get_student_by_id(sid)["status"] == "Pending"
+
+
+def test_membership_create_zero_payment_keeps_student_pending(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="0", due_amount="1000")
+    assert get_student_by_id(sid)["status"] == "Pending"
+
+
+def test_collect_payment_clearing_balance_promotes_student_to_active(logged_in_client):
+    """The other end of the admission money flow: a Collect Payment that
+    brings pending_amount to 0 promotes a still-'Pending' student."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="200", due_amount="800")
+    assert get_student_by_id(sid)["status"] == "Pending"
+    mid = get_last_membership_id(sid)
+
+    client.post(
+        f"/payments/collect/{mid}",
+        data={"amount_paid": "800", "payment_mode": "Cash", "remarks": "final"},
+        follow_redirects=True,
+    )
+    assert get_membership_by_id(mid)["pending_amount"] == 0
+    assert get_student_by_id(sid)["status"] == "Active"
+
+
+def test_collect_partial_payment_does_not_promote_student(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="200", due_amount="800")
+    mid = get_last_membership_id(sid)
+
+    client.post(
+        f"/payments/collect/{mid}",
+        data={"amount_paid": "300", "payment_mode": "Cash"},
+        follow_redirects=True,
+    )
+    assert get_student_by_id(sid)["status"] == "Pending"
+
+
+def test_promotion_never_reactivates_an_inactive_student(logged_in_client):
+    """Promotion is one-directional: an operator who set a student
+    'Inactive' in Edit is not silently flipped back to 'Active' by a
+    later full payment."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid, paid_amount="200", due_amount="800")
+    _set_student_status(client, sid, "Inactive")
+    mid = get_last_membership_id(sid)
+
+    client.post(
+        f"/payments/collect/{mid}",
+        data={"amount_paid": "800", "payment_mode": "Cash"},
+        follow_redirects=True,
+    )
+    assert get_student_by_id(sid)["status"] == "Inactive"
 
 
 def test_membership_create_for_nonexistent_student(logged_in_client):

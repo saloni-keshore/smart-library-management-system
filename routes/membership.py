@@ -21,6 +21,7 @@ from database.membership_queries import (
     get_admission_fee,
     insert_membership,
     find_membership_by_idempotency_key,
+    promote_student_if_fully_paid,
     DiscountColumnsUnavailable,
 )
 from utils.normalization import normalize_category, normalize_free_text
@@ -385,6 +386,13 @@ def create(student_id):
                     plan_pricing=plan_pricing, admission_fee=admission_fee,
                     idempotency_key=secrets.token_urlsafe(24)
                 )
+
+        # This is the end of the admission money flow - promote the student
+        # from provisional 'Pending' to 'Active' iff the fee is now fully
+        # paid (no pending balance). A partially-paid admission stays
+        # 'Pending' until the balance is cleared via payment.collect().
+        # Best-effort - a status-flip failure must not undo the membership.
+        promote_student_if_fully_paid(supabase, student_id)
 
         if receipt_number:
             flash(
