@@ -291,6 +291,16 @@ Student Profile
         </a>
         {% endif %}
 
+        {% if student.enquiry_id %}
+        <a href="{{ url_for('enquiry.re_enquire', enquiry_id=student.enquiry_id) }}" class="btn btn-outline-primary">
+
+            <i class="bi bi-plus-circle"></i>
+
+            Log Another Enquiry
+
+        </a>
+        {% endif %}
+
         <a href="{{ url_for('student.index') }}" class="btn btn-secondary">
 
             Back

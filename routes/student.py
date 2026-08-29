@@ -11,6 +11,7 @@ from flask import (
 )
 from postgrest.exceptions import APIError
 
+from database.id_sequence import insert_with_next_id
 from database.membership_queries import get_memberships_for_admin, get_effective_status
 from database.supabase_client import get_supabase_client
 from utils.normalization import (
@@ -140,11 +141,13 @@ def admission(enquiry_id):
             flash("Shift is required.", "danger")
             return redirect(url_for("student.admission", enquiry_id=enquiry_id))
 
-        # Check if this mobile already admitted under THIS admin
+        # This mobile identifies one person (ADR-58) - if they're already a
+        # student, don't admit them a second time; send the operator to the
+        # existing record (where "Renew" / "Log Another Enquiry" live).
         try:
             existing_response = (
                 supabase.table("students")
-                .select("student_id")
+                .select("student_id, full_name")
                 .eq("mobile", enquiry["mobile"])
                 .eq("admin_id", admin_id)
                 .execute()
@@ -154,27 +157,12 @@ def admission(enquiry_id):
             existing = None
 
         if existing is not None:
-            flash("This student has already been admitted.", "warning")
+            flash(
+                f"{existing['full_name']} is already registered. "
+                "Renew their membership or log another enquiry from their profile.",
+                "info",
+            )
             return redirect(url_for("student.view", student_id=existing["student_id"]))
-
-        # student_id is assigned explicitly, not left to Supabase's
-        # auto-assigned identity value -- same reasoning as
-        # routes/enquiries.py's add() (ADR-18): Supabase's identity
-        # sequence was seeded once from a one-time data copy (ADR-15) and
-        # trails ordinary usage. As of 2026-07-24 (ADR-29), computed from
-        # Supabase's own MAX(student_id) - the SQLite mirror this used to
-        # read is gone.
-        next_id_response = (
-            supabase.table("students")
-            .select("student_id")
-            .order("student_id", desc=True)
-            .limit(1)
-            .execute()
-        )
-        new_student_id = (
-            next_id_response.data[0]["student_id"] + 1
-            if next_id_response.data else 1
-        )
 
         # full_name/mobile/purpose/shift are inherited from the enquiry,
         # which is already normalized at the point it was saved
@@ -182,7 +170,6 @@ def admission(enquiry_id):
         # idempotent, guarding against any enquiry row that predates this
         # normalization pass (see the one-time migration script).
         student_row = {
-            "student_id": new_student_id,
             "admin_id": admin_id,
             "enquiry_id": enquiry["enquiry_id"],
             "full_name": normalize_name(enquiry["full_name"]),
@@ -195,8 +182,16 @@ def admission(enquiry_id):
             "status": "Active",
         }
 
+        # student_id is assigned explicitly, not left to Supabase's
+        # auto-assigned identity value -- ADR-18/ADR-29: the identity
+        # sequence was seeded once from a one-time data copy (ADR-15) and
+        # trails ordinary usage. insert_with_next_id() computes MAX(id)+1
+        # and retries on the primary-key collision two concurrent
+        # admissions can hit (TD-78).
         try:
-            supabase.table("students").insert(student_row).execute()
+            new_student_id = insert_with_next_id(
+                "students", "student_id", student_row
+            )
         except APIError:
             flash("Something went wrong. Please try again.", "danger")
             return redirect(url_for("student.admission", enquiry_id=enquiry_id))

@@ -76,8 +76,8 @@ All ten of the above are Overview-only (included directly by `business_intellige
 |---|---|
 | `auth/` | `login.html`, `register.html`, `forgot_password.html` |
 | `dashboard/` | `index.html` |
-| `enquiries/` | `index.html`, `add.html`, `edit.html`, `view.html` |
-| `students/` | `index.html`, `admission.html`, `view.html`, `edit.html` |
+| `enquiries/` | `index.html`, `add.html`, `edit.html`, `view.html` — **as of 2026-08-28 (ADR-58):** `edit.html` is also rendered by `enquiry.re_enquire` with `reenquiry=True` (heading "Log New Enquiry for <name>", read-only mobile, "Log Enquiry" button); `view.html` has a "Log Another Enquiry" button (`enquiry.re_enquire`) |
+| `students/` | `index.html`, `admission.html`, `view.html`, `edit.html` — **as of 2026-08-28 (ADR-58):** `view.html` has a "Log Another Enquiry" button (`enquiry.re_enquire`, shown only when `student.enquiry_id` is set) |
 | `memberships/` | `index.html`, `create.html`, `renew.html`, `distribution.html`, `analytics.html` |
 | `payments/` | `index.html`, `collect.html`, `receipt.html` — note `create.html` still exists but no route renders it (TD-11); `success.html` is gone, replaced 2026-07-25 by `receipt.html` (rendered by `routes/payment.py`'s new `receipt()`) |
 | `cashbook/` | `index.html`, `transactions.html`, `analytics.html` — only `index.html` is rendered by `routes/cashbook.py`; `transactions.html`/`analytics.html` appear to be leftover/unwired |

@@ -1,7 +1,7 @@
 {% extends "layouts/base.html" %}
 
 {% block title %}
-Edit Enquiry
+{{ "Log New Enquiry" if reenquiry else "Edit Enquiry" }}
 {% endblock %}
 
 {% block content %}
@@ -28,9 +28,13 @@ Edit Enquiry
 
             <h3>
 
+                {% if reenquiry %}
+                <i class="bi bi-plus-circle"></i>
+                Log New Enquiry for {{ enquiry.full_name }}
+                {% else %}
                 <i class="bi bi-pencil-square"></i>
-
                 Edit Enquiry
+                {% endif %}
 
             </h3>
 
@@ -70,7 +74,14 @@ Edit Enquiry
                         class="form-control"
                         name="mobile"
                         value="{{ enquiry.mobile }}"
+                        {% if reenquiry %}readonly{% endif %}
                         required>
+
+                    {% if reenquiry %}
+                    <div class="form-text">
+                        The phone number identifies this person and can't be changed here.
+                    </div>
+                    {% endif %}
 
                 </div>
 
@@ -145,7 +156,7 @@ Edit Enquiry
 
                         <i class="bi bi-check-circle"></i>
 
-                        Update Enquiry
+                        {{ "Log Enquiry" if reenquiry else "Update Enquiry" }}
 
                     </button>
 

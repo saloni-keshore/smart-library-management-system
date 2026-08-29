@@ -63,11 +63,116 @@ def test_add_enquiry_invalid_mobile_letters(logged_in_client):
     assert row["mobile"] == "abcdefghij"
 
 
-def test_add_enquiry_duplicate_mobile_allowed(logged_in_client):
+def _enquiry_count_for_mobile(admin_id, mobile):
+    """How many enquiry rows this admin has for a phone number. A phone
+    number maps to exactly one person (ADR-58), so this should never be > 1."""
+    rows = (
+        get_supabase_client()
+        .table("enquiries")
+        .select("enquiry_id")
+        .eq("admin_id", admin_id)
+        .eq("mobile", mobile)
+        .execute()
+        .data
+    )
+    return len(rows)
+
+
+def test_add_enquiry_existing_phone_blocked_redirects_to_record(logged_in_client):
+    # A phone number identifies one person (ADR-58): a second Add Enquiry
+    # for a number already on file creates NO new row - it sends the user to
+    # the existing enquiry record.
     client, admin = logged_in_client
-    make_enquiry(client, mobile="9111122223")
-    resp, data = make_enquiry(client, mobile="9111122223")
-    assert resp.status_code == 200  # duplicates intentionally allowed (re-enquiry)
+    make_enquiry(client, full_name="First Person", mobile="9111122223")
+    resp, data = make_enquiry(client, full_name="Someone Else", mobile="9111122223")
+    assert resp.status_code == 200
+    assert b"already exists" in resp.data
+    assert b"First Person" in resp.data          # landed on the existing record
+    assert b"Someone Else" not in resp.data      # the second name was discarded
+    assert _enquiry_count_for_mobile(admin["admin_id"], "9111122223") == 1
+
+
+def test_add_enquiry_existing_phone_of_admitted_person_redirects_to_student(logged_in_client):
+    client, admin = logged_in_client
+    from tests.conftest import admit_student
+    make_enquiry(client, full_name="Admitted Person", mobile="9111144445")
+    eid = get_last_enquiry_id(admin["admin_id"])
+    admit_student(client, eid)
+
+    resp, data = make_enquiry(client, full_name="Ignored", mobile="9111144445")
+    assert resp.status_code == 200
+    assert b"already registered" in resp.data
+    assert b"Renew" in resp.data                 # landed on the student profile
+    assert _enquiry_count_for_mobile(admin["admin_id"], "9111144445") == 1
+
+
+def test_re_enquire_updates_existing_row_not_a_new_one(logged_in_client):
+    client, admin = logged_in_client
+    make_enquiry(client, full_name="Return Visitor", mobile="9111155556",
+                 purpose="NEET", preferred_shift="Morning")
+    eid = get_last_enquiry_id(admin["admin_id"])
+
+    resp = client.post(
+        f"/enquiries/re-enquire/{eid}",
+        data={
+            "full_name": "Return Visitor",
+            "purpose": "UPSC",
+            "preferred_shift": "Evening",
+            "followup_date": "2026-12-01",
+            "remarks": "came back a year later",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"New enquiry logged" in resp.data
+    assert _enquiry_count_for_mobile(admin["admin_id"], "9111155556") == 1
+    row = get_enquiry_by_id(eid)
+    assert row["purpose"] == "UPSC"
+    assert row["preferred_shift"] == "EVENING"
+    assert row["followup_date"] == "2026-12-01"
+    assert row["status"] == "Interested"
+
+
+def test_re_enquire_reopens_an_admitted_enquiry(logged_in_client):
+    client, admin = logged_in_client
+    from tests.conftest import admit_student
+    make_enquiry(client, full_name="Comeback Kid", mobile="9111166667")
+    eid = get_last_enquiry_id(admin["admin_id"])
+    admit_student(client, eid)
+    assert get_enquiry_by_id(eid)["status"] == "Admitted"
+
+    client.post(
+        f"/enquiries/re-enquire/{eid}",
+        data={
+            "full_name": "Comeback Kid",
+            "purpose": "GATE",
+            "preferred_shift": "Morning",
+            "followup_date": "",
+            "remarks": "wants a fresh membership",
+        },
+        follow_redirects=True,
+    )
+    assert get_enquiry_by_id(eid)["status"] == "Interested"
+
+
+def test_edit_enquiry_mobile_collision_rejected(logged_in_client):
+    client, admin = logged_in_client
+    make_enquiry(client, full_name="Person A", mobile="9111177771")
+    make_enquiry(client, full_name="Person B", mobile="9111177772")
+    b_id = get_last_enquiry_id(admin["admin_id"])
+
+    resp = client.post(
+        f"/enquiries/edit/{b_id}",
+        data={
+            "full_name": "Person B", "mobile": "9111177771",  # collides with Person A
+            "purpose": "NEET", "preferred_shift": "Morning",
+            "followup_date": "", "remarks": "",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"already belongs to" in resp.data
+    assert get_enquiry_by_id(b_id)["mobile"] == "9111177772"  # unchanged
 
 
 def test_add_enquiry_very_long_remarks(logged_in_client):
@@ -96,6 +201,26 @@ def test_add_enquiry_sql_injection_remarks(logged_in_client):
     supabase = get_supabase_client()
     count = supabase.table("enquiries").select("enquiry_id", count="exact", head=True).execute().count
     assert count > 0
+
+
+def test_insert_with_next_id_assigns_sequential_ids(logged_in_client):
+    # Directly exercises the helper routes/enquiries.py and routes/student.py
+    # now use for id assignment (TD-78): two inserts get consecutive ids and
+    # both rows land.
+    from database.id_sequence import insert_with_next_id
+
+    _, admin = logged_in_client
+    base = {
+        "admin_id": admin["admin_id"],
+        "full_name": "Seq Helper",
+        "purpose": "STUDY",
+        "preferred_shift": "MORNING",
+    }
+    id1 = insert_with_next_id("enquiries", "enquiry_id", {**base, "mobile": "9110000001"})
+    id2 = insert_with_next_id("enquiries", "enquiry_id", {**base, "mobile": "9110000002"})
+    assert id2 == id1 + 1
+    assert get_enquiry_by_id(id1) is not None
+    assert get_enquiry_by_id(id2) is not None
 
 
 def test_add_enquiry_bad_date_format(logged_in_client):

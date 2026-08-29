@@ -113,6 +113,16 @@ Enquiry Details
 
                 </a>
 
+                <a
+                    href="{{ url_for('enquiry.re_enquire', enquiry_id=enquiry.enquiry_id) }}"
+                    class="btn btn-outline-primary">
+
+                    <i class="bi bi-plus-circle"></i>
+
+                    Log Another Enquiry
+
+                </a>
+
                 {% if enquiry.status == 'Admitted' and student %}
 
                 <a
