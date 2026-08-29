@@ -10,7 +10,7 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
 
 ## Prerequisites
 
-- **Python 3.11 or newer** (pinned by `.python-version` = `3.11.9`). Historically forced by `contourpy`/`matplotlib`; as of 2026-08-28 (ADR-56) those are removed and no dependency requires 3.11 any more, but the pin is kept for a consistent, tested runtime across deployments.
+- **Python 3.12** (pinned by `.python-version` = `3.12`). Was `3.11.9` (forced by `contourpy`/`matplotlib`); those are removed as of 2026-08-28 (ADR-56) and no dependency requires a specific version, but a bare `major.minor` pin is kept for a consistent runtime — an exact patch pin breaks Vercel's builder.
 - The ability to create a virtual environment.
 - Access to create a new Supabase project (a Supabase account with project-creation permission).
 - This repository, checked out fresh or already available locally.

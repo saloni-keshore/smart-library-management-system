@@ -17,6 +17,16 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-08-28 — `.python-version` `3.11.9` → `3.12` (Vercel build fix)
+
+- **Feature:** Deployment. The first Vercel build (from `main`, commit `3ebc5da`) failed at the dependency-install step: `Warning: Python version "3.11" detected in .python-version is not installed and will be ignored. Using python version: 3.12` followed by `error: No interpreter found for Python 3.11.9 in managed installations or search path` from `uv sync --active --no-dev --link-mode hardlink --locked --no-editable`. Vercel's `@vercel/python` builder runs Python 3.12 and has no 3.11.9 interpreter, but `uv` still reads the exact patch from `.python-version` and refuses to proceed without it.
+- **Files changed:** `.python-version` (`3.11.9` → `3.12` — a bare `major.minor`, which both Vercel and Render resolve to their available 3.12.x); `render.yaml` (comment); `docs/DEPLOYMENT.md` (step 1, Render Blueprint note, Vercel note), `docs/PROVISIONING.md` (Prerequisites), `docs/DECISIONS.md` (ADR-56 consequence), `docs/11_FUTURE_WORK.md` (TD-67), `docs/FILE_REFERENCE.md` (`.python-version` card).
+- **Database changes:** None.
+- **UI changes:** None.
+- **Future impact:** Render also moves from Python 3.11.9 to 3.12 on its next deploy — safe: nothing in `requirements.txt` pins or needs a specific version any more (the `contourpy`/`matplotlib` ≥3.11 constraint left with ADR-56), and the suite has been run on 3.10/3.11. Keep `.python-version` a bare `major.minor` from now on — an exact patch pin breaks Vercel's builder.
+
+---
+
 ## 2026-08-28 — Library Profile logo/stamp/signature move to Supabase Storage (resolves TD-73)
 
 - **Feature:** Settings → Library Profile branding images (`logo`, `stamp`, `signature`), which are rendered on payment receipts and in the Receipt Settings preview. Follow-on to the same-day Chart.js/Vercel change, which reduced the read-only-filesystem upload breakage to a soft "Image uploads aren't available on this deployment" message but left durable storage unbuilt.

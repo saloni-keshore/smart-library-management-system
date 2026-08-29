@@ -34,7 +34,7 @@ Per-file cards for every important source file: **Purpose**, **Responsibilities*
 ### `requirements.txt`
 - **Purpose:** Pinned production dependency set (exact `==` versions), installed by `render.yaml`'s `buildCommand` and in local venvs.
 - **Responsibilities:** Lists Flask/Werkzeug/Jinja, `supabase` + its transitive stack, `waitress` (prod WSGI server), `python-dotenv`, `cryptography`/`PyJWT`, and `pytest`. **As of 2026-08-28 (ADR-56):** `matplotlib`, `numpy`, `contourpy`, `cycler`, `fonttools`, `kiwisolver`, `pillow`, `pyparsing` were removed — charts render client-side with Chart.js now, and nothing else imported them.
-- **Future modification notes:** **Must be saved as UTF-8** — it was UTF-16 LE until 2026-08-27, which parses fine on Windows but makes `pip install -r requirements.txt` fail on Linux (Render's build image). No dependency imposes a minimum Python version any more (`contourpy` left with matplotlib); [.python-version](../.python-version) stays `3.11.9` for stability, not necessity.
+- **Future modification notes:** **Must be saved as UTF-8** — it was UTF-16 LE until 2026-08-27, which parses fine on Windows but makes `pip install -r requirements.txt` fail on Linux (Render's build image). No dependency imposes a minimum Python version any more (`contourpy` left with matplotlib); [.python-version](../.python-version) is `3.12` (a bare `major.minor`, not a patch pin — 2026-08-28: Vercel's `@vercel/python` builder has no `3.11.9` interpreter and `uv sync --locked` fails hard on an exact patch it can't find; `3.12` resolves on both Vercel and Render).
 
 ### `render.yaml`
 - **Purpose:** Render Blueprint (Infrastructure-as-Code) describing the one web service that runs this app. Added 2026-08-27.

@@ -6,7 +6,7 @@ services:
     name: smart-library-app
     runtime: python
     plan: free
-    # Python version comes from the .python-version file (3.11.9).
+    # Python version comes from the .python-version file (3.12).
     buildCommand: pip install -r requirements.txt
     startCommand: waitress-serve --host=0.0.0.0 --port=$PORT --call wsgi:create_app
     healthCheckPath: /
