@@ -54,13 +54,31 @@ def test_add_enquiry_empty_shift(logged_in_client):
 
 
 def test_add_enquiry_invalid_mobile_letters(logged_in_client):
+    """ADR-59: a non-numeric mobile is rejected, no enquiry row is created."""
     client, admin = logged_in_client
     resp, data = make_enquiry(client, mobile="abcdefghij")
     assert resp.status_code == 200
+    assert b"valid 10-digit mobile number" in resp.data
+    assert get_last_enquiry_id(admin["admin_id"]) is None
+
+
+def test_add_enquiry_mobile_wrong_length_rejected(logged_in_client):
+    """A digits-only value that isn't 10 digits (after stripping an optional
+    91/0 prefix) is rejected."""
+    client, admin = logged_in_client
+    resp, data = make_enquiry(client, mobile="12345")
+    assert resp.status_code == 200
+    assert b"valid 10-digit mobile number" in resp.data
+    assert get_last_enquiry_id(admin["admin_id"]) is None
+
+
+def test_add_enquiry_mobile_formatting_is_stripped_and_canonicalized(logged_in_client):
+    """'+91', spaces and dashes are stripped; the stored value is the bare
+    10 digits (so two spellings of one number can't become two people)."""
+    client, admin = logged_in_client
+    make_enquiry(client, full_name="Formatted Number", mobile="+91 98765-43210")
     eid = get_last_enquiry_id(admin["admin_id"])
-    row = get_enquiry_by_id(eid)
-    # Gap: mobile format is not validated at all on enquiry add
-    assert row["mobile"] == "abcdefghij"
+    assert get_enquiry_by_id(eid)["mobile"] == "9876543210"
 
 
 def _enquiry_count_for_mobile(admin_id, mobile):

@@ -17,13 +17,15 @@ Four field families, four rules:
     same rule as names, kept as a distinct name for call-site clarity)
   * Free text (Address, Remarks, Notes, Descriptions) -> whitespace
     trimmed/collapsed only, casing untouched (normalize_free_text)
-  * Phone numbers -> whitespace trimmed/collapsed only (normalize_phone)
+  * Phone numbers -> whitespace trimmed/collapsed only (normalize_phone),
+    or canonicalized to a bare 10-digit mobile / rejected (clean_mobile)
 """
 
 import re
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _ALPHA_RUN_RE = re.compile(r"[A-Za-z]+")
+_NON_DIGIT_RE = re.compile(r"\D+")
 
 
 def collapse_whitespace(value):
@@ -64,5 +66,30 @@ def normalize_free_text(value):
 
 def normalize_phone(value):
     """Phone numbers: leading/trailing whitespace trimmed, digits left
-    untouched."""
+    untouched. Use clean_mobile() instead where the value must be a valid
+    Indian 10-digit mobile (enquiry/student records)."""
     return collapse_whitespace(value)
+
+
+def clean_mobile(value):
+    """Reduce a phone number to its canonical 10-digit form, or return ""
+    if it can't be one.
+
+    Strips spaces / dashes / brackets / dots / a leading '+', then drops an
+    optional leading country code ('91') or trunk '0', and finally requires
+    exactly 10 digits to remain. So '9876543210', '+91 98765-43210' and
+    '098765 43210' all canonicalize to '9876543210', while 'abcd', a
+    7-digit number, or a 15-digit number return "".
+
+    Every enquiry/student mobile is passed through this before storage so
+    that (admin_id, mobile) stays a reliable person-identity key (ADR-58) --
+    two spellings of the same number must not read as two different people.
+    """
+    if value is None:
+        return ""
+    digits = _NON_DIGIT_RE.sub("", value)
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    return digits if len(digits) == 10 else ""

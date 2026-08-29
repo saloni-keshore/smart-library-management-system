@@ -111,6 +111,11 @@ This has had **three distinct real causes** found across two sessions — don't 
 **Cause (historical, fixed 2026-07-22):** `routes/membership_analytics.py` called `render_template("membership/analytics.html")` — that path doesn't exist (`templates/membership/`, singular, was never a real directory). The route now redirects to Membership Distribution instead of rendering anything (see PF-2 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)).
 **If you still see this:** you're on a version of the code from before this fix.
 
+## "Please enter a valid 10-digit mobile number" when saving an enquiry / student, or admission won't proceed
+
+**Cause (by design, since 2026-08-30, ADR-59):** the mobile field on Add/Edit Enquiry and Edit Student is now validated. `utils/normalization.py`'s `clean_mobile()` strips spaces/dashes/brackets and an optional leading `+91` or `0`, then requires **exactly 10 digits** — anything else (letters, too few/many digits) is rejected and the form re-shown. `admission()` runs the *inherited* enquiry number through the same check and, if a pre-ADR-59 enquiry carries a malformed number, redirects you to **Edit Enquiry** with "…isn't a valid 10-digit number. Edit the enquiry before admitting."
+**Fix:** enter a real 10-digit mobile. A number pasted with `+91`, spaces or dashes is fine — it's cleaned automatically and stored as the bare 10 digits. If admission is blocked, fix the number on the enquiry first, then admit. This does **not** apply to Settings → Library Profile's contact phone or the admin-account mobile, which keep their own rules.
+
 ## Editing a student's mobile number crashes
 
 **Cause (historical, fixed 2026-07-22):** `routes/student.py`'s `edit()` had no `try/except` around its `UPDATE` — setting a mobile number already used by another student of the same admin violates `students`' `UNIQUE(mobile, admin_id)` and raised an unhandled `sqlite3.IntegrityError`. See the "database is locked" entry above for the follow-on effect this had on unrelated requests, and [CHANGELOG.md](CHANGELOG.md) for the fix.

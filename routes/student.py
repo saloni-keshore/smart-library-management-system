@@ -16,9 +16,9 @@ from database.membership_queries import get_memberships_for_admin, get_effective
 from database.supabase_client import get_supabase_client
 from utils.normalization import (
     normalize_name,
-    normalize_phone,
     normalize_category,
     normalize_free_text,
+    clean_mobile,
 )
 
 
@@ -134,6 +134,18 @@ def admission(enquiry_id):
         if not (enquiry.get("mobile") or "").strip():
             flash("Mobile number is required.", "danger")
             return redirect(url_for("student.admission", enquiry_id=enquiry_id))
+        # The mobile is inherited from the enquiry; enquiries created before
+        # 10-digit validation existed (ADR-59) could still carry a malformed
+        # number, which would break the (admin_id, mobile) person key. Make
+        # the operator fix it on the enquiry before a student record is cut.
+        mobile = clean_mobile(enquiry.get("mobile"))
+        if not mobile:
+            flash(
+                "This enquiry's mobile number isn't a valid 10-digit number. "
+                "Edit the enquiry before admitting.",
+                "danger",
+            )
+            return redirect(url_for("enquiry.edit", enquiry_id=enquiry_id))
         if not (enquiry.get("purpose") or "").strip():
             flash("Purpose is required.", "danger")
             return redirect(url_for("student.admission", enquiry_id=enquiry_id))
@@ -148,7 +160,7 @@ def admission(enquiry_id):
             existing_response = (
                 supabase.table("students")
                 .select("student_id, full_name")
-                .eq("mobile", enquiry["mobile"])
+                .eq("mobile", mobile)
                 .eq("admin_id", admin_id)
                 .execute()
             )
@@ -168,12 +180,13 @@ def admission(enquiry_id):
         # which is already normalized at the point it was saved
         # (routes/enquiries.py) - re-normalizing here is defensive/
         # idempotent, guarding against any enquiry row that predates this
-        # normalization pass (see the one-time migration script).
+        # normalization pass (see the one-time migration script). `mobile`
+        # is the clean_mobile()-canonicalized value checked above (ADR-59).
         student_row = {
             "admin_id": admin_id,
             "enquiry_id": enquiry["enquiry_id"],
             "full_name": normalize_name(enquiry["full_name"]),
-            "mobile": normalize_phone(enquiry["mobile"]),
+            "mobile": mobile,
             "address": address,
             "id_proof": id_proof,
             "purpose": normalize_category(enquiry["purpose"]),
@@ -304,11 +317,22 @@ def edit(student_id):
     if request.method == "POST":
 
         full_name = normalize_name(request.form.get("full_name"))
-        mobile = normalize_phone(request.form.get("mobile"))
+        raw_mobile = request.form.get("mobile") or ""
+        # Canonicalize + validate to a bare 10-digit mobile (ADR-59) so an
+        # edit can't put a malformed number onto a student and break the
+        # (admin_id, mobile) person key.
+        mobile = clean_mobile(raw_mobile)
         address = normalize_free_text(request.form.get("address"))
         purpose = normalize_category(request.form.get("purpose"))
         shift = normalize_category(request.form.get("shift"))
         status = request.form.get("status")
+
+        if not raw_mobile.strip():
+            flash("Mobile number is required.", "danger")
+            return render_template("students/edit.html", student=student)
+        if not mobile:
+            flash("Please enter a valid 10-digit mobile number.", "danger")
+            return render_template("students/edit.html", student=student)
 
         # UNIQUE(mobile, admin_id) exists on both databases -- check for a
         # collision with another student of this admin before writing,

@@ -60,19 +60,19 @@ def test_admission_nonexistent_enquiry(logged_in_client):
 
 
 def test_admission_duplicate_mobile_blocked(logged_in_client):
-    """Admitting the same mobile twice (same admin) must not create a
-    second students row; UNIQUE(mobile, admin_id) is the DB-level guard."""
+    """Re-running admission for someone who is already a student (same
+    admin) must not create a second students row. A phone number identifies
+    one person (ADR-58), so admission() detects the existing student and
+    redirects to their record instead of inserting."""
     client, admin = logged_in_client
     mobile = "9555511112"
     make_enquiry(client, mobile=mobile)
-    eid1 = get_last_enquiry_id(admin["admin_id"])
-    admit_student(client, eid1)
-    sid1 = get_last_student_id(admin["admin_id"])
+    eid = get_last_enquiry_id(admin["admin_id"])
+    admit_student(client, eid)
 
-    make_enquiry(client, mobile=mobile)
-    eid2 = get_last_enquiry_id(admin["admin_id"])
-    resp = admit_student(client, eid2)
-    assert b"already been admitted" in resp.data
+    # Back-button / double submit: POST the same admission a second time.
+    resp = admit_student(client, eid)
+    assert b"already registered" in resp.data
 
     supabase = get_supabase_client()
     count = (
@@ -194,6 +194,37 @@ def test_edit_student_invalid_status_value_accepted(logged_in_client):
     assert student["status"] == "NotARealStatus"
 
 
+def test_edit_student_invalid_mobile_rejected(logged_in_client):
+    """ADR-59: editing a student's mobile to a non-10-digit value is
+    rejected and the stored number is unchanged."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    original = get_student_by_id(sid)["mobile"]
+    resp = client.post(
+        f"/students/edit/{sid}",
+        data={"full_name": "X", "mobile": "notaphone", "address": "x",
+              "purpose": "x", "shift": "Morning", "status": "Active"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"valid 10-digit mobile number" in resp.data
+    assert get_student_by_id(sid)["mobile"] == original
+
+
+def test_edit_student_mobile_formatting_is_canonicalized(logged_in_client):
+    """A formatted but valid number is accepted and stored as bare digits."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = client.post(
+        f"/students/edit/{sid}",
+        data={"full_name": "X", "mobile": "091234-56789", "address": "x",
+              "purpose": "x", "shift": "Morning", "status": "Active"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert get_student_by_id(sid)["mobile"] == "9123456789"
+
+
 # ---------------------------------------------------------------------------
 # Membership create
 # ---------------------------------------------------------------------------
@@ -287,6 +318,38 @@ def test_membership_create_empty_joining_date_rejected(logged_in_client):
     resp = create_membership(client, sid, joining_date="")
     assert b"Joining date is required" in resp.data
     assert get_last_membership_id(sid) is None
+
+
+def test_membership_create_prefills_joining_date_from_admission_join_date(logged_in_client):
+    """UX: the join_date entered on admission (Step 1) is carried into the
+    membership Joining Date field (Step 2) so the operator doesn't retype the
+    same date. The input keeps `required` and stays editable."""
+    client, admin = logged_in_client
+    make_enquiry(client)
+    eid = get_last_enquiry_id(admin["admin_id"])
+    admit_student(client, eid, join_date="2026-05-14")
+    sid = get_last_student_id(admin["admin_id"])
+
+    resp = client.get(f"/memberships/create/{sid}")
+    assert resp.status_code == 200
+    assert b'name="joining_date"' in resp.data
+    assert b'value="2026-05-14"' in resp.data
+
+
+def test_membership_joining_date_stays_editable_and_independent_of_join_date(logged_in_client):
+    """The prefill is only a default: posting a different joining_date is
+    accepted and stored, and students.join_date is left untouched (the two
+    dates are allowed to differ)."""
+    client, admin = logged_in_client
+    make_enquiry(client)
+    eid = get_last_enquiry_id(admin["admin_id"])
+    admit_student(client, eid, join_date="2026-05-14")
+    sid = get_last_student_id(admin["admin_id"])
+
+    create_membership(client, sid, joining_date="2026-06-01")
+    m = get_membership_by_id(get_last_membership_id(sid))
+    assert m["joining_date"] == "2026-06-01"
+    assert get_student_by_id(sid)["join_date"] == "2026-05-14"
 
 
 def test_membership_create_zero_pay_full_due_no_payment_row(logged_in_client):

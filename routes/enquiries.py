@@ -17,9 +17,9 @@ from database.id_sequence import insert_with_next_id
 from database.supabase_client import get_supabase_client
 from utils.normalization import (
     normalize_name,
-    normalize_phone,
     normalize_category,
     normalize_free_text,
+    clean_mobile,
 )
 
 enquiry_bp = Blueprint(
@@ -156,7 +156,11 @@ def add():
     if request.method == "POST":
 
         full_name = normalize_name(request.form.get("full_name", ""))
-        mobile = normalize_phone(request.form.get("mobile", ""))
+        raw_mobile = request.form.get("mobile", "")
+        # A phone number identifies one person (ADR-58), so it must be stored
+        # in one canonical form - clean_mobile() strips '+91'/spaces/dashes
+        # and requires a bare 10-digit result, rejecting anything else.
+        mobile = clean_mobile(raw_mobile)
         purpose = normalize_category(request.form.get("purpose", ""))
         preferred_shift = normalize_category(request.form.get("preferred_shift", ""))
         followup_date = _sanitize_date(request.form.get("followup_date", ""))
@@ -165,8 +169,11 @@ def add():
         if not full_name:
             flash("Student name is required.", "danger")
             return redirect(url_for("enquiry.add"))
-        if not mobile:
+        if not raw_mobile.strip():
             flash("Mobile number is required.", "danger")
+            return redirect(url_for("enquiry.add"))
+        if not mobile:
+            flash("Please enter a valid 10-digit mobile number.", "danger")
             return redirect(url_for("enquiry.add"))
         if not purpose:
             flash("Purpose is required.", "danger")
@@ -240,11 +247,19 @@ def edit(enquiry_id):
     if request.method == "POST":
 
         full_name = normalize_name(request.form.get("full_name", ""))
-        mobile = normalize_phone(request.form.get("mobile", ""))
+        raw_mobile = request.form.get("mobile", "")
+        mobile = clean_mobile(raw_mobile)
         purpose = normalize_category(request.form.get("purpose", ""))
         preferred_shift = normalize_category(request.form.get("preferred_shift", ""))
         followup_date = _sanitize_date(request.form.get("followup_date"))
         remarks = normalize_free_text(request.form.get("remarks", ""))
+
+        if not raw_mobile.strip():
+            flash("Mobile number is required.", "danger")
+            return redirect(url_for("enquiry.edit", enquiry_id=enquiry_id))
+        if not mobile:
+            flash("Please enter a valid 10-digit mobile number.", "danger")
+            return redirect(url_for("enquiry.edit", enquiry_id=enquiry_id))
 
         # Don't let an edit move this enquiry's number onto one that already
         # belongs to someone else (ADR-58).
