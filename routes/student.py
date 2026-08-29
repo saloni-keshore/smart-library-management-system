@@ -374,6 +374,20 @@ def edit(student_id):
             flash("Something went wrong. Please try again.", "danger")
             return render_template("students/edit.html", student=student)
 
+        # Keep the originating enquiry's status in step with the student's
+        # (a phone number is one person - ADR-58): deactivating a student
+        # marks their enquiry "Inactive" so the Enquiries list/view stops
+        # showing a stale "Admitted"; reactivating restores "Admitted".
+        # Best-effort - the student update above already succeeded.
+        if student.get("enquiry_id"):
+            enquiry_status = "Admitted" if status == "Active" else "Inactive"
+            try:
+                supabase.table("enquiries").update(
+                    {"status": enquiry_status}
+                ).eq("enquiry_id", student["enquiry_id"]).eq("admin_id", admin_id).execute()
+            except APIError:
+                pass
+
         flash("Student updated successfully.", "success")
         return redirect(url_for("student.view", student_id=student_id))
 

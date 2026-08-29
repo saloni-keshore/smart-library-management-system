@@ -17,6 +17,20 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-08-30 — Inactive students surface on the Students list; student ↔ enquiry status kept in sync (ADR-60, TD-80)
+
+- **Feature:** Students list + Edit Student. There is no "delete student" — deactivation (`students.status = "Inactive"` via Edit Student) is the substitute — but the Students list's "Status" column rendered `membership_status` only (green "Active" / red "Expired"), so a deactivated student with a live membership still showed a green "Active" badge, and a membership-less student showed a misleading red "Expired". Separately, the originating enquiry stayed `"Admitted"` forever, so the Enquiries list/view kept showing a deactivated person as admitted.
+- **Why:** User report while checking the delete/deactivate behaviour: "when we do inactive on the students which show admitted, it has to show inactive to the inactivated student."
+- **Files changed:**
+  - `templates/students/index.html` — the Status column now resolves `student.status` first: `Inactive` → grey "Inactive"; otherwise `Active` + live membership → green "Active"; `Active` + a membership that's not live → red "Expired"; `Active` + no membership row → grey "No membership" (was the misleading "Expired"). `student.status`/`membership_id` were already in the template context (`index()` does `select("*")` + merges membership fields).
+  - `routes/student.py` `edit()` — after the `students` update succeeds, best-effort mirrors the new status onto the originating enquiry when `student.enquiry_id` is set: `status == "Active"` → enquiry `"Admitted"`, otherwise → enquiry `"Inactive"`. Admin-scoped (`.eq("admin_id", admin_id)`), wrapped in `try/except APIError: pass` — the student edit already committed.
+  - `tests/test_03_student_membership_payment.py` — added `test_students_list_shows_inactive_badge_over_live_membership`, `test_students_list_shows_no_membership_when_student_has_none`, `test_deactivating_student_syncs_enquiry_status` (Inactive → enquiry "Inactive", reactivate → "Admitted"), plus a shared `_set_student_status()` helper.
+- **Database changes:** None. `students.status` / `enquiries.status` are existing free-text columns; `"Inactive"` is a new value for `enquiries.status` (the enquiry badge templates already render any unknown value via their `{% else %}` grey branch).
+- **UI changes:** Students list — a deactivated student now shows a grey "Inactive" badge regardless of membership; a student with no membership shows "No membership" instead of "Expired". Enquiries list/view — a person whose student record is set Inactive now shows "Inactive" instead of "Admitted", and flips back to "Admitted" if the student is reactivated.
+- **Future impact:** Establishes **ADR-60** (student status is authoritative on the list; student ↔ enquiry status are kept in step by `edit()`). `students.status` is still only partially wired elsewhere — see **TD-80**: the Students list still *includes* Inactive rows (no filter), and BI/Purpose Analytics deliberately counts every student regardless of status. `edit()` still has no server-side allowlist on `status` (any string is stored) — unchanged.
+
+---
+
 ## 2026-08-30 — Mobile numbers validated + canonicalized to bare 10 digits on the enquiry/student side (ADR-59, TD-79)
 
 - **Feature:** Enquiry → Admission → Student edit. A phone number is a person's identity key since ADR-58, but nothing on this side of the app checked it — `normalize_phone()` only trimmed whitespace, the route handlers only checked "not empty", and every mobile `<input>` was a plain `type="text"`. `abc`, `12345`, `+91 98765 43210` and a 15-digit string all saved fine, so the same real number in two spellings read as two different people.

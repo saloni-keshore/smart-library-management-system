@@ -104,7 +104,15 @@ Students
 
                     <td>
 
-                        {% if student.membership_status == "Active" %}
+                        {% if student.status != "Active" %}
+
+                        <span class="badge bg-secondary">
+
+                            Inactive
+
+                        </span>
+
+                        {% elif student.membership_status == "Active" %}
 
                         <span class="badge bg-success">
 
@@ -112,11 +120,19 @@ Students
 
                         </span>
 
-                        {% else %}
+                        {% elif student.membership_id %}
 
                         <span class="badge bg-danger">
 
                             Expired
+
+                        </span>
+
+                        {% else %}
+
+                        <span class="badge bg-secondary">
+
+                            No membership
 
                         </span>
 

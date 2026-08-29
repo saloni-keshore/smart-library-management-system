@@ -116,6 +116,14 @@ This has had **three distinct real causes** found across two sessions — don't 
 **Cause (by design, since 2026-08-30, ADR-59):** the mobile field on Add/Edit Enquiry and Edit Student is now validated. `utils/normalization.py`'s `clean_mobile()` strips spaces/dashes/brackets and an optional leading `+91` or `0`, then requires **exactly 10 digits** — anything else (letters, too few/many digits) is rejected and the form re-shown. `admission()` runs the *inherited* enquiry number through the same check and, if a pre-ADR-59 enquiry carries a malformed number, redirects you to **Edit Enquiry** with "…isn't a valid 10-digit number. Edit the enquiry before admitting."
 **Fix:** enter a real 10-digit mobile. A number pasted with `+91`, spaces or dashes is fine — it's cleaned automatically and stored as the bare 10 digits. If admission is blocked, fix the number on the enquiry first, then admit. This does **not** apply to Settings → Library Profile's contact phone or the admin-account mobile, which keep their own rules.
 
+## How do I delete / remove a student? An Inactive student still shows in the list
+
+**By design:** there is no delete-student action. To retire a student, open **Edit Student → Status → Inactive**. Since 2026-08-30 (ADR-60) this:
+- shows a grey **"Inactive"** badge on the Students list (it now wins over membership status — previously a deactivated student with a live membership still showed a green "Active"), and
+- flips the linked enquiry to **"Inactive"** on the Enquiries list/view (setting it back to Active restores "Admitted").
+
+**Still expected:** the Inactive student is **not hidden** from the Students list, and Business Intelligence / Purpose Analytics still counts them — `students.status` is only partially wired (see TD-80 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)). Dashboard's "Total Students" KPI *does* exclude Inactive.
+
 ## Editing a student's mobile number crashes
 
 **Cause (historical, fixed 2026-07-22):** `routes/student.py`'s `edit()` had no `try/except` around its `UPDATE` — setting a mobile number already used by another student of the same admin violates `students`' `UNIQUE(mobile, admin_id)` and raised an unhandled `sqlite3.IntegrityError`. See the "database is locked" entry above for the follow-on effect this had on unrelated requests, and [CHANGELOG.md](CHANGELOG.md) for the fix.

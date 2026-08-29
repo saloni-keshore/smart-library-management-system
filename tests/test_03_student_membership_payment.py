@@ -225,6 +225,58 @@ def test_edit_student_mobile_formatting_is_canonicalized(logged_in_client):
     assert get_student_by_id(sid)["mobile"] == "9123456789"
 
 
+def _set_student_status(client, sid, status):
+    """POST Edit Student changing only `status` (other fields kept valid)."""
+    return client.post(
+        f"/students/edit/{sid}",
+        data={"full_name": "X", "mobile": get_student_by_id(sid)["mobile"],
+              "address": "x", "purpose": "x", "shift": "Morning",
+              "status": status},
+        follow_redirects=True,
+    )
+
+
+def test_students_list_shows_inactive_badge_over_live_membership(logged_in_client):
+    """student.status wins over membership status on the Students list: a
+    student with a live membership who is set Inactive shows 'Inactive',
+    not 'Active'."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    create_membership(client, sid)  # live membership -> list would show "Active"
+
+    assert b"Inactive" not in client.get("/students/").data
+
+    _set_student_status(client, sid, "Inactive")
+    assert b"Inactive" in client.get("/students/").data
+
+
+def test_students_list_shows_no_membership_when_student_has_none(logged_in_client):
+    """An Active student with no membership row shows 'No membership', not
+    the old misleading 'Expired'."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])  # admitted, no membership
+    assert get_last_membership_id(sid) is None
+    resp = client.get("/students/")
+    # "No membership" is produced only by the new else-branch; the old code
+    # rendered "Expired" for this same (membership-less) case.
+    assert b"No membership" in resp.data
+
+
+def test_deactivating_student_syncs_enquiry_status(logged_in_client):
+    """Setting a student Inactive marks the originating enquiry 'Inactive'
+    (so the Enquiries list/view stops showing a stale 'Admitted');
+    reactivating restores 'Admitted'."""
+    client, admin = logged_in_client
+    eid, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    assert get_enquiry_by_id(eid)["status"] == "Admitted"
+
+    _set_student_status(client, sid, "Inactive")
+    assert get_enquiry_by_id(eid)["status"] == "Inactive"
+
+    _set_student_status(client, sid, "Active")
+    assert get_enquiry_by_id(eid)["status"] == "Admitted"
+
+
 # ---------------------------------------------------------------------------
 # Membership create
 # ---------------------------------------------------------------------------
