@@ -23,10 +23,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const message = document.createElement("p");
 
-        message.className = "text-muted text-center py-5 mb-0";
+        message.className = "text-muted text-center py-5 mb-0 cashbook-chart-empty";
         message.textContent = "No transaction data available";
 
         canvas.insertAdjacentElement("afterend", message);
+
+    }
+
+    function hideEmptyState(canvas){
+
+        canvas.style.display = "";
+
+        const message = canvas.nextElementSibling;
+        if(message && message.classList.contains("cashbook-chart-empty")){
+            message.remove();
+        }
 
     }
 
@@ -35,42 +46,87 @@ document.addEventListener("DOMContentLoaded", () => {
         const canvas = document.getElementById(canvasId);
 
         if(!canvas){
-            return;
+            return null;
         }
 
         if(!hasData(data)){
             showEmptyState(canvas);
-            return;
+            return null;
         }
 
-        new Chart(canvas, { type, data, options });
+        return new Chart(canvas, { type, data, options });
 
     }
 
-    renderChart(
+    const incomeExpenseOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+            legend: { position: "bottom", labels: { boxWidth: 12, padding: 16 } }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: value => "₹" + value.toLocaleString("en-IN")
+                }
+            }
+        },
+        elements: {
+            point: { radius: 3 }
+        }
+    };
+
+    let incomeExpenseChart = renderChart(
         "incomeExpenseChart",
         "line",
         chartData.incomeExpense,
-        {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-                legend: { position: "bottom", labels: { boxWidth: 12, padding: 16 } }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: value => "₹" + value.toLocaleString("en-IN")
-                    }
-                }
-            },
-            elements: {
-                point: { radius: 3 }
-            }
-        }
+        incomeExpenseOptions
     );
+
+    // This Year / Last Year switch - fetches the period's data from
+    // routes/cashbook.py's income_expense_chart() and swaps it into the
+    // existing Chart.js instance (same pattern as dashboard-charts.js's
+    // Revenue Overview switcher).
+    const periodSelect = document.getElementById("income-expense-period-select");
+
+    periodSelect?.addEventListener("change", () => {
+
+        const canvas = document.getElementById("incomeExpenseChart");
+        if(!canvas){
+            return;
+        }
+
+        fetch("/cashbook/income-expense-chart?period=" + encodeURIComponent(periodSelect.value))
+            .then(response => response.json())
+            .then(data => {
+
+                if(!hasData(data)){
+                    if(incomeExpenseChart){
+                        incomeExpenseChart.destroy();
+                        incomeExpenseChart = null;
+                    }
+                    showEmptyState(canvas);
+                    return;
+                }
+
+                hideEmptyState(canvas);
+
+                if(incomeExpenseChart){
+                    incomeExpenseChart.data = data;
+                    incomeExpenseChart.update();
+                } else {
+                    incomeExpenseChart = new Chart(canvas, {
+                        type: "line",
+                        data,
+                        options: incomeExpenseOptions
+                    });
+                }
+
+            });
+
+    });
 
     const donutOptions = {
         responsive: true,

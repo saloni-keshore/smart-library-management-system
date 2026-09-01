@@ -1,7 +1,7 @@
 import calendar
 from datetime import date, timedelta
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
 
 from database.cashbook_queries import (
     insert_transaction,
@@ -77,8 +77,10 @@ def _month_label(month_key):
     return f"{calendar.month_abbr[int(month)]} {year}"
 
 
-def _build_income_expense_chart(admin_id):
-    """Chart.js-ready {labels, datasets} for the Income vs Expense trend.
+def _build_income_expense_chart(admin_id, year):
+    """Chart.js-ready {labels, datasets} for the Income vs Expense trend,
+    restricted to the given calendar year (the "This Year" / "Last Year"
+    dropdown on the chart).
 
     Profit is derived locally from the income/expense totals already
     fetched here instead of calling get_monthly_profit(), which would
@@ -87,6 +89,10 @@ def _build_income_expense_chart(admin_id):
 
     income = get_monthly_income(admin_id)
     expense = get_monthly_expense(admin_id)
+
+    year_prefix = f"{year}-"
+    income = {m: v for m, v in income.items() if m.startswith(year_prefix)}
+    expense = {m: v for m, v in expense.items() if m.startswith(year_prefix)}
 
     months = sorted(set(income) | set(expense))
     profit = {m: income.get(m, 0) - expense.get(m, 0) for m in months}
@@ -225,7 +231,7 @@ def index():
     todays_transactions = get_todays_transaction_count(admin_id)
     activity_log = get_recent_audit_log(admin_id, limit=10)
 
-    income_expense_chart = _build_income_expense_chart(admin_id)
+    income_expense_chart = _build_income_expense_chart(admin_id, today.year)
     expense_category_chart = _build_category_chart(get_expense_category_totals(admin_id))
     revenue_source_chart = _build_category_chart(get_income_category_totals(admin_id))
     payment_method_chart = _build_payment_method_chart(admin_id)
@@ -261,6 +267,26 @@ def index():
         payment_method_chart=payment_method_chart,
         unsynced_payment_count=unsynced_payment_count
     )
+
+
+@cashbook_bp.route("/income-expense-chart")
+def income_expense_chart():
+    """JSON {labels, datasets} for the Income vs Expense chart's This Year /
+    Last Year switch - same period-swap pattern as
+    routes/dashboard.py's revenue_chart()."""
+
+    if "admin_id" not in session:
+        return jsonify({}), 401
+
+    admin_id = session["admin_id"]
+
+    period = request.args.get("period", "this_year").strip()
+    if period not in ("this_year", "last_year"):
+        period = "this_year"
+
+    target_year = date.today().year - 1 if period == "last_year" else date.today().year
+
+    return jsonify(_build_income_expense_chart(admin_id, target_year))
 
 
 @cashbook_bp.route("/add", methods=["POST"])

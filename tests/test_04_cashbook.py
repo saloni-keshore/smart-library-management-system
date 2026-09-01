@@ -349,3 +349,55 @@ def test_cashbook_kpi_cash_balance_matches_math(logged_in_client):
 
     from database.cashbook_queries import get_cash_balance
     assert get_cash_balance(admin["admin_id"]) == 700
+
+
+def test_income_expense_chart_endpoint_requires_login(client):
+    resp = client.get("/cashbook/income-expense-chart")
+    assert resp.status_code == 401
+
+
+def test_income_expense_chart_endpoint_switches_period(logged_in_client):
+    """The 'Income vs Expense' chart's This Year / Last Year select (was
+    dead UI - no id, no listener, server data ignored it entirely) now
+    round-trips through this endpoint, mirroring the Dashboard's
+    /dashboard/revenue-chart period switch."""
+    client, admin = logged_in_client
+    add_txn(client, transaction_type="Income", category="Donation", amount="500")
+
+    resp_this_year = client.get("/cashbook/income-expense-chart?period=this_year")
+    assert resp_this_year.status_code == 200
+    this_year_json = resp_this_year.get_json()
+    assert sum(this_year_json["datasets"][0]["data"]) == 500
+
+    resp_last_year = client.get("/cashbook/income-expense-chart?period=last_year")
+    assert resp_last_year.status_code == 200
+    last_year_json = resp_last_year.get_json()
+    assert sum(ds_sum for ds in last_year_json["datasets"] for ds_sum in ds["data"]) == 0
+
+    # Unrecognized period falls back to this_year, same as the Dashboard's
+    # equivalent endpoint.
+    resp_bogus = client.get("/cashbook/income-expense-chart?period=bogus")
+    assert resp_bogus.status_code == 200
+    assert resp_bogus.get_json() == this_year_json
+
+
+def test_income_expense_chart_year_bucketing(logged_in_client):
+    """A transaction dated last year must show up under period=last_year
+    and be absent from period=this_year, proving the chart actually filters
+    by year rather than always returning the same all-time totals."""
+    from datetime import date
+    client, admin = logged_in_client
+    last_year_date = date.today().replace(year=date.today().year - 1, month=6, day=15).isoformat()
+    add_txn(
+        client,
+        transaction_type="Income",
+        category="Donation",
+        amount="750",
+        transaction_date=last_year_date,
+    )
+
+    this_year_data = client.get("/cashbook/income-expense-chart?period=this_year").get_json()
+    assert sum(this_year_data["datasets"][0]["data"]) == 0
+
+    last_year_data = client.get("/cashbook/income-expense-chart?period=last_year").get_json()
+    assert sum(last_year_data["datasets"][0]["data"]) == 750
