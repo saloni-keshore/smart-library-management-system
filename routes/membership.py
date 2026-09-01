@@ -22,7 +22,9 @@ from database.membership_queries import (
     insert_membership,
     find_membership_by_idempotency_key,
     promote_student_if_fully_paid,
+    split_admission_and_membership_fee,
     DiscountColumnsUnavailable,
+    AdmissionFeeColumnUnavailable,
 )
 from utils.normalization import normalize_category, normalize_free_text
 
@@ -201,6 +203,16 @@ def create(student_id):
                 idempotency_key=secrets.token_urlsafe(24)
             )
 
+        # admission_fee_amount is this membership's own snapshot of the
+        # admission fee actually folded into its total_fee (ADR-62) - 0 for
+        # Custom (see the comment below), the current Settings value for a
+        # standard plan, capped after discount below. Persisted on the row
+        # (not re-read from live Settings later) so a future Settings change
+        # can never retroactively re-categorize this membership's payments -
+        # database/membership_queries.py's split_admission_and_membership_fee()
+        # is what actually uses it, from both this route and payment.collect().
+        admission_fee_amount = 0
+
         # Total Payable is never taken from client input for standard plans
         # -- it is derived from the admin-configured plan fee + admission
         # fee (a one-time new-admission charge) so it can never drift from
@@ -228,6 +240,7 @@ def create(student_id):
                 )
         elif raw_plan in plan_pricing:
             total_fee = plan_pricing[raw_plan]["fee"] + admission_fee
+            admission_fee_amount = admission_fee
         else:
             flash("Membership plan is required.", "danger")
             return render_template(
@@ -277,6 +290,11 @@ def create(student_id):
 
         total_fee = total_fee - discount_amount
 
+        # A discount large enough to undercut the configured admission fee
+        # itself must not let the split later attribute more to "Admission
+        # Fee" than the student actually ends up owing in total.
+        admission_fee_amount = min(admission_fee_amount, total_fee)
+
         if paid_amount > total_fee:
             flash("Paid cannot exceed Final Payable.", "danger")
             return render_template(
@@ -318,6 +336,7 @@ def create(student_id):
             "pending_amount": pending_amount,
             "discount_amount": discount_amount,
             "discount_reason": discount_reason or None,
+            "admission_fee_amount": admission_fee_amount,
             "remarks": remarks,
             "membership_status": "Active",
             "idempotency_key": idempotency_key,
@@ -330,6 +349,19 @@ def create(student_id):
                 "Discounts aren't available yet on this system - the database "
                 "needs a one-time update. Contact your administrator, or "
                 "create this membership without a discount.",
+                "danger"
+            )
+            return render_template(
+                "memberships/create.html", student=student,
+                plan_pricing=plan_pricing, admission_fee=admission_fee,
+                idempotency_key=secrets.token_urlsafe(24)
+            )
+        except AdmissionFeeColumnUnavailable:
+            flash(
+                "Admission fee tracking isn't available yet on this system - "
+                "the database needs a one-time update. Contact your "
+                "administrator, or set Admission Fee to ₹0 in Settings > "
+                "Membership Settings for now.",
                 "danger"
             )
             return render_template(
@@ -359,6 +391,12 @@ def create(student_id):
         payment_id = None
 
         if paid_amount > 0:
+            # Admission-fee-first waterfall (ADR-62): this is a brand new
+            # membership, so old_paid is always 0 - the whole of paid_amount
+            # is split against admission_fee_amount from scratch.
+            admission_share, membership_share = split_admission_and_membership_fee(
+                admission_fee_amount, old_paid=0, amount=paid_amount
+            )
             try:
                 receipt_number = record_payment(
                     admin_id,
@@ -368,7 +406,10 @@ def create(student_id):
                     payment_mode=payment_mode,
                     amount=paid_amount,
                     remarks=remarks,
-                    category="Admission Fee",
+                    category=[
+                        ("Admission Fee", admission_share),
+                        ("Membership Fee", membership_share),
+                    ],
                     description=remarks or f"Admission payment - {plan_name}",
                     source="Admission",
                     idempotency_key=f"{idempotency_key}-payment" if idempotency_key else None
@@ -580,6 +621,11 @@ def renew(student_id):
             "total_fee": total_fee,
             "paid_amount": paid_amount,
             "pending_amount": pending_amount,
+            # A renewal never carries an admission charge (ADR-45/ADR-62) -
+            # explicit 0 rather than relying on the column default, so it's
+            # unambiguous in the code that this is deliberate, not an
+            # oversight.
+            "admission_fee_amount": 0,
             "remarks": remarks,
             "membership_status": "Active",
             "idempotency_key": idempotency_key,
@@ -596,8 +642,9 @@ def renew(student_id):
             # insert_membership() (database/membership_queries.py) instead of
             # a raw .insert() - reused here for its idempotency handling
             # (TD-30, ADR-53): renew() never sets discount_amount/
-            # discount_reason, so its DiscountColumnsUnavailable branch can
-            # never trigger for this call site.
+            # discount_reason and always sets admission_fee_amount=0, so its
+            # DiscountColumnsUnavailable/AdmissionFeeColumnUnavailable
+            # branches can never trigger for this call site.
             existing_membership = insert_membership(supabase, membership_row)
         except APIError:
             if previously_active_ids:

@@ -13,6 +13,7 @@ from tests.conftest import (
     get_last_membership_id,
     get_membership_by_id,
     save_membership_settings,
+    get_cashbook_entries,
 )
 
 
@@ -613,6 +614,14 @@ def test_membership_create_standard_plan_total_fee_from_settings_plus_admission(
     resp = create_membership(
         client, sid, plan_name="Monthly", paid_amount="2000", total_fee="ignored-for-standard-plans",
     )
+
+    if b"available yet on this system" in resp.data:
+        pytest.skip(
+            "memberships.admission_fee_amount column not yet added on this "
+            "Supabase project (ADR-62) - this test needs a real, nonzero "
+            "admission fee to prove it's folded into total_fee"
+        )
+
     assert b"Membership created successfully" in resp.data
 
     mid = get_last_membership_id(sid)
@@ -690,7 +699,15 @@ def test_membership_create_discount_unavailable_fails_safely(logged_in_client):
     """When discount_amount/discount_reason don't exist yet on this
     Supabase project, a real discount must NOT silently vanish while the
     student is still charged the discounted price (ADR-46) - membership
-    creation is blocked with a clear message instead, and nothing is saved."""
+    creation is blocked with a clear message instead, and nothing is saved.
+
+    This settings block also configures a real admission fee (400), so on a
+    project missing *both* discount and admission_fee_amount columns,
+    insert_membership()'s admission_fee_amount check (ADR-62) fires first
+    and this actually skips via AdmissionFeeColumnUnavailable's message, not
+    DiscountColumnsUnavailable's - both contain "available yet on this
+    system" so the assertion below holds either way; the exact database
+    state at hand controls which exception path this exercises."""
     client, admin = logged_in_client
     save_membership_settings(client, monthly_fee="2400", admission_fee="400")
     _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
@@ -707,6 +724,224 @@ def test_membership_create_discount_unavailable_fails_safely(logged_in_client):
 
     assert b"available yet on this system" in resp.data
     assert get_last_membership_id(sid) is None
+
+
+# ---------------------------------------------------------------------------
+# Admission Fee vs Membership Fee categorization (ADR-62)
+# ---------------------------------------------------------------------------
+
+def test_admission_fee_amount_unavailable_fails_safely(logged_in_client):
+    """When admission_fee_amount doesn't exist yet on this Supabase project,
+    a membership with a real configured admission fee must NOT silently
+    lose that categorization data - creation is blocked with a clear
+    message instead, and nothing is saved. Same hard-fail shape as ADR-46's
+    discount columns, confirmed live against the actual database state
+    rather than assuming it."""
+    client, admin = logged_in_client
+    save_membership_settings(client, monthly_fee="800", admission_fee="200")
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+
+    resp = create_membership(client, sid, plan_name="Monthly", paid_amount="500")
+
+    if b"Membership created successfully" in resp.data:
+        pytest.skip(
+            "memberships.admission_fee_amount column already exists on "
+            "this Supabase project"
+        )
+
+    assert b"available yet on this system" in resp.data
+    assert get_last_membership_id(sid) is None
+
+
+def test_admission_fee_zero_all_membership_fee(logged_in_client):
+    """Custom plan (or a standard plan with Settings' admission fee left at
+    its ₹0 default) - admission_fee_amount is 0, so the waterfall collapses
+    to 100% Membership Fee, same as this app's pre-ADR-62 behavior for this
+    case. Unlike the split tests below, this never touches
+    AdmissionFeeColumnUnavailable (0 is always silently droppable, like
+    ADR-53's idempotency_key), so it needs no skip guard."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+    _, sid = _new_enquiry_and_admit(client, admin_id)
+
+    resp = create_membership(client, sid, paid_amount="500", due_amount="0")
+    assert b"Membership created successfully" in resp.data
+    mid = get_last_membership_id(sid)
+    assert (get_membership_by_id(mid).get("admission_fee_amount") or 0) == 0
+
+    rows = get_cashbook_entries(admin_id, category="Membership Fee")
+    assert len(rows) == 1
+    assert rows[0]["amount"] == 500
+    assert get_cashbook_entries(admin_id, category="Admission Fee") == []
+
+
+def test_admission_fee_split_at_creation(logged_in_client):
+    """ADR-62: a standard-plan payment made at creation that covers more
+    than the configured admission fee splits admission-fee-first - the
+    configured amount goes to Admission Fee, the rest to Membership Fee.
+    Skips if admission_fee_amount isn't on this Supabase project yet (see
+    test_admission_fee_amount_unavailable_fails_safely, which covers that
+    case directly)."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+    save_membership_settings(client, monthly_fee="800", admission_fee="200")
+    _, sid = _new_enquiry_and_admit(client, admin_id)
+
+    resp = create_membership(client, sid, plan_name="Monthly", paid_amount="1000")
+
+    if b"available yet on this system" in resp.data:
+        pytest.skip(
+            "memberships.admission_fee_amount column not yet added on this "
+            "Supabase project"
+        )
+
+    assert b"Membership created successfully" in resp.data
+    mid = get_last_membership_id(sid)
+    m = get_membership_by_id(mid)
+    assert m["total_fee"] == 1000
+    assert m["admission_fee_amount"] == 200
+
+    admission_rows = get_cashbook_entries(admin_id, category="Admission Fee")
+    membership_rows = get_cashbook_entries(admin_id, category="Membership Fee")
+    assert len(admission_rows) == 1 and admission_rows[0]["amount"] == 200
+    assert len(membership_rows) == 1 and membership_rows[0]["amount"] == 800
+
+
+def test_admission_fee_split_across_multiple_installments(logged_in_client):
+    """ADR-62: the admission-first waterfall spans create() and multiple
+    collect() calls - the boundary where the configured admission fee is
+    fully covered can fall in the middle of an installment, and every
+    payment after that boundary must land entirely in Membership Fee, with
+    the Admission Fee total never exceeding admission_fee_amount."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+    save_membership_settings(client, monthly_fee="800", admission_fee="200")
+    _, sid = _new_enquiry_and_admit(client, admin_id)
+
+    resp = create_membership(client, sid, plan_name="Monthly", paid_amount="100")
+    if b"available yet on this system" in resp.data:
+        pytest.skip(
+            "memberships.admission_fee_amount column not yet added on this "
+            "Supabase project"
+        )
+    assert b"Membership created successfully" in resp.data
+    mid = get_last_membership_id(sid)
+    assert get_membership_by_id(mid)["admission_fee_amount"] == 200
+
+    # Installment 1 (create(), paid 100): entirely inside the admission fee
+    # - Admission Fee only, no Membership Fee row exists yet.
+    assert [r["amount"] for r in get_cashbook_entries(admin_id, category="Admission Fee")] == [100]
+    assert get_cashbook_entries(admin_id, category="Membership Fee") == []
+
+    # Installment 2 (collect() 150): crosses the boundary - the remaining
+    # 100 of admission fee, then 50 of Membership Fee.
+    client.post(
+        f"/payments/collect/{mid}",
+        data={"amount_paid": "150", "payment_mode": "Cash"},
+        follow_redirects=True,
+    )
+    admission_amounts = sorted(
+        r["amount"] for r in get_cashbook_entries(admin_id, category="Admission Fee")
+    )
+    membership_amounts = sorted(
+        r["amount"] for r in get_cashbook_entries(admin_id, category="Membership Fee")
+    )
+    assert admission_amounts == [100, 100]
+    assert membership_amounts == [50]
+
+    # Installment 3 (collect() 750, clearing the balance): entirely after
+    # the boundary - Membership Fee only, admission fee never grows past 200.
+    client.post(
+        f"/payments/collect/{mid}",
+        data={"amount_paid": "750", "payment_mode": "Cash"},
+        follow_redirects=True,
+    )
+    admission_amounts = sorted(
+        r["amount"] for r in get_cashbook_entries(admin_id, category="Admission Fee")
+    )
+    membership_amounts = sorted(
+        r["amount"] for r in get_cashbook_entries(admin_id, category="Membership Fee")
+    )
+    assert admission_amounts == [100, 100]
+    assert sum(admission_amounts) == 200
+    assert membership_amounts == [50, 750]
+    assert sum(admission_amounts) + sum(membership_amounts) == 1000
+
+    m = get_membership_by_id(mid)
+    assert m["paid_amount"] == 1000
+    assert m["pending_amount"] == 0
+
+    assert get_student_by_id(sid)["status"] == "Active"
+
+
+def test_admission_fee_capped_by_large_discount(logged_in_client):
+    """ADR-62: a discount large enough to undercut the configured admission
+    fee must cap admission_fee_amount at the final (post-discount)
+    total_fee, so the split never attributes more to Admission Fee than
+    the student actually ends up owing in total."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+    save_membership_settings(client, monthly_fee="300", admission_fee="400")
+    _, sid = _new_enquiry_and_admit(client, admin_id)
+
+    resp = create_membership(
+        client, sid, plan_name="Monthly", paid_amount="50",
+        discount_amount="650", discount_reason="Big discount",
+    )
+    if b"available yet on this system" in resp.data:
+        pytest.skip(
+            "memberships.discount_amount/discount_reason or "
+            "admission_fee_amount columns not yet added on this Supabase "
+            "project"
+        )
+
+    assert b"Membership created successfully" in resp.data
+    mid = get_last_membership_id(sid)
+    m = get_membership_by_id(mid)
+    assert m["total_fee"] == 50  # 300 + 400 - 650
+    assert m["admission_fee_amount"] == 50  # capped, not 400
+
+    admission_rows = get_cashbook_entries(admin_id, category="Admission Fee")
+    assert len(admission_rows) == 1 and admission_rows[0]["amount"] == 50
+    assert get_cashbook_entries(admin_id, category="Membership Fee") == []
+
+
+def test_renewal_never_splits_or_reapplies_admission_fee(logged_in_client):
+    """ADR-45/ADR-62: a renewal's Total Payable never includes the
+    admission fee, and its payment is never split - it's tagged Membership
+    Renewal outright, even though Membership Settings has a real admission
+    fee configured. admission_fee_amount=0 is unconditionally safe to write
+    (falsy - never triggers AdmissionFeeColumnUnavailable), so this needs
+    no skip guard."""
+    client, admin = logged_in_client
+    admin_id = admin["admin_id"]
+    save_membership_settings(client, monthly_fee="800", admission_fee="200")
+    _, sid = _new_enquiry_and_admit(client, admin_id)
+
+    # Custom plan, unpaid at creation - keeps this test's Cashbook state
+    # focused purely on the renewal payment below.
+    create_membership(client, sid, paid_amount="0", due_amount="500")
+
+    resp = client.post(
+        f"/memberships/renew/{sid}",
+        data={
+            "plan_name": "Monthly", "joining_date": "2026-08-22", "duration_days": "30",
+            "end_date": "2026-09-21", "remarks": "renew", "payment_mode": "Cash",
+            "paid_amount": "800",
+        },
+        follow_redirects=True,
+    )
+    assert b"Membership renewed successfully" in resp.data
+
+    new_mid = get_last_membership_id(sid)
+    m = get_membership_by_id(new_mid)
+    assert (m.get("admission_fee_amount") or 0) == 0
+    assert m["total_fee"] == 800  # no admission fee folded in (ADR-45)
+
+    renewal_rows = get_cashbook_entries(admin_id, category="Membership Renewal")
+    assert len(renewal_rows) == 1
+    assert renewal_rows[0]["amount"] == 800
+    assert get_cashbook_entries(admin_id, category="Admission Fee") == []
 
 
 # ---------------------------------------------------------------------------
@@ -784,7 +1019,14 @@ def test_renew_standard_plan_total_fee_excludes_admission_fee(logged_in_client):
     client, admin = logged_in_client
     save_membership_settings(client, monthly_fee="2400", admission_fee="400")
     _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
-    create_membership(client, sid, plan_name="Monthly", paid_amount="2800")
+    create_resp = create_membership(client, sid, plan_name="Monthly", paid_amount="2800")
+
+    if b"available yet on this system" in create_resp.data:
+        pytest.skip(
+            "memberships.admission_fee_amount column not yet added on this "
+            "Supabase project (ADR-62) - the setup membership above (a "
+            "real, nonzero admission fee) can't be created without it"
+        )
 
     resp = client.post(
         f"/memberships/renew/{sid}",

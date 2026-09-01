@@ -107,6 +107,17 @@ CREATE TABLE IF NOT EXISTS memberships (
     discount_amount DOUBLE PRECISION DEFAULT 0,
     discount_reason TEXT,
 
+    -- Admission fee snapshot (ADR-62) - how much of this membership's
+    -- total_fee, at creation, was the Membership Settings admission fee
+    -- (0 for the Custom plan, or a renewal). Persisted here rather than
+    -- re-read from live Settings later, so a future Settings change can
+    -- never retroactively re-categorize this membership's Cashbook
+    -- history. database/membership_queries.py's
+    -- split_admission_and_membership_fee() uses it to divide every
+    -- payment toward this membership between the "Admission Fee" and
+    -- "Membership Fee" Cashbook categories, admission-fee-first.
+    admission_fee_amount DOUBLE PRECISION DEFAULT 0,
+
     -- Idempotency (TD-30, ADR-53) - a per-page-load token the Create/Renew
     -- forms embed as a hidden field, so a double-click/back-button resubmit
     -- of the exact same rendered form hits this UNIQUE constraint instead
@@ -145,6 +156,34 @@ CREATE TABLE IF NOT EXISTS memberships (
 -- silent-strip-and-retry precedent. Membership creation with no discount
 -- entered (discount_amount left at 0) is unaffected either way - see
 -- ADR-46.
+
+-- 2026-08-30 (Admission Fee vs Membership Fee categorization, ADR-62):
+-- admission_fee_amount above is new. Same manual-application requirement as
+-- discount_amount/discount_reason above - run by hand, once, in the
+-- Supabase SQL Editor:
+--
+--   ALTER TABLE memberships
+--     ADD COLUMN IF NOT EXISTS admission_fee_amount DOUBLE PRECISION DEFAULT 0;
+--
+-- Like discount, this does NOT silently degrade whenever a real value would
+-- be lost: database/membership_queries.py's insert_membership() raises
+-- AdmissionFeeColumnUnavailable (caught by routes/membership.py's create()
+-- with a clear flash message) if the membership being created has a real,
+-- nonzero admission_fee_amount (a standard plan with a configured
+-- Membership Settings admission fee) but this column doesn't exist yet -
+-- there would be nowhere to persist which part of total_fee is the
+-- admission charge, and every later payment.collect() on that membership
+-- would then have no way to categorize it correctly, permanently. A
+-- membership with no configured admission fee (Custom plan, or Settings'
+-- admission fee is ₹0 - admission_fee_amount stays 0 either way) is
+-- unaffected and inserts normally on an un-migrated project.
+--
+-- Before this column existed, every create()-time payment was always fully
+-- categorized "Admission Fee" and every later collect()-time payment was
+-- always fully categorized "Membership Fee", regardless of whether either
+-- payment actually contained any real one-time admission charge. This was
+-- never accurate, but it is what any Cashbook history recorded before
+-- 2026-08-30 still reflects - it is not retroactively recategorized.
 
 -- 2026-08-21 (Idempotency fix, TD-30/ADR-53): idempotency_key above is new.
 -- Same manual-application requirement as every other column added after a

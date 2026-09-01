@@ -39,7 +39,10 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     # cashbook now lives in Supabase (ADR-22) - the automatic entry made by
     # insert_income_entry() is mirrored there too, so this checks the
     # source of truth routes/cashbook.py's index() actually reads.
-    cb_rows = get_cashbook_entries(admin_id, category="Admission Fee")
+    # create_membership() defaults to the Custom plan, which never carries
+    # an admission_fee_amount (ADR-45/ADR-62) - the whole payment is
+    # Membership Fee, not split.
+    cb_rows = get_cashbook_entries(admin_id, category="Membership Fee")
     assert len(cb_rows) == 1
     assert cb_rows[0]["amount"] == 600
     assert cb_rows[0]["source"] == "Admission"
@@ -66,7 +69,9 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     payment_rows = supabase.table("payments").select("payment_id").eq("membership_id", mid).execute().data
     assert len(payment_rows) == 2
 
-    assert len(get_cashbook_entries(admin_id, category="Membership Fee")) == 1
+    # Both the initial 600 and the 400 collected here are Membership Fee -
+    # no admission fee is configured for this Custom-plan membership.
+    assert len(get_cashbook_entries(admin_id, category="Membership Fee")) == 2
 
     # 6. Dashboard totals reflect the same numbers
     from database.cashbook_queries import get_total_fee_revenue, get_pending_fees
@@ -143,9 +148,11 @@ def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in
     payment_rows = supabase.table("payments").select("payment_id").eq("student_id", sid).execute().data
     assert len(payment_rows) == 2  # one payment per membership, none lost/duplicated
 
+    # Custom plan throughout (no admission fee configured) - the first
+    # membership's payment lands as Membership Fee, not Admission Fee.
     admission_and_renewal = [
         e for e in get_cashbook_entries(admin_id)
-        if e.get("category") in ("Admission Fee", "Membership Renewal")
+        if e.get("category") in ("Membership Fee", "Membership Renewal")
     ]
     assert len(admission_and_renewal) == 2
 
@@ -177,7 +184,12 @@ def test_no_orphan_payments_or_cashbook_rows_after_full_run(logged_in_client):
 
     # payment_id now round-trips through Supabase too (ADR-25, closes TD-38's
     # common case) - every payment for this membership has a matching
-    # cashbook row via payment_id.
+    # cashbook row via payment_id. This membership is Custom-plan with no
+    # admission fee configured (ADR-62), so each payment stays a single
+    # Cashbook row here - a real admission-fee split can legitimately
+    # produce 2 rows for 1 payment_id, see
+    # the admission-fee-split tests in
+    # tests/test_03_student_membership_payment.py.
     payment_ids = [p["payment_id"] for p in payment_rows]
     for pid in payment_ids:
         cashbook_rows = supabase.table("cashbook").select("entry_id").eq("payment_id", pid).execute().data

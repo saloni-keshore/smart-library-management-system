@@ -287,14 +287,47 @@ def get_admission_fee(settings):
     return settings["admission_fee"] if settings is not None else DEFAULT_ADMISSION_FEE
 
 
+def split_admission_and_membership_fee(admission_fee_amount, old_paid, amount):
+    """Admission-fee-first waterfall: split one payment of `amount` between
+    Cashbook categories "Admission Fee" and "Membership Fee", given how much
+    (`old_paid`) was already paid toward this membership before this
+    payment.
+
+    `admission_fee_amount` is this membership's own snapshot (see
+    memberships.admission_fee_amount below), never the live Settings value -
+    Settings can change after the membership was created. Every rupee paid
+    toward a membership counts toward its admission fee first; only once
+    that's fully covered does further money count as Membership Fee. This
+    needs no separate running counter - "how much admission fee has been
+    covered so far" is always exactly min(paid-so-far, admission_fee_amount),
+    a pure function of the paid_amount progression memberships.py/payment.py
+    already track (and already protect with idempotency), so there is no
+    second total that could drift out of sync with it.
+
+    Returns (admission_share, membership_share), summing to exactly `amount`.
+    """
+
+    admission_paid_before = min(old_paid, admission_fee_amount)
+    admission_paid_after = min(old_paid + amount, admission_fee_amount)
+    admission_share = admission_paid_after - admission_paid_before
+
+    return admission_share, amount - admission_share
+
+
 # ---------------------------------------------------------------------------
-# Membership insert - tolerates discount_amount/discount_reason not existing
-# yet on a given Supabase project (ADR-46), without ADR-38's silent-strip
-# fallback: a discount is financial data, so a real discount that can't be
-# recorded fails the whole insert loudly instead of quietly disappearing.
+# Membership insert - tolerates discount_amount/discount_reason and
+# admission_fee_amount not existing yet on a given Supabase project (ADR-46,
+# ADR-62), without ADR-38's silent-strip fallback: both are financial/
+# categorization data tied to a real, nonzero value entered or configured
+# for this specific membership, so losing either silently would misrecord
+# what was actually charged/categorized - a hard, visible failure is used
+# instead. A membership with no discount and no configured admission fee
+# (discount_amount/admission_fee_amount both 0, the common case for an admin
+# who hasn't touched either feature) is unaffected either way.
 # ---------------------------------------------------------------------------
 
 _DISCOUNT_FIELDS = ("discount_amount", "discount_reason")
+_ADMISSION_FEE_FIELDS = ("admission_fee_amount",)
 
 _UNDEFINED_COLUMN_ERROR_CODES = {
     "42703",     # raw Postgres "column does not exist" (surfaced by .select())
@@ -326,6 +359,20 @@ class DiscountColumnsUnavailable(Exception):
     the membership in this case - total_fee already has the discount baked
     in, so inserting without these columns would charge the discounted
     price while silently losing the only record of why."""
+
+
+class AdmissionFeeColumnUnavailable(Exception):
+    """Raised when a membership row includes a real, nonzero
+    admission_fee_amount (a standard plan with a configured Membership
+    Settings admission fee) but the live database doesn't have that column
+    yet (ADR-62's ALTER TABLE hasn't been run on this Supabase project). The
+    caller must not insert the membership in this case - there would be
+    nowhere to persist which portion of total_fee is the admission charge,
+    and every later payment.collect() on it would then have no way to tell
+    Admission Fee revenue apart from Membership Fee revenue for this
+    membership, ever. A membership with no configured admission fee
+    (admission_fee_amount == 0 - Custom plan, or Settings' admission fee is
+    ₹0) is unaffected - see split_admission_and_membership_fee() above."""
 
 
 def _is_unique_violation(error):
@@ -374,20 +421,26 @@ def find_membership_by_idempotency_key(idempotency_key):
 
 
 def insert_membership(supabase, payload):
-    """Insert a `memberships` row, tolerating discount_amount/discount_reason
-    and idempotency_key not existing yet on this Supabase project.
+    """Insert a `memberships` row, tolerating discount_amount/discount_reason,
+    admission_fee_amount, and idempotency_key not existing yet on this
+    Supabase project.
 
-    Discount columns: only silently dropped when no real discount was
-    actually entered (both absent/zero, the common case for any admin not
-    using the discount box yet). If a real discount is present and the
-    columns don't exist, raises DiscountColumnsUnavailable instead of
-    retrying without them - see that class's docstring.
+    Discount columns and admission_fee_amount: only silently dropped when no
+    real value was actually entered/configured for this membership (0 or
+    absent - the common case for any admin not using the discount box, or
+    with no admission fee configured, or on the Custom plan where
+    admission_fee_amount is always 0 - see routes/membership.py's create()).
+    If a real value is present and its column doesn't exist, raises
+    DiscountColumnsUnavailable / AdmissionFeeColumnUnavailable instead of
+    retrying without it - see those classes' docstrings. The two are
+    independent (a project can be missing either without the other), so each
+    gets its own retry tier rather than being lumped together.
 
     idempotency_key (TD-30, ADR-53): always silently dropped if the column
-    doesn't exist yet - unlike discount, this is an invisible safety net,
-    not something the admin explicitly asked to record, so degrading to
-    "no double-submit protection on this un-migrated project" is the right
-    default rather than failing membership creation outright.
+    doesn't exist yet - unlike discount/admission fee, this is an invisible
+    safety net, not something the admin explicitly asked to record, so
+    degrading to "no double-submit protection on this un-migrated project"
+    is the right default rather than failing membership creation outright.
 
     Returns None on a normal insert. If payload carries an idempotency_key
     that was already used by an earlier, distinct request (a genuine
@@ -413,9 +466,9 @@ def insert_membership(supabase, payload):
 
     # Undefined-column error: idempotency_key is the more recently added,
     # always-optional column (ADR-53) - drop it first and retry, before
-    # falling into the pre-existing discount handling below, so a project
+    # falling into the admission-fee/discount handling below, so a project
     # missing *only* idempotency_key isn't mistaken for one missing the
-    # (differently-handled) discount columns.
+    # (differently-handled) financial columns.
     without_key = {k: v for k, v in payload.items() if k != "idempotency_key"}
     try:
         supabase.table("memberships").insert(without_key).execute()
@@ -423,8 +476,36 @@ def insert_membership(supabase, payload):
     except APIError as error:
         if not _is_undefined_column_error(error):
             raise
+        return _insert_membership_without_idempotency_key(
+            supabase, payload, without_key, error
+        )
+
+
+def _insert_membership_without_idempotency_key(supabase, payload, without_key, error):
+    """Tier 2/3 of insert_membership()'s retry cascade, reached once
+    idempotency_key has already been dropped and the insert still fails
+    with an undefined-column error. Split out from insert_membership()
+    itself only so each `except APIError as error` block's `error` stays in
+    scope for the `raise ... from error` it needs - Python unbinds an
+    `except ... as name` variable as soon as that block ends."""
+
+    # admission_fee_amount is checked next (ADR-62), independently of
+    # discount below.
+    if payload.get("admission_fee_amount"):
+        raise AdmissionFeeColumnUnavailable() from error
+    without_admission_fee = {
+        k: v for k, v in without_key.items() if k not in _ADMISSION_FEE_FIELDS
+    }
+    try:
+        supabase.table("memberships").insert(without_admission_fee).execute()
+        return None
+    except APIError as error:
+        if not _is_undefined_column_error(error):
+            raise
         if payload.get("discount_amount") or payload.get("discount_reason"):
             raise DiscountColumnsUnavailable() from error
-        fallback = {k: v for k, v in without_key.items() if k not in _DISCOUNT_FIELDS}
+        fallback = {
+            k: v for k, v in without_admission_fee.items() if k not in _DISCOUNT_FIELDS
+        }
         supabase.table("memberships").insert(fallback).execute()
         return None

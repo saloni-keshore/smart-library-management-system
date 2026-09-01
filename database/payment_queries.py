@@ -368,6 +368,16 @@ def record_payment(
     As of 2026-08-21 (TD-43, ADR-53), a failure in the automatic Cashbook
     entry below (even after its own retry) no longer disappears silently -
     see _flag_cashbook_unsynced() above.
+
+    As of 2026-08-30 (ADR-62), `category` accepts either a plain string (one
+    Cashbook Income entry for the whole `amount` - unchanged behavior, what
+    routes/membership.py's renew() still passes) or a list of
+    `(category, amount)` pairs (what create()/routes/payment.py's collect()
+    pass, from database/membership_queries.py's
+    split_admission_and_membership_fee()) - one Cashbook entry per
+    non-zero-amount pair, all sharing this one `payment_id`. `payments`
+    itself is still exactly one row either way; only Cashbook's
+    categorization of it can be split.
     """
 
     supabase = get_supabase_client()
@@ -428,19 +438,27 @@ def record_payment(
         without_key = {k: v for k, v in payment_row.items() if k != "idempotency_key"}
         supabase.table("payments").insert(without_key).execute()
 
-    cashbook_reference = insert_income_entry(
-        admin_id,
-        category=category,
-        person=student_name,
-        description=description,
-        amount=amount,
-        payment_method=payment_mode,
-        entry_date=payment_date,
-        source=source,
-        payment_id=payment_id
+    components = (
+        [(category, amount)] if isinstance(category, str)
+        else [(cat, amt) for cat, amt in category if amt > 0]
     )
 
-    if cashbook_reference is None:
-        _flag_cashbook_unsynced(supabase, payment_id, admin_id, amount, category)
+    for component_category, component_amount in components:
+        cashbook_reference = insert_income_entry(
+            admin_id,
+            category=component_category,
+            person=student_name,
+            description=description,
+            amount=component_amount,
+            payment_method=payment_mode,
+            entry_date=payment_date,
+            source=source,
+            payment_id=payment_id
+        )
+
+        if cashbook_reference is None:
+            _flag_cashbook_unsynced(
+                supabase, payment_id, admin_id, component_amount, component_category
+            )
 
     return receipt_number

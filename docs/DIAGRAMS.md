@@ -275,6 +275,7 @@ erDiagram
         real pending_amount
         text membership_status
         text idempotency_key UK "ADR-53, TD-30 fix"
+        real admission_fee_amount "ADR-62, TD-83 - column missing on live DB"
     }
     PAYMENTS {
         int payment_id PK

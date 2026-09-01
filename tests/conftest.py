@@ -181,13 +181,21 @@ def save_membership_settings(client, **overrides):
     are non-default for this admin - required before create_membership()/
     the /memberships/renew POST is called with a standard plan_name
     (Monthly/Quarterly/Half-Yearly/Yearly), since those derive total_fee
-    from this data server-side rather than trusting client input."""
+    from this data server-side rather than trusting client input.
+
+    admission_fee defaults to 0 (not "the account's admission fee is always
+    configured" - most callers here only care about the plan fees being
+    nonzero) so a standard-plan create_membership() call stays unaffected
+    by ADR-62's AdmissionFeeColumnUnavailable hard-fail unless a test
+    explicitly opts into a real admission fee via an override - see
+    tests/test_03_student_membership_payment.py's admission-fee-split
+    tests for that case."""
     data = {
         "monthly_fee": "500", "monthly_days": "30",
         "quarterly_fee": "1400", "quarterly_days": "90",
         "half_yearly_fee": "2700", "half_yearly_days": "180",
         "yearly_fee": "5000", "yearly_days": "365",
-        "admission_fee": "100", "late_fee_per_day": "10",
+        "admission_fee": "0", "late_fee_per_day": "10",
         "renewal_grace_days": "7",
         "auto_expiry": "on", "allow_early_renewal": "on",
     }

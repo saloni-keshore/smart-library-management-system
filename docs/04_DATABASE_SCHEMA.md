@@ -77,6 +77,7 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `pending_amount` | REAL DEFAULT 0 | |
 | `discount_amount` | REAL DEFAULT 0 | Added 2026-08-17 (ADR-46) — Create only, needs a manual `ALTER TABLE` on a pre-existing Supabase project (TD-58) |
 | `discount_reason` | TEXT | Added 2026-08-17 (ADR-46) — optional, freeform |
+| `admission_fee_amount` | REAL DEFAULT 0 | Added 2026-08-30 (ADR-62) — snapshot of the admission fee actually folded into this row's `total_fee` at creation (`0` for the Custom plan or a renewal); never re-read from live Settings later. Drives `database/membership_queries.py`'s admission-fee-first split of every payment toward this membership between Cashbook's "Admission Fee"/"Membership Fee" categories. Needs a manual `ALTER TABLE` on a pre-existing Supabase project (**TD-83**, confirmed still missing on this project's own database) |
 | `idempotency_key` | TEXT UNIQUE | Added 2026-08-21 (TD-30 fix, ADR-53) — per-page-load token from Create/Renew's hidden form field; `NULL` for any row inserted with no token (Postgres allows unlimited `NULL`s in a `UNIQUE` column). Needs a manual `ALTER TABLE` on a pre-existing Supabase project (TD-66); silently not enforced (no dedup) until then. |
 | `remarks` | TEXT | |
 | `membership_status` | TEXT DEFAULT `'Active'` | `'Active'` / `'Expired'` — set programmatically, not by a scheduled job (see below) |

@@ -19,7 +19,10 @@ from database.payment_queries import (
     get_payment_id_by_receipt_number,
     find_payment_by_idempotency_key,
 )
-from database.membership_queries import promote_student_if_fully_paid
+from database.membership_queries import (
+    promote_student_if_fully_paid,
+    split_admission_and_membership_fee,
+)
 from database.receipt_settings_queries import get_receipt_settings
 from utils.normalization import normalize_free_text
 
@@ -178,6 +181,17 @@ def collect(membership_id):
                 idempotency_key=secrets.token_urlsafe(24)
             )
 
+        # Admission-fee-first waterfall (ADR-62): whatever of this
+        # membership's admission_fee_amount isn't covered by old_paid yet
+        # comes out of this payment first; the rest is Membership Fee. A
+        # membership created before this feature (or with no configured
+        # admission fee / Custom plan) has admission_fee_amount 0, so this
+        # collapses to today's single "Membership Fee" behavior.
+        admission_fee_amount = membership.get("admission_fee_amount") or 0
+        admission_share, membership_share = split_admission_and_membership_fee(
+            admission_fee_amount, old_paid=old_paid, amount=amount
+        )
+
         try:
             receipt_number = record_payment(
                 admin_id,
@@ -187,7 +201,10 @@ def collect(membership_id):
                 payment_mode=payment_mode,
                 amount=amount,
                 remarks=remarks,
-                category="Membership Fee",
+                category=[
+                    ("Admission Fee", admission_share),
+                    ("Membership Fee", membership_share),
+                ],
                 description=remarks or f"Pending fee payment - {membership['plan_name']}",
                 source="Payments",
                 idempotency_key=idempotency_key
