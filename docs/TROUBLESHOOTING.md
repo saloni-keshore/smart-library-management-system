@@ -65,6 +65,11 @@ This has had **three distinct real causes** found across two sessions — don't 
 **Cause:** by design, `routes/cashbook.py`'s `edit_transaction()` refuses to update any `cashbook` row whose `source` isn't exactly `"Cashbook Manual Entry"` — rows created automatically from Memberships/Payments (`source` values like `"Payments"`, `"Admission Fee"`, `"Membership Renewal"`) are intentionally read-only in this view (ADR-4 in [DECISIONS.md](DECISIONS.md)).
 **Fix:** correct the underlying membership/payment record instead — the cashbook row is derived from it, not independently editable.
 
+## Cashbook's "Income vs Expense" chart's This Year/Last Year dropdown does nothing (historical — fixed 2026-08-30)
+
+**Cause (historical, fixed 2026-08-30):** the `<select>` on `components/cashbook_income_chart.html` had no `id`, no `name`, and no JS listener anywhere in `static/js/cashbook.js` — purely decorative. The chart data behind it (`routes/cashbook.py`'s `_build_income_expense_chart()`) had no year argument either, so it always returned every month on record regardless of what was selected.
+**If you still see this:** you're on a version from before this fix — pull the latest. The select now has `id="income-expense-period-select"`, and `js/cashbook.js` `fetch()`es `GET /cashbook/income-expense-chart?period=this_year|last_year` on change and swaps the result into the existing Chart.js instance, the same pattern the Dashboard's Revenue Overview switcher already used (`GET /dashboard/revenue-chart`).
+
 ## Uploaded logo/signature/stamp doesn't display after saving Library Profile
 
 **Cause:** uploaded files are saved to `static/uploads/settings/{field}_{admin_id}_{secure_filename}` and the DB stores the path *relative to `static/`* (e.g. `uploads/settings/logo_1_foo.png`). If the path in `library_settings.logo_path` doesn't start with `uploads/settings/`, `url_for('static', filename=...)` will build a broken URL.
@@ -74,6 +79,12 @@ This has had **three distinct real causes** found across two sessions — don't 
 
 **Cause:** by design — `routes/setting.py`'s `receipt_settings()` reuses the same `library_settings` row as Library Profile and only supports `UPDATE`, not insert (ADR-7 in [DECISIONS.md](DECISIONS.md)). If that admin hasn't saved a Library Profile yet, there's no row for it to update, so it redirects to `library_profile` with a flash message instead of erroring.
 **Fix:** save Library Profile (name/owner/phone are required there) at least once, then Receipt Settings becomes reachable.
+
+## The receipt just says "CUSTOM" for a custom-duration admission — I can't tell how long the plan is
+
+**Cause (pre-2026-08-30):** the receipt's Membership line printed `memberships.plan_name` verbatim, which for a Custom-plan admission is the literal string `"CUSTOM"` with no term attached, and its single "Date" row showed the day the receipt was printed, not the membership period.
+**Fixed 2026-08-30 (ADR-63):** `routes/payment.py`'s `receipt()` now shows **Joining Date** + **Expiry Date** rows (from `memberships.joining_date`/`end_date`), an issue date by the signature, and renders a Custom plan as `"Custom - N day(s)"` from `memberships.duration_days`. Preset plans (MONTHLY/QUARTERLY/…) are unchanged.
+**If a Custom receipt still shows a bare "Custom" with no day count:** that membership's `duration_days` is `NULL` (the admission form's Duration field was submitted blank — it's only HTML-`required`, not enforced server-side; see TD-84). The Expiry Date row will still be correct if `end_date` was saved.
 
 ## Receipt numbers don't match what I configured in Settings → Receipt Settings
 
@@ -124,6 +135,16 @@ This has had **three distinct real causes** found across two sessions — don't 
 ## "Address is required." / "Join date is required." on the admission form
 
 **By design, since 2026-08-30 (ADR-61):** these two fields are now checked server-side, not just by the browser. A blank/invalid value is rejected and **no student record is created** — fill both in and resubmit. (Everything else on the admission form is inherited from the enquiry and validated separately — see the mobile entry above.)
+
+## "Admission fee tracking isn't available yet on this system" when creating a membership
+
+**Cause, since 2026-08-30 (ADR-62):** this admin's Membership Settings has a real, nonzero Admission Fee configured, and the standard plan being used folds it into Total Payable — but `memberships.admission_fee_amount` (the column that records how much of that total is the admission charge, for Cashbook categorization) doesn't exist yet on this Supabase project. Unlike most optional columns in this app, this one does **not** silently degrade when a real fee is involved — losing it would permanently misattribute that membership's Cashbook history between "Admission Fee" and "Membership Fee" revenue, so creation is blocked instead (same hard-fail shape as the discount-columns message below).
+**Fix:** have whoever administers the Supabase project run, once, in the Supabase SQL Editor: `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS admission_fee_amount DOUBLE PRECISION DEFAULT 0;` (see `database/supabase_migration.sql`). Until then, either set Admission Fee to ₹0 in Settings → Membership Settings, or use the Custom plan (which never folds in an admission fee) to admit students. See TD-83 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+
+## "Discounts aren't available yet on this system" when creating a membership
+
+**Cause, since 2026-08-17 (ADR-46):** a real discount was entered, but `memberships.discount_amount`/`discount_reason` don't exist yet on this Supabase project — same hard-fail reasoning as the admission-fee message above (a discount is real money the student was actually charged less; silently dropping it would lose the only record of why while still charging the discounted price).
+**Fix:** run `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION DEFAULT 0, ADD COLUMN IF NOT EXISTS discount_reason TEXT;` once in the Supabase SQL Editor (see `database/supabase_migration.sql`), or create the membership without a discount for now.
 
 ## How do I delete / remove a student? An Inactive student still shows in the list
 

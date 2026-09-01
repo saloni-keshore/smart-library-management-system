@@ -34,6 +34,39 @@ payment_bp = Blueprint(
 )
 
 
+def _fmt_receipt_date(value):
+    """Format a stored ISO date ("YYYY-MM-DD") as "01 Jan 2026" for the receipt.
+
+    Mirrors the inline formatting already used for the payment date; returns the
+    raw value (or None) untouched if it can't be parsed.
+    """
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%d %b %Y")
+    except (ValueError, TypeError):
+        return value or None
+
+
+def _plan_label(membership):
+    """Human-readable plan for the receipt's "Membership" line.
+
+    Preset plans keep their stored name (MONTHLY/QUARTERLY/...). A Custom plan is
+    stored as the bare string "CUSTOM", which tells the reader nothing about the
+    term bought, so surface its day count instead (e.g. "Custom - 45 days").
+    """
+    if not membership:
+        return "-"
+
+    plan_name = membership.get("plan_name") or "-"
+
+    if plan_name == "CUSTOM":
+        days = membership.get("duration_days")
+        if days:
+            return f"Custom - {days} day" + ("s" if days != 1 else "")
+        return "Custom"
+
+    return plan_name
+
+
 @payment_bp.route("/")
 def index():
 
@@ -309,12 +342,17 @@ def receipt(payment_id):
 
     settings = get_receipt_settings(admin_id)
 
-    try:
-        receipt_date_display = datetime.strptime(
-            payment["payment_date"], "%Y-%m-%d"
-        ).strftime("%d %b %Y")
-    except (ValueError, TypeError):
-        receipt_date_display = payment["payment_date"]
+    if membership:
+        joining_date_display = _fmt_receipt_date(membership.get("joining_date"))
+        expiry_date_display = _fmt_receipt_date(membership.get("end_date"))
+    else:
+        # Payment not tied to a membership - fall back to the payment date and
+        # hide the expiry row.
+        joining_date_display = _fmt_receipt_date(payment["payment_date"])
+        expiry_date_display = None
+
+    issued_date_display = datetime.now().strftime("%d %b %Y")
+    plan_display = _plan_label(membership)
 
     return render_template(
         "payments/receipt.html",
@@ -322,5 +360,8 @@ def receipt(payment_id):
         student=student,
         membership=membership,
         settings=settings,
-        receipt_date_display=receipt_date_display
+        joining_date_display=joining_date_display,
+        expiry_date_display=expiry_date_display,
+        issued_date_display=issued_date_display,
+        plan_display=plan_display
     )

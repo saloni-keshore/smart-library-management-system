@@ -46,10 +46,12 @@
                 <div class="col-md-4">
 
                     {% set receipt_number = payment.receipt_number %}
-                    {% set receipt_date = receipt_date_display %}
+                    {% set joining_date = joining_date_display %}
+                    {% set expiry_date = expiry_date_display %}
+                    {% set issued_date = issued_date_display %}
                     {% set payment_mode = payment.payment_mode %}
                     {% set student_name = student.full_name %}
-                    {% set plan_name = membership.plan_name if membership else '-' %}
+                    {% set plan_name = plan_display %}
                     {% set amount = payment.amount_paid %}
                     {% include "components/receipt_document.html" %}
 

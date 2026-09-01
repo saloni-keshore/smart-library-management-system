@@ -1184,6 +1184,46 @@ def test_receipt_numbers_are_unique_across_multiple_payments(logged_in_client):
     assert len(receipts) == 4  # 1 from create + 3 collects
 
 
+def test_receipt_shows_joining_expiry_and_custom_day_count(logged_in_client):
+    """The post-payment receipt must make a Custom plan's term legible: the
+    "Membership" line shows the day count (not the bare "CUSTOM" stored value),
+    plus a Joining Date row, an Expiry Date row, and an issue date near the
+    signature. create_membership() posts a full payment, so its redirect lands
+    on /payments/receipt/<id> and resp.data is the rendered receipt."""
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = create_membership(
+        client, sid,
+        plan_name="Custom",
+        joining_date="2026-07-22",
+        duration="1",
+        end_date="2026-07-23",
+        paid_amount="500", due_amount="0",
+    )
+
+    assert b"Payment Successful" in resp.data
+    assert b"Custom - 1 day" in resp.data
+    assert b"1 days" not in resp.data  # singular for a one-day plan
+    assert b"Joining Date" in resp.data
+    assert b"22 Jul 2026" in resp.data
+    assert b"Expiry Date" in resp.data
+    assert b"23 Jul 2026" in resp.data
+
+
+def test_receipt_custom_day_count_is_plural_for_multi_day_plan(logged_in_client):
+    client, admin = logged_in_client
+    _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
+    resp = create_membership(
+        client, sid,
+        plan_name="Custom",
+        joining_date="2026-07-22",
+        duration="45",
+        end_date="2026-09-05",
+        paid_amount="500", due_amount="0",
+    )
+    assert b"Custom - 45 days" in resp.data
+
+
 def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(logged_in_client):
     """TD-30/ADR-53, the create() call site: routes/membership.py's create()
     is already guarded against a *sequential* double-submit by its

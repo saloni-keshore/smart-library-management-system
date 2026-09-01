@@ -2,9 +2,11 @@
    receipt" design. Included by settings/receipt_settings.html (Receipt
    Preview, mock data) and payments/receipt.html (real payment data). Every
    including template must {% set %} these before including:
-   receipt_number, receipt_date, payment_mode, student_name, plan_name,
-   amount - plus have `settings` (a library_settings row or None) in scope
-   for branding (logo/library name/footer/stamp/signature). #}
+   receipt_number, joining_date, expiry_date, issued_date, payment_mode,
+   student_name, plan_name, amount - plus have `settings` (a library_settings
+   row or None) in scope for branding (logo/library name/footer/stamp/
+   signature). expiry_date may be None (payment not tied to a membership), in
+   which case its row is skipped. #}
 <div class="receipt-preview-doc">
     <div class="text-center mb-2" id="previewLogoWrap">
         {% if settings and settings.logo_path %}
@@ -22,9 +24,16 @@
     </div>
 
     <div class="d-flex justify-content-between small mb-1">
-        <span class="text-muted">Date</span>
-        <span>{{ receipt_date }}</span>
+        <span class="text-muted">Joining Date</span>
+        <span>{{ joining_date }}</span>
     </div>
+
+    {% if expiry_date %}
+    <div class="d-flex justify-content-between small mb-1">
+        <span class="text-muted">Expiry Date</span>
+        <span>{{ expiry_date }}</span>
+    </div>
+    {% endif %}
 
     <div class="d-flex justify-content-between small mb-1">
         <span class="text-muted">Payment Mode</span>
@@ -64,4 +73,6 @@
             {% endif %}
         </div>
     </div>
+
+    <div class="text-end small text-muted mt-1">Date: {{ issued_date }}</div>
 </div>

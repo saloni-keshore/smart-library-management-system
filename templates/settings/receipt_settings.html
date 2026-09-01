@@ -203,7 +203,9 @@
                         <h5 class="text-primary mb-3">Receipt Preview</h5>
 
                         {% set receipt_number = (settings.receipt_prefix if settings else 'LIB') ~ '-' ~ '%05d'|format(settings.next_receipt_number if settings else 1001) %}
-                        {% set receipt_date = '20 Jul 2026' %}
+                        {% set joining_date = '20 Jul 2026' %}
+                        {% set expiry_date = '19 Oct 2026' %}
+                        {% set issued_date = '20 Jul 2026' %}
                         {% set payment_mode = 'Cash' %}
                         {% set student_name = 'Rahul Sharma' %}
                         {% set plan_name = 'Quarterly Plan' %}

@@ -82,8 +82,11 @@ Builds the doughnut payload via `utils.chart_data.build_plan_distribution_chart_
 |---|---|---|---|---|---|
 | GET | `/payments/` | `index` | `payments/index.html` | Yes | List all payments, newest first |
 | GET/POST | `/payments/collect/<int:membership_id>` | `collect` | `payments/collect.html` | Yes | Collect a payment against a membership's pending balance |
+| GET | `/payments/receipt/<int:payment_id>` | `receipt` | `payments/receipt.html` | Yes | Printable receipt for one payment (redirect target of `collect`/`create`/`renew` after a payment is recorded, ADR-33) |
 
 `collect` reads the target membership from Supabase (source of truth, ADR-21) and verifies it belongs to the logged-in admin via a `students` ownership check (also Supabase, ADR-19); validates `amount_paid` is numeric, `>0`, and `<= pending_amount`; updates `memberships.paid_amount`/`pending_amount` in Supabase — the only store as of 2026-07-24 (ADR-29), no SQLite mirror-write left; generates the receipt number and logs the matching income entry via `database/payment_queries.py`'s `record_payment()` (`receipt_prefix`/`next_receipt_number` from Supabase Settings → Receipt Settings, ADR-13/ADR-24; Supabase-only and strict as of ADR-28), category `"Membership Fee"`.
+
+`receipt` loads the `payments` row, admin-scopes it through the `students` owner (there's no `admin_id` on `payments`), and loads the linked `memberships` row (`.select("*")`) plus this admin's `library_settings` via `get_receipt_settings()`. It passes the shared receipt partial (`templates/components/receipt_document.html`, also used by the Settings → Receipt Settings preview) these computed context vars (ADR-63, 2026-08-30): `joining_date_display` (membership `joining_date`, formatted `"01 Jan 2026"` by `_fmt_receipt_date()`; falls back to the payment date when the payment has no `membership_id`), `expiry_date_display` (membership `end_date`, or `None` → the partial skips the Expiry Date row), `issued_date_display` (`datetime.now()`, shown by the signature), and `plan_display` (`_plan_label()` — a preset plan's stored name unchanged; `"CUSTOM"` rendered as `"Custom - N day(s)"` from `duration_days`, or bare `"Custom"` if `duration_days` is `NULL`). Read-only, no POST handling.
 
 ## `routes/cashbook.py` — blueprint `cashbook`, prefix `/cashbook`
 
@@ -92,6 +95,7 @@ Builds the doughnut payload via `utils.chart_data.build_plan_distribution_chart_
 | GET | `/cashbook/` | `index` | `cashbook/index.html` | Yes | Filterable ledger + totals + charts + audit log |
 | POST | `/cashbook/add` | `add_transaction` | redirect | Yes | Add a manual income/expense entry |
 | POST | `/cashbook/edit/<int:entry_id>` | `edit_transaction` | redirect | Yes | Edit an existing **manual** entry only |
+| GET | `/cashbook/income-expense-chart` | `income_expense_chart` | JSON | Yes (401 JSON, not redirect, if missing) | Income vs Expense card's period switcher (added 2026-08-30, same pattern as `/dashboard/revenue-chart`): `?period=` `this_year` (default) or `last_year` (anything else falls back to `this_year`); returns a Chart.js `{labels, datasets}` object from `_build_income_expense_chart(admin_id, year)`. `cashbook.js` does `chart.data = json; chart.update()` with it |
 
 Heaviest user of `database/cashbook_queries.py` (nearly every function in that module) plus `database.audit_queries.get_recent_audit_log`. `index` supports date presets (`today`/`this_week`/`this_month`/`custom`), search, type/category/payment-method/source filters, and pagination (`TRANSACTIONS_PER_PAGE=10`). `edit_transaction` explicitly blocks editing any row where `source != "Cashbook Manual Entry"` (i.e. auto-generated rows from memberships/payments are read-only here). Builds Chart.js-ready dicts locally (`_build_income_expense_chart`, `_build_category_chart`, `_build_payment_method_chart`).
 
