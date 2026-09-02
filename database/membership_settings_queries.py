@@ -13,6 +13,24 @@ from database.settings_queries import _now_iso
 from database.supabase_client import get_supabase_client
 
 
+# Extra-charge columns (ADR-66) - dropped and retried once if the live
+# database doesn't have them yet, same silent-degrade as
+# database/settings_queries.py's seating-capacity columns (ADR-38).
+_CHARGE_FIELDS = (
+    "seat_reservation_fee", "locker_fee", "security_deposit_amount",
+    "registration_compulsory", "seat_reservation_compulsory",
+    "locker_compulsory", "security_deposit_compulsory",
+)
+
+_UNDEFINED_COLUMN_ERROR_CODES = {"42703", "PGRST204"}
+
+
+def _is_undefined_column_error(error):
+    details = error.args[0] if error.args else ""
+    code = details.get("code") if isinstance(details, dict) else str(details)
+    return any(marker in (code or "") for marker in _UNDEFINED_COLUMN_ERROR_CODES)
+
+
 def get_membership_settings(admin_id):
 
     supabase = get_supabase_client()
@@ -46,7 +64,7 @@ def save_membership_settings(admin_id, data):
 
     supabase = get_supabase_client()
 
-    supabase.table("membership_settings").upsert({
+    payload = {
         "admin_id": admin_id,
         "monthly_fee": data["monthly_fee"],
         "monthly_days": data["monthly_days"],
@@ -62,4 +80,21 @@ def save_membership_settings(admin_id, data):
         "auto_expiry": data["auto_expiry"],
         "allow_early_renewal": data["allow_early_renewal"],
         "updated_at": _now_iso(),
-    }, on_conflict="admin_id").execute()
+    }
+    for field in _CHARGE_FIELDS:
+        if field in data:
+            payload[field] = data[field]
+
+    try:
+        supabase.table("membership_settings").upsert(
+            payload, on_conflict="admin_id"
+        ).execute()
+    except APIError as error:
+        if not _is_undefined_column_error(error):
+            raise
+        # ADR-66 charge columns not on this project yet - persist the rest
+        # (ADR-38 precedent); get_charge_config() then keeps returning 0s.
+        fallback = {k: v for k, v in payload.items() if k not in _CHARGE_FIELDS}
+        supabase.table("membership_settings").upsert(
+            fallback, on_conflict="admin_id"
+        ).execute()

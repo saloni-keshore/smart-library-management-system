@@ -41,6 +41,19 @@ def test_settings_index_loads(logged_in_client):
     assert resp.status_code == 200
 
 
+def test_shift_slots_page_loads_with_bucket_reference(logged_in_client):
+    """Settings > Shift Slots renders (even with the table absent) and shows
+    the 'How the shift buckets work' reference card + the live-hint scaffold
+    (ADR-65 follow-up)."""
+    client, admin = logged_in_client
+    resp = client.get("/settings/shift-slots")
+    assert resp.status_code == 200
+    assert b"How the shift buckets work" in resp.data
+    assert b"05:00" in resp.data and b"21:00" in resp.data   # Morning start, Night start
+    assert b'id="slot_preview"' in resp.data
+    assert b"var bucketWindows" in resp.data
+
+
 def test_staff_access_requires_login(client):
     resp = client.get("/settings/staff", follow_redirects=False)
     assert resp.status_code == 302

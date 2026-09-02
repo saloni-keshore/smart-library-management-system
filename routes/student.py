@@ -13,6 +13,7 @@ from postgrest.exceptions import APIError
 
 from database.id_sequence import insert_with_next_id
 from database.membership_queries import get_memberships_for_admin, get_effective_status
+from database.membership_charges_queries import get_membership_charges
 from database.supabase_client import get_supabase_client
 from utils.normalization import (
     normalize_name,
@@ -328,10 +329,17 @@ def view(student_id):
     except APIError:
         payments = []
 
+    # Extra charges on the current membership (ADR-66) - seat / locker /
+    # deposit; [] when there are none or the table isn't on this project.
+    membership_charges = (
+        get_membership_charges(membership["membership_id"]) if membership else []
+    )
+
     return render_template(
         "students/view.html",
         student=student,
         membership=membership,
+        membership_charges=membership_charges,
         payments=payments
     )
 

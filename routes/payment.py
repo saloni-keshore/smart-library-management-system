@@ -21,8 +21,9 @@ from database.payment_queries import (
 )
 from database.membership_queries import (
     promote_student_if_fully_paid,
-    split_admission_and_membership_fee,
+    split_payment_across_buckets,
 )
+from database.membership_charges_queries import get_membership_charges, CHARGE_BY_KEY
 from database.receipt_settings_queries import get_receipt_settings
 from utils.normalization import normalize_free_text
 
@@ -52,6 +53,8 @@ def _plan_label(membership):
     Preset plans keep their stored name (MONTHLY/QUARTERLY/...). A Custom plan is
     stored as the bare string "CUSTOM", which tells the reader nothing about the
     term bought, so surface its day count instead (e.g. "Custom - 45 days").
+    A membership sold on a shift slot (ADR-65) appends the slot and its
+    Morning/Afternoon/Evening/Night bucket, e.g. "QUARTERLY - 7AM-2PM (Morning)".
     """
     if not membership:
         return "-"
@@ -61,10 +64,18 @@ def _plan_label(membership):
     if plan_name == "CUSTOM":
         days = membership.get("duration_days")
         if days:
-            return f"Custom - {days} day" + ("s" if days != 1 else "")
-        return "Custom"
+            label = f"Custom - {days} day" + ("s" if days != 1 else "")
+        else:
+            label = "Custom"
+    else:
+        label = plan_name
 
-    return plan_name
+    slot_name = membership.get("shift_slot_name")
+    if slot_name:
+        bucket = membership.get("time_bucket")
+        label = f"{label} - {slot_name}" + (f" ({bucket})" if bucket else "")
+
+    return label
 
 
 @payment_bp.route("/")
@@ -214,15 +225,31 @@ def collect(membership_id):
                 idempotency_key=secrets.token_urlsafe(24)
             )
 
-        # Admission-fee-first waterfall (ADR-62): whatever of this
-        # membership's admission_fee_amount isn't covered by old_paid yet
-        # comes out of this payment first; the rest is Membership Fee. A
-        # membership created before this feature (or with no configured
-        # admission fee / Custom plan) has admission_fee_amount 0, so this
-        # collapses to today's single "Membership Fee" behavior.
+        # Admission-fee-first waterfall across every charge bucket, then the
+        # membership fee (ADR-62/ADR-66): whatever of the admission fee and
+        # each extra charge isn't covered by old_paid yet comes out of this
+        # payment first, in order; the rest is Membership Fee. A membership
+        # created before these features has admission_fee_amount 0 and no
+        # membership_charges rows, so this collapses to today's single
+        # "Membership Fee" behavior.
         admission_fee_amount = membership.get("admission_fee_amount") or 0
-        admission_share, membership_share = split_admission_and_membership_fee(
-            admission_fee_amount, old_paid=old_paid, amount=amount
+        charge_rows = sorted(
+            get_membership_charges(membership_id),
+            key=lambda c: list(CHARGE_BY_KEY).index(c["charge_key"])
+            if c["charge_key"] in CHARGE_BY_KEY else 99,
+        )
+        charges_total = sum(float(c["amount"]) for c in charge_rows)
+        buckets = [("Admission Fee", admission_fee_amount)]
+        buckets += [
+            (CHARGE_BY_KEY[c["charge_key"]]["cashbook"], float(c["amount"]))
+            for c in charge_rows if c["charge_key"] in CHARGE_BY_KEY
+        ]
+        buckets.append((
+            "Membership Fee",
+            float(membership["total_fee"]) - admission_fee_amount - charges_total,
+        ))
+        components = split_payment_across_buckets(
+            buckets, old_paid=old_paid, amount=amount
         )
 
         try:
@@ -234,10 +261,7 @@ def collect(membership_id):
                 payment_mode=payment_mode,
                 amount=amount,
                 remarks=remarks,
-                category=[
-                    ("Admission Fee", admission_share),
-                    ("Membership Fee", membership_share),
-                ],
+                category=components,
                 description=remarks or f"Pending fee payment - {membership['plan_name']}",
                 source="Payments",
                 idempotency_key=idempotency_key

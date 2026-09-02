@@ -375,6 +375,20 @@ Library Profile
 
                             </div>
 
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Night Capacity
+                                </label>
+
+                                <input type="number"
+                                       class="form-control"
+                                       name="night_capacity"
+                                       min="0"
+                                       value="{{ settings.night_capacity if settings and settings.night_capacity is not none else 50 }}">
+
+                            </div>
+
                         </div>
 
                     </div>

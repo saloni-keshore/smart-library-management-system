@@ -115,6 +115,16 @@ Student Profile
 
                     </p>
 
+                    {% if membership.shift_slot_name %}
+                    <p>
+
+                        <strong>Shift:</strong>
+
+                        {{ membership.shift_slot_name }}{% if membership.time_bucket %} ({{ membership.time_bucket }}){% endif %}
+
+                    </p>
+                    {% endif %}
+
                     <p>
 
                         <strong>Joining:</strong>
@@ -138,6 +148,37 @@ Student Profile
                         {{ membership.membership_status }}
 
                     </p>
+
+                    {% if membership_charges %}
+                    <hr>
+                    <strong>Extra charges</strong>
+                    <table class="table table-sm mt-2 mb-0">
+                        <tbody>
+                            {% for c in membership_charges %}
+                            <tr>
+                                <td>{{ c.label }}</td>
+                                <td class="text-end">₹{{ '{:,.0f}'.format(c.amount) }}</td>
+                                <td class="text-end">
+                                    {% if c.refunded_on %}
+                                        <span class="text-muted small">Refunded {{ c.refunded_on }}</span>
+                                    {% elif c.refundable %}
+                                        <form method="POST" class="d-inline"
+                                              action="{{ url_for('membership.refund_charge', membership_id=membership.membership_id, charge_key=c.charge_key) }}">
+                                            <select name="payment_method" class="form-select form-select-sm d-inline w-auto">
+                                                <option value="Cash">Cash</option>
+                                                <option value="UPI">UPI</option>
+                                                <option value="Card">Card</option>
+                                                <option value="Bank Transfer">Bank Transfer</option>
+                                            </select>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Refund</button>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
 
                     {% else %}
 

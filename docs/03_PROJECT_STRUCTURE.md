@@ -29,7 +29,9 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 | `bi_queries.py` | Business-intelligence aggregates (health score, growth, top categories, action items, timeline) |
 | `cashbook_categories.py` | Static category/payment-method constant lists (no DB access) |
 | `cashbook_queries.py` | Core cashbook ledger data-access layer (largest query module, 20 functions) |
-| `membership_settings_queries.py` | Get/upsert per-admin membership plan pricing settings (no longer writes `reminder_days`/`send_reminders`, see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-23) |
+| `membership_settings_queries.py` | Get/upsert per-admin membership plan pricing + extra-charge settings (ADR-66) |
+| `membership_charges_queries.py` | Extra-charge catalog (`CHARGE_CATALOG`) + per-membership `membership_charges` rows (ADR-66) |
+| `shift_slots_queries.py` | CRUD for per-admin time-window shift slots (`shift_slots`, ADR-65) |
 | `settings_queries.py` | Get/create/update per-admin library profile settings |
 | `receipt_settings_queries.py` | Get/update per-admin receipt numbering/branding/printing settings (same `library_settings` row) |
 | `notification_settings_queries.py` | Get/update per-admin reminder/channel/quiet-hours/dashboard-display settings (same `library_settings` row) |

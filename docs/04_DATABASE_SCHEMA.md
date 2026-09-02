@@ -68,7 +68,7 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 |---|---|---|
 | `membership_id` | INTEGER PK | |
 | `student_id` | INTEGER NOT NULL FK → `students` | **No direct `admin_id` column** — tenant isolation is via `student_id → students.admin_id` join |
-| `plan_name` | TEXT NOT NULL | `"Monthly"`, `"Quarterly"`, `"Half-Yearly"`, `"Yearly"` |
+| `plan_name` | TEXT NOT NULL | `"Monthly"`, `"Quarterly"`, `"Half-Yearly"`, `"Yearly"`, `"CUSTOM"`. Since ADR-65 this is the *term multiplier* (`PLAN_MONTHS = {1,3,6,12}`) for a `shift_slot_id`, not necessarily the price source |
 | `joining_date` | DATE NOT NULL | |
 | `duration_days` | INTEGER | |
 | `end_date` | DATE NOT NULL | |
@@ -79,6 +79,9 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `discount_reason` | TEXT | Added 2026-08-17 (ADR-46) — optional, freeform |
 | `admission_fee_amount` | REAL DEFAULT 0 | Added 2026-08-30 (ADR-62) — snapshot of the admission fee actually folded into this row's `total_fee` at creation (`0` for the Custom plan or a renewal); never re-read from live Settings later. Drives `database/membership_queries.py`'s admission-fee-first split of every payment toward this membership between Cashbook's "Admission Fee"/"Membership Fee" categories. Needs a manual `ALTER TABLE` on a pre-existing Supabase project (**TD-83**, confirmed still missing on this project's own database) |
 | `idempotency_key` | TEXT UNIQUE | Added 2026-08-21 (TD-30 fix, ADR-53) — per-page-load token from Create/Renew's hidden form field; `NULL` for any row inserted with no token (Postgres allows unlimited `NULL`s in a `UNIQUE` column). Needs a manual `ALTER TABLE` on a pre-existing Supabase project (TD-66); silently not enforced (no dedup) until then. |
+| `shift_slot_id` | INTEGER | Added 2026-09-02 (ADR-65) — soft reference to `shift_slots.slot_id` (no FK; slots are deactivated, never deleted). `NULL` when the membership was sold on a bare duration plan. Needs a manual `ALTER TABLE` (**TD-89**); silently stripped until then. |
+| `shift_slot_name` | TEXT | Added 2026-09-02 (ADR-65) — snapshot of the slot name at creation, so a later rename doesn't rewrite this membership's receipt. |
+| `time_bucket` | TEXT | Added 2026-09-02 (ADR-65) — snapshot of the slot's resolved Morning/Afternoon/Evening/Night/Full Day bucket; read first (before `students.shift`) by Occupancy Analytics' `_membership_bucket()`. |
 | `remarks` | TEXT | |
 | `membership_status` | TEXT DEFAULT `'Active'` | `'Active'` / `'Expired'` — set programmatically, not by a scheduled job (see below) |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
@@ -192,6 +195,8 @@ Append-only trail for cashbook changes. `database/cashbook_queries.py` writes th
 | `quiet_hours_start` TEXT DEFAULT `'22:00'`, `quiet_hours_end` TEXT DEFAULT `'07:00'` | | Added by `migrate_notification_settings.py` |
 | `quiet_hours_allow_critical` | INTEGER DEFAULT 1 | Added by `migrate_notification_settings.py` |
 | `dash_show_badge_count`, `dash_show_expiry_today`, `dash_show_expiry_tomorrow`, `dash_show_overdue`, `dash_show_pending_fees`, `dash_show_new_admissions` | INTEGER DEFAULT 1 | Added by `migrate_notification_settings.py` — control the navbar bell/dashboard. `dash_show_pending_fees` is read by `routes/dashboard.py`; the badge/today/tomorrow/overdue flags are read by `app.py`'s `inject_notification_summary` context processor for `components/notification_dropdown.html`; `dash_show_new_admissions` has no consumer yet (TD-25) |
+| `morning_capacity`, `afternoon_capacity`, `evening_capacity` | INTEGER DEFAULT 50 | Added 2026-07-26 (ADR-38) — per-shift seat capacity for Occupancy Analytics. Manual `ALTER TABLE` (TD-50); silently degrades to 50 |
+| `night_capacity` | INTEGER DEFAULT 50 | Added 2026-09-02 (ADR-67) — Night became a real 4th canonical shift when time-window slots made a genuine night shift sellable. Manual `ALTER TABLE` (**TD-89**); silently degrades to 50 |
 | `created_at`, `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 
 Receipt Settings (`routes/setting.py`'s `receipt_settings()`) and Notification Settings (`notification_settings()`) both read/write columns on this same row as Library Profile — there is no separate receipt-settings or notification-settings table (see ADR-7/ADR-8 in [DECISIONS.md](DECISIONS.md)).
@@ -205,14 +210,48 @@ Receipt Settings (`routes/setting.py`'s `receipt_settings()`) and Notification S
 | `quarterly_fee` REAL DEFAULT 0, `quarterly_days` INTEGER DEFAULT 90 | | |
 | `half_yearly_fee` REAL DEFAULT 0, `half_yearly_days` INTEGER DEFAULT 180 | | |
 | `yearly_fee` REAL DEFAULT 0, `yearly_days` INTEGER DEFAULT 365 | | |
-| `admission_fee` REAL DEFAULT 0, `late_fee_per_day` REAL DEFAULT 0 | | |
+| `admission_fee` REAL DEFAULT 0, `late_fee_per_day` REAL DEFAULT 0 | | Since ADR-66 the `admission_fee` value is surfaced in the UI as **"Registration Fee"** and is the `registration` entry in `CHARGE_CATALOG` (same column, same "Admission Fee" Cashbook category, same `admission_fee_amount` snapshot) |
 | `renewal_grace_days` INTEGER DEFAULT 7 | | |
 | `auto_expiry`, `allow_early_renewal` | INTEGER DEFAULT 1, CHECK(0/1) | Boolean flags |
+| `seat_reservation_fee`, `locker_fee`, `security_deposit_amount` | REAL NOT NULL DEFAULT 0 | Added 2026-09-02 (ADR-66) — extra-charge amounts. Seat/locker are per-month. Manual `ALTER TABLE` (**TD-89**); `save_membership_settings()` strips-and-retries and `get_charge_config()` falls back to 0 until applied |
+| `registration_compulsory`, `security_deposit_compulsory` | INTEGER NOT NULL DEFAULT 1, CHECK(0/1) | Added 2026-09-02 (ADR-66) — whether the charge is auto-applied to every membership (vs. picked in the Create/Renew Extra Charges box) |
+| `seat_reservation_compulsory`, `locker_compulsory` | INTEGER NOT NULL DEFAULT 0, CHECK(0/1) | Added 2026-09-02 (ADR-66) — same, default optional |
 | `send_reminders` | INTEGER DEFAULT 1, CHECK(0/1) | **Unused as of 2026-07-21** — superseded by `library_settings.notify_*`/`reminder_*` columns (Notification Settings). Column left in place, no longer written by `save_membership_settings()`. See TD-23 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
 | `reminder_days` | INTEGER DEFAULT 3 | **Unused as of 2026-07-21** — same as `send_reminders` above |
 | `created_at`, `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 
-**Note:** this table stores *configured* plan pricing/policy, but `routes/membership.py`'s `create()`/`renew()` do **not** currently read from it — fee amounts are entered manually per-membership in the create/renew forms. There is no wiring yet from Membership Settings → the actual membership-creation flow. See [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+**Note:** as of ADR-45 `routes/membership.py`'s `create()`/`renew()` **do** read this table — `database/membership_queries.py`'s `get_plan_pricing()`/`get_admission_fee()` turn the configured fees/days into the plan-pricing dict those forms render, and standard-plan `total_fee` is server-computed from it. As of ADR-66 `get_charge_config()` also reads the seven extra-charge columns. `late_fee_per_day`/`renewal_grace_days` are still unconsumed (TD-7).
+
+### `shift_slots` (admin-scoped) — added 2026-09-02 (ADR-65)
+| Column | Type | Notes |
+|---|---|---|
+| `slot_id` | INTEGER PK (identity) | Assigned explicitly via `database/id_sequence.py`'s `insert_with_next_id()` |
+| `admin_id` | INTEGER NOT NULL FK → `admins` | |
+| `name` | TEXT NOT NULL, UNIQUE per admin | e.g. `"7AM-2PM"` |
+| `start_time`, `end_time` | TIME | `NULL` = "any time" / Full Day / a split slot with no single start |
+| `hours_label` | TEXT NOT NULL DEFAULT `'Custom'` | `'Full Day'` / `'7'` / `'4'` / `'Night-hourly'` / `'Custom'` — a price/label hint; never affects the bucket |
+| `monthly_fee` | DOUBLE PRECISION NOT NULL DEFAULT 0 | Multiplied by `PLAN_MONTHS[plan]` at membership creation |
+| `time_bucket` | TEXT | `NULL` = derive Morning/Afternoon/Evening/Night from `start_time`; non-NULL = admin override |
+| `is_night_hourly` | INTEGER NOT NULL DEFAULT 0, CHECK(0/1) | When 1, priced `night_hourly_rate × staff-entered hours` instead of `monthly_fee × term` |
+| `night_hourly_rate` | DOUBLE PRECISION NOT NULL DEFAULT 0 | |
+| `active` | INTEGER NOT NULL DEFAULT 1, CHECK(0/1) | Soft-disable; slots are never deleted (a membership may reference one by snapshot) |
+| `sort_order` | INTEGER NOT NULL DEFAULT 0 | |
+| `created_at`, `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
+
+Brand-new table, no DDL path (ADR-14) — `database/shift_slots_queries.py` reads degrade to `[]` (PostgREST `PGRST205`) until it's created by hand (**TD-89**).
+
+### `membership_charges` — added 2026-09-02 (ADR-66)
+| Column | Type | Notes |
+|---|---|---|
+| `charge_id` | INTEGER PK (identity) | |
+| `membership_id` | INTEGER NOT NULL FK → `memberships` | Tenant isolation via the membership's student |
+| `charge_key` | TEXT NOT NULL, UNIQUE per membership | `security_deposit` / `seat_reservation` / `locker` (never `registration` — that stays on `memberships.admission_fee_amount`) |
+| `label`, `recurring`, `refundable` | TEXT / INTEGER CHECK(0/1) | Snapshots of `CHARGE_CATALOG` at creation |
+| `amount` | DOUBLE PRECISION NOT NULL DEFAULT 0 | Term total already folded into `memberships.total_fee` (a recurring charge is monthly amount × plan months) |
+| `refunded_on` | DATE | Stamped by `routes/membership.py`'s `refund_charge()` (deposit only) |
+| `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
+
+Brand-new table (**TD-89**) — `insert_membership_charges()` raises `ChargeTableUnavailable` only when a real non-zero charge would be lost.
 
 ### `backup_log` (one row per admin)
 | Column | Type | Notes |

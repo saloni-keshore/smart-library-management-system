@@ -23,6 +23,16 @@ from database.membership_settings_queries import (
         get_membership_settings,
         save_membership_settings,
     )
+from database.shift_slots_queries import (
+    get_shift_slots,
+    get_shift_slot,
+    create_shift_slot,
+    update_shift_slot,
+    set_shift_slot_active,
+    HOURS_LABELS,
+)
+from database.membership_charges_queries import get_charge_config
+from database.membership_queries import describe_time_buckets
 from database.receipt_settings_queries import (
     get_receipt_settings, save_receipt_settings
 )
@@ -69,11 +79,19 @@ MEMBERSHIP_SETTING_FIELDS = {
     "half_yearly_days": ("Half-yearly Plan Days", "number"),
     "yearly_fee": ("Yearly Plan Fee", "currency"),
     "yearly_days": ("Yearly Plan Days", "number"),
-    "admission_fee": ("Admission Fee", "currency"),
+    "admission_fee": ("Registration Fee", "currency"),
     "late_fee_per_day": ("Late Fee Per Day", "currency"),
     "renewal_grace_days": ("Renewal Grace Days", "number"),
     "auto_expiry": ("Auto Expiry", "boolean"),
     "allow_early_renewal": ("Allow Early Renewal", "boolean"),
+    # Extra charges (ADR-66) - amount + a compulsory/optional flag each.
+    "seat_reservation_fee": ("Seat Reservation Fee (monthly)", "currency"),
+    "locker_fee": ("Locker Fee (monthly)", "currency"),
+    "security_deposit_amount": ("Security Deposit", "currency"),
+    "registration_compulsory": ("Registration Fee Compulsory", "boolean"),
+    "seat_reservation_compulsory": ("Seat Reservation Compulsory", "boolean"),
+    "locker_compulsory": ("Locker Compulsory", "boolean"),
+    "security_deposit_compulsory": ("Security Deposit Compulsory", "boolean"),
 }
 # reminder_days/send_reminders moved to Settings > Notification Settings
 # (library_settings.reminder_*/notify_* columns) - see
@@ -93,6 +111,13 @@ MEMBERSHIP_SETTING_DEFAULTS = {
     "renewal_grace_days": 7,
     "auto_expiry": 1,
     "allow_early_renewal": 1,
+    "seat_reservation_fee": 0.0,
+    "locker_fee": 0.0,
+    "security_deposit_amount": 0.0,
+    "registration_compulsory": 1,
+    "seat_reservation_compulsory": 0,
+    "locker_compulsory": 0,
+    "security_deposit_compulsory": 1,
 }
 
 RECEIPT_PREFIX_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,10}$")
@@ -144,7 +169,10 @@ def _build_membership_changes(existing, submitted):
     """Return display-ready changes while comparing normalized values."""
 
     previous = (
-        {field: existing[field] for field in MEMBERSHIP_SETTING_FIELDS}
+        {
+            field: existing.get(field, MEMBERSHIP_SETTING_DEFAULTS[field])
+            for field in MEMBERSHIP_SETTING_FIELDS
+        }
         if existing else MEMBERSHIP_SETTING_DEFAULTS
     )
     changes = []
@@ -347,6 +375,19 @@ def membership_settings():
 
                 "allow_early_renewal":
                     1 if request.form.get("allow_early_renewal") else 0,
+
+                # Extra charges (ADR-66)
+                "seat_reservation_fee": number("seat_reservation_fee", 0),
+                "locker_fee": number("locker_fee", 0),
+                "security_deposit_amount": number("security_deposit_amount", 0),
+                "registration_compulsory":
+                    1 if request.form.get("registration_compulsory") else 0,
+                "seat_reservation_compulsory":
+                    1 if request.form.get("seat_reservation_compulsory") else 0,
+                "locker_compulsory":
+                    1 if request.form.get("locker_compulsory") else 0,
+                "security_deposit_compulsory":
+                    1 if request.form.get("security_deposit_compulsory") else 0,
             }
         except ValueError as error:
             flash(str(error), "danger")
@@ -376,11 +417,164 @@ def membership_settings():
     return render_template(
         "settings/membership_settings.html",
         settings=settings,
+        charge_config=get_charge_config(settings),
         notification_settings=get_notification_settings(admin_id),
         changes=change_summary["changes"] if change_summary else None,
         updated_by=change_summary["updated_by"] if change_summary else None,
         updated_on=change_summary["updated_on"] if change_summary else None,
     )
+
+
+# ==========================================================
+# Shift Slots (ADR-65)
+# ==========================================================
+
+_VALID_SLOT_BUCKETS = {"", "Morning", "Afternoon", "Evening", "Night", "Full Day"}
+
+
+def _parse_shift_slot_form(form):
+    """Validate the Shift Slots add/edit form into a shift_slots payload.
+    Raises ValueError with a user-facing message on bad input."""
+
+    name = normalize_free_text(form.get("name", "")).strip()
+    if not name:
+        raise ValueError("Slot name is required.")
+
+    def _time(field):
+        raw = (form.get(field) or "").strip()
+        if not raw:
+            return None
+        try:
+            datetime.strptime(raw, "%H:%M")
+        except ValueError:
+            raise ValueError(f"{field.replace('_', ' ').title()} must be a valid HH:MM time.")
+        return raw
+
+    def _amount(field):
+        raw = (form.get(field) or "0").strip() or "0"
+        try:
+            value = float(raw)
+        except ValueError:
+            raise ValueError(f"{field.replace('_', ' ').title()} must be a number.")
+        if value < 0:
+            raise ValueError(f"{field.replace('_', ' ').title()} cannot be negative.")
+        return value
+
+    hours_label = form.get("hours_label", "Custom")
+    if hours_label not in HOURS_LABELS:
+        hours_label = "Custom"
+
+    time_bucket = (form.get("time_bucket") or "").strip()
+    if time_bucket not in _VALID_SLOT_BUCKETS:
+        raise ValueError("Please choose a valid time bucket (or leave it on Auto).")
+
+    try:
+        sort_order = int((form.get("sort_order") or "0").strip() or "0")
+    except ValueError:
+        sort_order = 0
+
+    return {
+        "name": name,
+        "start_time": _time("start_time"),
+        "end_time": _time("end_time"),
+        "hours_label": hours_label,
+        "monthly_fee": _amount("monthly_fee"),
+        "time_bucket": time_bucket,
+        "is_night_hourly": 1 if form.get("is_night_hourly") else 0,
+        "night_hourly_rate": _amount("night_hourly_rate"),
+        "sort_order": sort_order,
+    }
+
+
+@setting_bp.route("/shift-slots", methods=["GET", "POST"])
+def shift_slots():
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    if request.method == "POST":
+        try:
+            payload = _parse_shift_slot_form(request.form)
+        except ValueError as error:
+            flash(str(error), "danger")
+            return redirect(url_for("setting.shift_slots"))
+
+        try:
+            create_shift_slot(admin_id, payload)
+        except APIError:
+            flash(
+                "Shift slots aren't available yet on this system - the database "
+                "needs a one-time update. Contact your administrator.",
+                "danger",
+            )
+            return redirect(url_for("setting.shift_slots"))
+
+        flash(f"Shift slot '{payload['name']}' added.", "success")
+        return redirect(url_for("setting.shift_slots"))
+
+    return render_template(
+        "settings/shift_slots.html",
+        slots=get_shift_slots(admin_id, include_inactive=True),
+        hours_labels=HOURS_LABELS,
+        bucket_windows=describe_time_buckets(),
+    )
+
+
+@setting_bp.route("/shift-slots/<int:slot_id>/edit", methods=["POST"])
+def shift_slot_edit(slot_id):
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    if get_shift_slot(admin_id, slot_id) is None:
+        flash("Shift slot not found.", "danger")
+        return redirect(url_for("setting.shift_slots"))
+
+    try:
+        payload = _parse_shift_slot_form(request.form)
+    except ValueError as error:
+        flash(str(error), "danger")
+        return redirect(url_for("setting.shift_slots"))
+
+    try:
+        update_shift_slot(admin_id, slot_id, payload)
+    except APIError:
+        flash("Could not update the shift slot due to a database error.", "danger")
+        return redirect(url_for("setting.shift_slots"))
+
+    flash(f"Shift slot '{payload['name']}' updated.", "success")
+    return redirect(url_for("setting.shift_slots"))
+
+
+@setting_bp.route("/shift-slots/<int:slot_id>/toggle", methods=["POST"])
+def shift_slot_toggle(slot_id):
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+
+    slot = get_shift_slot(admin_id, slot_id)
+    if slot is None:
+        flash("Shift slot not found.", "danger")
+        return redirect(url_for("setting.shift_slots"))
+
+    new_state = 0 if slot.get("active") else 1
+    try:
+        set_shift_slot_active(admin_id, slot_id, new_state)
+    except APIError:
+        flash("Could not update the shift slot due to a database error.", "danger")
+        return redirect(url_for("setting.shift_slots"))
+
+    flash(
+        f"Shift slot '{slot['name']}' {'enabled' if new_state else 'disabled'}.",
+        "success",
+    )
+    return redirect(url_for("setting.shift_slots"))
 
 
 @setting_bp.route("/library", methods=["GET", "POST"])
@@ -426,6 +620,7 @@ def library_profile():
         morning_capacity = seat_capacity("morning_capacity")
         afternoon_capacity = seat_capacity("afternoon_capacity")
         evening_capacity = seat_capacity("evening_capacity")
+        night_capacity = seat_capacity("night_capacity")
 
         if not library_name:
             errors["library_name"] = "Library name is required."
@@ -514,6 +709,7 @@ def library_profile():
             "morning_capacity": morning_capacity,
             "afternoon_capacity": afternoon_capacity,
             "evening_capacity": evening_capacity,
+            "night_capacity": night_capacity,
         }
 
         save_library_settings(admin_id, data)

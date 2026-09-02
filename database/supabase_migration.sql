@@ -130,6 +130,17 @@ CREATE TABLE IF NOT EXISTS memberships (
     remarks TEXT,
     membership_status TEXT DEFAULT 'Active',
 
+    -- Shift slot snapshot (ADR-65) - which Settings > Shift Slots time
+    -- window this membership was sold on, frozen at creation. shift_slot_id
+    -- is a soft reference (no FK) because a slot is deactivated, never
+    -- deleted; shift_slot_name / time_bucket are snapshots so a later slot
+    -- rename / re-bucket never rewrites this membership's receipt or the
+    -- Occupancy Analytics history. All three are NULL for a membership sold
+    -- on a bare duration plan (the pre-ADR-65 flow, still supported).
+    shift_slot_id INTEGER,
+    shift_slot_name TEXT,
+    time_bucket TEXT,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (student_id)
@@ -198,6 +209,23 @@ CREATE TABLE IF NOT EXISTS memberships (
 -- idempotency_key, so membership creation keeps working exactly as before
 -- on an un-migrated project - it just doesn't get the new double-submit
 -- protection yet. See ADR-53.
+
+-- 2026-09-02 (Time-window shift slots, ADR-65): shift_slot_id /
+-- shift_slot_name / time_bucket above are new. Same manual-application
+-- requirement as every other post-provisioning column (ADR-14) - run by
+-- hand, once, in the Supabase SQL Editor:
+--
+--   ALTER TABLE memberships
+--     ADD COLUMN IF NOT EXISTS shift_slot_id INTEGER,
+--     ADD COLUMN IF NOT EXISTS shift_slot_name TEXT,
+--     ADD COLUMN IF NOT EXISTS time_bucket TEXT;
+--
+-- These DO silently degrade if skipped: they are display / Occupancy
+-- Analytics data only (total_fee is already correct without them), so
+-- database/membership_queries.py's insert_membership() strips them and
+-- retries, exactly like idempotency_key. A membership sold on a shift slot
+-- on an un-migrated project just falls back to showing its plan name and
+-- being bucketed by students.shift. See ADR-65.
 
 
 -- Payments
@@ -410,6 +438,9 @@ CREATE TABLE IF NOT EXISTS library_settings (
     morning_capacity INTEGER DEFAULT 50,
     afternoon_capacity INTEGER DEFAULT 50,
     evening_capacity INTEGER DEFAULT 50,
+    -- Night seat capacity (ADR-67) - Night became a real 4th canonical shift
+    -- when time-window slots (ADR-65) made a genuine night shift sellable.
+    night_capacity INTEGER DEFAULT 50,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -435,6 +466,16 @@ CREATE TABLE IF NOT EXISTS library_settings (
 -- persist yet, and Occupancy Analytics falls back to bi_queries.py's
 -- DEFAULT_SHIFT_CAPACITY (50/shift) until the columns exist. See TD-49.
 
+-- 2026-09-02 (Night as a 4th shift, ADR-67): night_capacity above is new.
+-- Same manual-application requirement and same silent-degrade behaviour as
+-- the morning/afternoon/evening_capacity columns:
+--
+--   ALTER TABLE library_settings
+--     ADD COLUMN IF NOT EXISTS night_capacity INTEGER DEFAULT 50;
+--
+-- Until it's run, Occupancy Analytics' Night shift falls back to
+-- DEFAULT_SHIFT_CAPACITY (50).
+
 -- membership_settings Table
 -- NOTE: reminder_days/send_reminders are superseded by the notification_*/
 -- reminder_* columns on library_settings (Settings > Notification Settings
@@ -459,10 +500,49 @@ CREATE TABLE IF NOT EXISTS membership_settings (
     allow_early_renewal INTEGER NOT NULL DEFAULT 1 CHECK (allow_early_renewal IN (0, 1)),
     send_reminders INTEGER NOT NULL DEFAULT 1 CHECK (send_reminders IN (0, 1)),
     reminder_days INTEGER NOT NULL DEFAULT 3,
+
+    -- Extra-charge catalog (ADR-66). Each membership charge has a fixed key
+    -- with built-in semantics defined in
+    -- database/membership_charges_queries.py's CHARGE_CATALOG (recurring =
+    -- monthly & re-charged on renew; refundable). Here the admin configures
+    -- only two things per charge: the amount, and whether it is compulsory
+    -- (auto-applied to every membership) or optional (only when picked in
+    -- the Create/Renew "Extra Charges" box). The "registration" charge
+    -- reuses admission_fee above (same column, same ADR-62 snapshot /
+    -- "Admission Fee" Cashbook category) and only adds a compulsory flag.
+    seat_reservation_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+    locker_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+    security_deposit_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    registration_compulsory INTEGER NOT NULL DEFAULT 1 CHECK (registration_compulsory IN (0, 1)),
+    seat_reservation_compulsory INTEGER NOT NULL DEFAULT 0 CHECK (seat_reservation_compulsory IN (0, 1)),
+    locker_compulsory INTEGER NOT NULL DEFAULT 0 CHECK (locker_compulsory IN (0, 1)),
+    security_deposit_compulsory INTEGER NOT NULL DEFAULT 1 CHECK (security_deposit_compulsory IN (0, 1)),
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
 );
+
+-- 2026-09-02 (Membership extra charges, ADR-66): the seven columns above
+-- (seat_reservation_fee, locker_fee, security_deposit_amount, and the four
+-- *_compulsory flags) are new. Same manual-application requirement as every
+-- other post-provisioning column (ADR-14) - run by hand, once, in the
+-- Supabase SQL Editor:
+--
+--   ALTER TABLE membership_settings
+--     ADD COLUMN IF NOT EXISTS seat_reservation_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+--     ADD COLUMN IF NOT EXISTS locker_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+--     ADD COLUMN IF NOT EXISTS security_deposit_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+--     ADD COLUMN IF NOT EXISTS registration_compulsory INTEGER NOT NULL DEFAULT 1,
+--     ADD COLUMN IF NOT EXISTS seat_reservation_compulsory INTEGER NOT NULL DEFAULT 0,
+--     ADD COLUMN IF NOT EXISTS locker_compulsory INTEGER NOT NULL DEFAULT 0,
+--     ADD COLUMN IF NOT EXISTS security_deposit_compulsory INTEGER NOT NULL DEFAULT 1;
+--
+-- These silently degrade if skipped: database/membership_settings_queries.py's
+-- save_membership_settings() strips them and retries (ADR-38 precedent), and
+-- get_charge_config() falls back to built-in defaults (all fees 0), so no
+-- charge is ever applied until the columns exist and an admin sets an
+-- amount. See ADR-66.
 
 -- Data & Backup: one row per admin, tracks the last manual backup taken.
 -- Kept separate from library_settings because a backup can be taken before
@@ -554,6 +634,75 @@ CREATE TABLE IF NOT EXISTS panda_messages (
     content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES panda_conversations(conversation_id)
+);
+
+-- Shift Slots (ADR-65): the admin-defined list of time-window shifts a
+-- library sells memberships on (Settings > Shift Slots). One row per slot,
+-- one admin owns many. start_time NULL means "any time" (Full Day, or a
+-- split/flexi slot with no single start); time_bucket NULL means "derive
+-- Morning/Afternoon/Evening/Night from start_time"
+-- (database/membership_queries.py's derive_time_bucket), a non-NULL value
+-- is the admin's explicit override. hours_label ('Full Day' | '7' | '4' |
+-- 'Night-hourly' | 'Custom') is a price/label hint only - it never affects
+-- the bucket. is_night_hourly slots are billed night_hourly_rate x
+-- staff-entered hours instead of monthly_fee x plan term.
+--
+-- NOTE: brand-new table, same manual-application requirement as
+-- ai_center_settings / panda_* above (this app has no DDL path, ADR-14/38/40).
+-- Until an existing project's owner runs this CREATE TABLE by hand in the
+-- SQL Editor, database/shift_slots_queries.py's reads return [] (PostgREST
+-- raises PGRST205 until the table exists) so the Create/Renew shift
+-- dropdown is simply hidden and the 5 fixed duration plans keep working
+-- unchanged; its writes raise APIError, caught by routes/setting.py to
+-- flash a clear message instead of a 500.
+CREATE TABLE IF NOT EXISTS shift_slots (
+    slot_id INTEGER PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY,
+    admin_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    start_time TIME,
+    end_time TIME,
+    hours_label TEXT NOT NULL DEFAULT 'Custom',
+    monthly_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+    time_bucket TEXT,
+    is_night_hourly INTEGER NOT NULL DEFAULT 0 CHECK (is_night_hourly IN (0, 1)),
+    night_hourly_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(admin_id, name),
+    FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
+);
+
+-- Membership Charges (ADR-66): one row per extra charge actually applied to
+-- a membership (seat reservation, locker, security deposit - "registration"
+-- stays on memberships.admission_fee_amount and is not duplicated here).
+-- amount is the term total already folded into memberships.total_fee (a
+-- recurring charge is amount-per-month x plan months); label / recurring /
+-- refundable are snapshots of CHARGE_CATALOG at creation so a later catalog
+-- change never rewrites history. refunded_on is stamped by
+-- routes/membership.py's refund_charge() when a refundable charge (deposit)
+-- is returned.
+--
+-- NOTE: brand-new table, same manual-application requirement as shift_slots
+-- above. Until it exists, database/membership_charges_queries.py's reads
+-- return [] and insert_membership_charges() raises ChargeTableUnavailable
+-- if any charge with a non-zero amount would be lost (caught by
+-- routes/membership.py's create() - the membership row it just inserted is
+-- deleted and a clear message is flashed, nothing half-saved); a membership
+-- with no extra charge configured is unaffected. See ADR-66.
+CREATE TABLE IF NOT EXISTS membership_charges (
+    charge_id INTEGER PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY,
+    membership_id INTEGER NOT NULL,
+    charge_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+    recurring INTEGER NOT NULL DEFAULT 0 CHECK (recurring IN (0, 1)),
+    refundable INTEGER NOT NULL DEFAULT 0 CHECK (refundable IN (0, 1)),
+    refunded_on DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(membership_id, charge_key),
+    FOREIGN KEY (membership_id) REFERENCES memberships(membership_id)
 );
 
 COMMIT;

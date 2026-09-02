@@ -243,6 +243,9 @@ erDiagram
     STUDENTS ||--o{ MEMBERSHIPS : "student_id"
     STUDENTS ||--o{ PAYMENTS : "student_id"
     MEMBERSHIPS ||--o{ PAYMENTS : "membership_id"
+    MEMBERSHIPS ||--o{ MEMBERSHIP_CHARGES : "membership_id (ADR-66)"
+    SHIFT_SLOTS |o..o{ MEMBERSHIPS : "shift_slot_id (soft ref, no FK — ADR-65)"
+    ADMINS ||--o{ SHIFT_SLOTS : "admin_id"
     PAYMENTS |o--o| CASHBOOK : "payment_id (auto-generated entries only — actually populated as of 2026-07-22, previously declared but always NULL, see TD-22 resolution)"
     CASHBOOK ||--o{ AUDIT_LOG : "entry_id"
 
@@ -276,6 +279,28 @@ erDiagram
         text membership_status
         text idempotency_key UK "ADR-53, TD-30 fix"
         real admission_fee_amount "ADR-62, TD-83 - column missing on live DB"
+        int shift_slot_id "ADR-65, soft ref, TD-89"
+        text shift_slot_name "ADR-65 snapshot"
+        text time_bucket "ADR-65 snapshot - Morning/Afternoon/Evening/Night/Full Day"
+    }
+    SHIFT_SLOTS {
+        int slot_id PK
+        int admin_id FK
+        text name "UK per admin"
+        time start_time "nullable = any time"
+        real monthly_fee
+        text time_bucket "nullable = auto-derive from start_time"
+        int is_night_hourly
+        int active
+    }
+    MEMBERSHIP_CHARGES {
+        int charge_id PK
+        int membership_id FK
+        text charge_key "security_deposit / seat_reservation / locker"
+        real amount "term total, folded into memberships.total_fee"
+        int recurring
+        int refundable
+        date refunded_on "nullable"
     }
     PAYMENTS {
         int payment_id PK
@@ -308,12 +333,18 @@ erDiagram
         int notify_in_app "Notification Settings"
         int quiet_hours_enabled "Notification Settings"
         int dash_show_pending_fees "Notification Settings"
+        int morning_capacity "Occupancy (ADR-38)"
+        int night_capacity "Occupancy 4th shift (ADR-67, TD-89)"
     }
     MEMBERSHIP_SETTINGS {
         int setting_id PK
         int admin_id FK "unique"
+        real admission_fee "surfaced as 'Registration Fee' (ADR-66)"
+        real seat_reservation_fee "ADR-66, TD-89"
+        real locker_fee "ADR-66, TD-89"
+        real security_deposit_amount "ADR-66, TD-89"
+        int registration_compulsory "ADR-66"
         int reminder_days "unused, superseded (TD-23)"
-        int send_reminders "unused, superseded (TD-23)"
     }
     BACKUP_LOG {
         int log_id PK

@@ -287,6 +287,145 @@ def get_admission_fee(settings):
     return settings["admission_fee"] if settings is not None else DEFAULT_ADMISSION_FEE
 
 
+# ---------------------------------------------------------------------------
+# Time-window shift slots (ADR-65)
+# ---------------------------------------------------------------------------
+
+# A membership's duration plan is the *term multiplier* for a shift slot's
+# monthly fee. Keyed by the Title-Case plan names the Create/Renew forms
+# post (same keys as get_plan_pricing()), not the UPPERCASE stored value.
+PLAN_MONTHS = {"Monthly": 1, "Quarterly": 3, "Half-Yearly": 6, "Yearly": 12}
+
+# Start-of-window -> canonical shift. The window's *start* decides the
+# bucket; how many hours it runs (Full Day / 7 / 4 / Night-hourly) never
+# does. Boundaries are half-open: [05:00,12:00) Morning, [12:00,16:00)
+# Afternoon, [16:00,21:00) Evening, the rest (>=21:00 or <05:00) Night.
+_BUCKET_BOUNDS = (
+    (5 * 60, 12 * 60, "Morning"),
+    (12 * 60, 16 * 60, "Afternoon"),
+    (16 * 60, 21 * 60, "Evening"),
+)
+
+
+def _minutes_since_midnight(start_time):
+    """Accepts 'HH:MM'[:SS], a datetime.time, or None. Returns minutes, or
+    None when there is no parseable time."""
+
+    if start_time is None or start_time == "":
+        return None
+    if hasattr(start_time, "hour"):
+        return start_time.hour * 60 + start_time.minute
+    parts = str(start_time).split(":")
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except (ValueError, IndexError):
+        return None
+
+
+def derive_time_bucket(start_time):
+    """Morning / Afternoon / Evening / Night from a window start time.
+    A missing/blank start time -> 'Full Day' (a slot that runs any time)."""
+
+    minutes = _minutes_since_midnight(start_time)
+    if minutes is None:
+        return "Full Day"
+    for lo, hi, label in _BUCKET_BOUNDS:
+        if lo <= minutes < hi:
+            return label
+    return "Night"
+
+
+def _fmt_hhmm(minutes):
+    """Whole minutes-since-midnight -> "HH:MM"."""
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def describe_time_buckets():
+    """The Morning/Afternoon/Evening/Night start-time windows as display
+    rows - `{"bucket", "start", "end", "span_hours"}` - derived from
+    _BUCKET_BOUNDS so a Settings reference can't drift from what
+    derive_time_bucket() actually does. `span_hours` is the width of the
+    window a slot's *start* must fall inside to land in that bucket, not a
+    slot's own running length. Night is the midnight-wrapping remainder from
+    the last boundary's end back round to the first boundary's start."""
+
+    rows = [
+        {"bucket": label, "start": _fmt_hhmm(lo), "end": _fmt_hhmm(hi),
+         "span_hours": (hi - lo) // 60}
+        for lo, hi, label in _BUCKET_BOUNDS
+    ]
+    night_lo = _BUCKET_BOUNDS[-1][1]
+    night_hi = _BUCKET_BOUNDS[0][0]
+    rows.append({
+        "bucket": "Night",
+        "start": _fmt_hhmm(night_lo),
+        "end": _fmt_hhmm(night_hi),
+        "span_hours": (24 * 60 - night_lo + night_hi) // 60,
+    })
+    return rows
+
+
+def resolve_slot_bucket(slot):
+    """The canonical shift a shift_slots row belongs to. The admin's
+    explicit time_bucket override wins; then a Full-Day hours label or a
+    night-hourly slot; otherwise it's derived from start_time."""
+
+    if not slot:
+        return None
+    override = (slot.get("time_bucket") or "").strip()
+    if override:
+        return override
+    if (slot.get("hours_label") or "").strip().lower() in ("full day", "full-day", "fullday"):
+        return "Full Day"
+    if slot.get("is_night_hourly"):
+        return "Night"
+    return derive_time_bucket(slot.get("start_time"))
+
+
+def compute_slot_charge(slot, plan_name, night_hours=0):
+    """The pre-extra-charge fee for a membership sold on `slot`:
+    night_hourly_rate x hours for a night-hourly slot, else monthly_fee x
+    the plan's month count. Returns None when the charge can't be derived
+    here (no slot, or a Custom plan with no month count) and the caller
+    must take a staff-entered total instead."""
+
+    if not slot:
+        return None
+    if slot.get("is_night_hourly"):
+        return float(slot.get("night_hourly_rate") or 0) * (night_hours or 0)
+    months = PLAN_MONTHS.get(plan_name)
+    if months is None:
+        return None
+    return float(slot.get("monthly_fee") or 0) * months
+
+
+def split_payment_across_buckets(buckets, old_paid, amount):
+    """Generalized "earlier buckets first" waterfall. `buckets` is an
+    ordered list of (category, bucket_total) pairs; a bucket_total of None
+    means "unbounded" (only valid for the last bucket). Splits one payment
+    of `amount` - made when `old_paid` was already paid toward this
+    membership - across the buckets in order, filling each before spilling
+    into the next. Returns an ordered list of (category, share) pairs whose
+    shares sum to exactly `amount` (the caller guarantees old_paid + amount
+    never exceeds the sum of the finite bucket_totals plus any unbounded
+    tail). "How much of a bucket is covered so far" is always exactly
+    clamp(paid-so-far, bucket_lo, bucket_hi) - bucket_lo, a pure function of
+    the paid_amount progression the routes already track, so there is no
+    second running total that could drift (same reasoning as the 2-bucket
+    split_admission_and_membership_fee() this generalizes)."""
+
+    shares = []
+    running = 0.0
+    for category, bucket_total in buckets:
+        lo = running
+        hi = float("inf") if bucket_total is None else lo + (bucket_total or 0)
+        covered_before = max(0.0, min(old_paid, hi) - lo)
+        covered_after = max(0.0, min(old_paid + amount, hi) - lo)
+        shares.append((category, covered_after - covered_before))
+        running = hi
+    return shares
+
+
 def split_admission_and_membership_fee(admission_fee_amount, old_paid, amount):
     """Admission-fee-first waterfall: split one payment of `amount` between
     Cashbook categories "Admission Fee" and "Membership Fee", given how much
@@ -305,13 +444,19 @@ def split_admission_and_membership_fee(admission_fee_amount, old_paid, amount):
     second total that could drift out of sync with it.
 
     Returns (admission_share, membership_share), summing to exactly `amount`.
+
+    As of ADR-66 this is the 2-bucket special case of
+    split_payment_across_buckets() above ("Admission Fee" then an unbounded
+    "Membership Fee" tail) - kept as a named function so its existing
+    callers (renew(), tests) don't change.
     """
 
-    admission_paid_before = min(old_paid, admission_fee_amount)
-    admission_paid_after = min(old_paid + amount, admission_fee_amount)
-    admission_share = admission_paid_after - admission_paid_before
-
-    return admission_share, amount - admission_share
+    shares = split_payment_across_buckets(
+        [("Admission Fee", admission_fee_amount), ("Membership Fee", None)],
+        old_paid,
+        amount,
+    )
+    return shares[0][1], shares[1][1]
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +473,10 @@ def split_admission_and_membership_fee(admission_fee_amount, old_paid, amount):
 
 _DISCOUNT_FIELDS = ("discount_amount", "discount_reason")
 _ADMISSION_FEE_FIELDS = ("admission_fee_amount",)
+# Shift-slot snapshot columns (ADR-65) - always optional, always
+# silently dropped when absent: they are display / Occupancy Analytics
+# data only, total_fee is already correct without them.
+_SLOT_SNAPSHOT_FIELDS = ("shift_slot_id", "shift_slot_name", "time_bucket")
 
 _UNDEFINED_COLUMN_ERROR_CODES = {
     "42703",     # raw Postgres "column does not exist" (surfaced by .select())
@@ -482,12 +631,28 @@ def insert_membership(supabase, payload):
 
 
 def _insert_membership_without_idempotency_key(supabase, payload, without_key, error):
-    """Tier 2/3 of insert_membership()'s retry cascade, reached once
+    """Tier 2/3/4 of insert_membership()'s retry cascade, reached once
     idempotency_key has already been dropped and the insert still fails
     with an undefined-column error. Split out from insert_membership()
     itself only so each `except APIError as error` block's `error` stays in
     scope for the `raise ... from error` it needs - Python unbinds an
     `except ... as name` variable as soon as that block ends."""
+
+    # Shift-slot snapshot columns (ADR-65) are next: always optional, so if
+    # the payload carries any and the retry above still failed, drop them
+    # and try again before touching the (hard-failing) financial columns.
+    without_slots = {
+        k: v for k, v in without_key.items() if k not in _SLOT_SNAPSHOT_FIELDS
+    }
+    if without_slots != without_key:
+        try:
+            supabase.table("memberships").insert(without_slots).execute()
+            return None
+        except APIError as slot_error:
+            if not _is_undefined_column_error(slot_error):
+                raise
+            error = slot_error
+    without_key = without_slots
 
     # admission_fee_amount is checked next (ADR-62), independently of
     # discount below.

@@ -194,6 +194,83 @@ Renew Membership
 
                 </div>
 
+                {% if shift_slots %}
+                <div class="row">
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label fw-bold">Shift (time window)</label>
+
+                        <select class="form-select" id="shift_slot_id" name="shift_slot_id">
+                            <option value="">&mdash; None (use plan fee) &mdash;</option>
+                            {% for bucket in ['Morning', 'Afternoon', 'Evening', 'Night', 'Full Day'] %}
+                                {% set bucket_slots = shift_slots | selectattr('resolved_bucket', 'equalto', bucket) | list %}
+                                {% if bucket_slots %}
+                                <optgroup label="{{ bucket }}">
+                                    {% for s in bucket_slots %}
+                                    <option value="{{ s.slot_id }}"
+                                            {% if prev_slot_id and s.slot_id == prev_slot_id %}selected{% endif %}
+                                            data-night="{{ 1 if s.is_night_hourly else 0 }}"
+                                            data-fee="{{ s.monthly_fee }}"
+                                            data-rate="{{ s.night_hourly_rate }}">
+                                        {{ s.name }}{% if s.is_night_hourly %} (₹{{ '%g'|format(s.night_hourly_rate) }}/hr){% else %} &mdash; ₹{{ '{:,.0f}'.format(s.monthly_fee) }}/mo{% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </optgroup>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+
+                    </div>
+
+                    <div class="col-md-3 mb-3 d-none" id="night_hours_group">
+
+                        <label class="form-label fw-bold">Night hours</label>
+
+                        <input type="number" class="form-control"
+                               id="night_hours" name="night_hours" min="1" value="0">
+
+                    </div>
+
+                </div>
+                {% endif %}
+
+                {% if charge_config %}
+                <div class="mb-3">
+
+                    <label class="form-label fw-bold">Extra Charges</label>
+
+                    <div class="border rounded p-3">
+                        {% for c in charge_config %}
+                            {% if c.amount > 0 %}
+                                {% if c.compulsory %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" checked disabled>
+                                    <label class="form-check-label">
+                                        {{ c.label }} &mdash; ₹{{ '{:,.0f}'.format(c.amount) }} / month
+                                        <span class="badge bg-secondary">Always</span>
+                                    </label>
+                                </div>
+                                {% else %}
+                                <div class="form-check">
+                                    <input class="form-check-input extra-charge" type="checkbox"
+                                           name="applied_charge" value="{{ c.key }}"
+                                           id="charge_{{ c.key }}">
+                                    <label class="form-check-label" for="charge_{{ c.key }}">
+                                        {{ c.label }} &mdash; ₹{{ '{:,.0f}'.format(c.amount) }} / month
+                                    </label>
+                                </div>
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                        <div class="form-text mb-0">
+                            Re-charged for the new term (x plan months). Not applied on a Custom plan.
+                        </div>
+                    </div>
+
+                </div>
+                {% endif %}
+
 
                 <div class="row">
 
@@ -393,91 +470,108 @@ const paidAmount = document.querySelector("input[name='paid_amount']");
 const totalPayableDisplay = document.getElementById("total_payable_display");
 const totalPayableInput = document.getElementById("total_payable_input");
 const pendingPreview = document.getElementById("pending_preview");
+const shiftSlot = document.getElementById("shift_slot_id");          // may be null
+const nightHoursGroup = document.getElementById("night_hours_group");
+const nightHours = document.getElementById("night_hours");
+const extraChargeBoxes = Array.from(document.querySelectorAll(".extra-charge"));
 
-// Sourced from Settings > Membership Settings (database/membership_settings_queries.py)
-// instead of hardcoded here, so an admin's configured plan days/fees are what
-// actually get applied when renewing a membership. No admission fee here --
-// that's a one-time new-admission charge applied only on Create.
+// All sourced from Settings; the server (routes/membership.py's renew())
+// recomputes every figure and ignores what the form posts (except the
+// Custom total). No registration / deposit on renewal - only the recurring
+// charges (seat / locker) are re-charged.
 const planPricing = {{ plan_pricing | tojson }};
+const planMonths = {{ plan_months | tojson }};
+const chargeConfig = {{ charge_config | tojson }};
 
 function calculateEndDate(){
-
     if(joiningDate.value && duration.value){
-
         let start = new Date(joiningDate.value);
-
-        start.setDate(
-            start.getDate() + parseInt(duration.value)
-        );
-
-        endDate.value =
-            start.toISOString().split("T")[0];
-
+        start.setDate(start.getDate() + parseInt(duration.value));
+        endDate.value = start.toISOString().split("T")[0];
     }
-
 }
 
-// Total Payable is authoritative from the server (routes/membership.py's
-// renew() recomputes it independently and ignores total_payable_input's
-// value except when plan is Custom) - this display just previews what
-// will be charged before submitting.
-function updateTotalPayable(){
+function currentMonths(){
+    return planMonths[plan.value] || 1;
+}
 
+function selectedSlotOption(){
+    if(!shiftSlot || !shiftSlot.value) return null;
+    return shiftSlot.options[shiftSlot.selectedIndex];
+}
+
+function baseFee(){
     if(plan.value === "Custom"){
+        return parseFloat(totalPayableInput.value) || 0;
+    }
+    const opt = selectedSlotOption();
+    if(opt){
+        if(opt.dataset.night === "1"){
+            return (parseFloat(opt.dataset.rate) || 0) * (parseInt(nightHours.value) || 0);
+        }
+        return (parseFloat(opt.dataset.fee) || 0) * currentMonths();
+    }
+    if(planPricing[plan.value]) return planPricing[plan.value].fee;
+    return 0;
+}
 
-        totalPayableDisplay.classList.add("d-none");
-        totalPayableInput.classList.remove("d-none");
+function chargesTotal(){
+    if(plan.value === "Custom") return 0;
+    const months = currentMonths();
+    let sum = 0;
+    (chargeConfig || []).forEach(function(c){
+        if(!c.amount || c.amount <= 0) return;
+        const box = document.getElementById("charge_" + c.key);
+        const apply = c.compulsory || (box && box.checked);
+        if(apply) sum += c.recurring ? c.amount * months : c.amount;
+    });
+    return sum;
+}
 
-    }else if(planPricing[plan.value]){
+function updateTotalPayable(){
+    const isCustom = plan.value === "Custom";
 
-        const total = planPricing[plan.value].fee;
+    totalPayableDisplay.classList.toggle("d-none", isCustom);
+    totalPayableInput.classList.toggle("d-none", !isCustom);
 
-        totalPayableDisplay.classList.remove("d-none");
-        totalPayableInput.classList.add("d-none");
+    const total = isCustom ? baseFee() : baseFee() + chargesTotal();
+    totalPayableDisplay.value = total;
+    if(!isCustom) totalPayableInput.value = total;
 
-        totalPayableDisplay.value = total;
-        totalPayableInput.value = total;
-
+    if(nightHoursGroup){
+        const opt = selectedSlotOption();
+        nightHoursGroup.classList.toggle("d-none", !(opt && opt.dataset.night === "1"));
     }
 
     updatePendingPreview();
-
 }
 
 function updatePendingPreview(){
-
-    const visibleTotalInput = plan.value === "Custom" ? totalPayableInput : totalPayableDisplay;
-    const total = parseFloat(visibleTotalInput.value) || 0;
+    const isCustom = plan.value === "Custom";
+    const total = parseFloat(isCustom ? totalPayableInput.value : totalPayableDisplay.value) || 0;
     const paid = parseFloat(paidAmount.value) || 0;
-
     pendingPreview.value = Math.max(total - paid, 0);
-
 }
 
 plan.addEventListener("change", function(){
-
     if(plan.value !== "Custom" && planPricing[plan.value]){
-
         duration.value = planPricing[plan.value].days;
-
     }else{
-
         duration.value = "";
-
     }
-
     updateTotalPayable();
     calculateEndDate();
-
 });
 
 joiningDate.addEventListener("change", calculateEndDate);
-
 duration.addEventListener("input", calculateEndDate);
-
 paidAmount.addEventListener("input", updatePendingPreview);
-
 totalPayableInput.addEventListener("input", updatePendingPreview);
+if(shiftSlot) shiftSlot.addEventListener("change", updateTotalPayable);
+if(nightHours) nightHours.addEventListener("input", updateTotalPayable);
+extraChargeBoxes.forEach(function(box){ box.addEventListener("change", updateTotalPayable); });
+
+updateTotalPayable();
 
 </script>
 

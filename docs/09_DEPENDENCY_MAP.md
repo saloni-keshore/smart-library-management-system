@@ -77,7 +77,14 @@ routes/membership.py           → database.supabase_client.get_supabase_client 
                                   now Supabase-backed since create() is its only caller, ADR-20 —
                                   get_plan_pricing, get_admission_fee - added 2026-07-21 - TD-6/TD-7;
                                   promote_student_if_fully_paid - added 2026-08-30, ADR-61 - create() calls it
-                                  after the membership insert + payment to flip a fully-paid 'Pending' student to 'Active')
+                                  after the membership insert + payment to flip a fully-paid 'Pending' student to 'Active';
+                                  split_payment_across_buckets, compute_slot_charge, resolve_slot_bucket,
+                                  PLAN_MONTHS - added 2026-09-02, ADR-65/66)
+                                → database.shift_slots_queries.get_shift_slots (added 2026-09-02, ADR-65)
+                                → database.membership_charges_queries (get_charge_config, get_membership_charges,
+                                  insert_membership_charges, mark_charge_refunded, ChargeTableUnavailable -
+                                  added 2026-09-02, ADR-66)
+                                → database.cashbook_queries.insert_transaction (refund_charge() - added 2026-09-02, ADR-66)
                                 (as of 2026-07-24, ADR-29: no database.db.get_connection dependency left at all -
                                   create()/renew()'s SQLite mirror-writes were removed outright)
 routes/payment.py              → database.supabase_client.get_supabase_client   (memberships table, Supabase/
@@ -173,6 +180,11 @@ database/membership_settings_queries.py → database.supabase_client.get_supabas
 database/membership_queries.py → database.supabase_client.get_supabase_client only (as of 2026-07-23, ADR-23 —
                                   this module has no SQLite dependency left at all; get_membership_counts()
                                   moved to Supabase, joining get_active_membership() which already was, ADR-20)
+database/shift_slots_queries.py → database.supabase_client.get_supabase_client, database.id_sequence.insert_with_next_id,
+                                  database.membership_queries.resolve_slot_bucket, database.settings_queries._now_iso
+                                  (new 2026-09-02, ADR-65)
+database/membership_charges_queries.py → database.supabase_client.get_supabase_client,
+                                  database.membership_queries._is_undefined_column_error (new 2026-09-02, ADR-66)
 database/payment_queries.py    → database.cashbook_queries.insert_income_entry (added 2026-07-22 - see TD-22, ADR-13)
                                 → database.membership_queries.get_admin_students (added ADR-25 -
                                   get_payments_for_admin())

@@ -146,6 +146,20 @@ This has had **three distinct real causes** found across two sessions — don't 
 **Cause, since 2026-08-17 (ADR-46):** a real discount was entered, but `memberships.discount_amount`/`discount_reason` don't exist yet on this Supabase project — same hard-fail reasoning as the admission-fee message above (a discount is real money the student was actually charged less; silently dropping it would lose the only record of why while still charging the discounted price).
 **Fix:** run `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION DEFAULT 0, ADD COLUMN IF NOT EXISTS discount_reason TEXT;` once in the Supabase SQL Editor (see `database/supabase_migration.sql`), or create the membership without a discount for now.
 
+## The "Shift (time window)" dropdown or the "Extra Charges" box doesn't appear on Create/Renew Membership
+
+**Cause, since 2026-09-02 (ADR-65/66):** the `shift_slots` / `membership_charges` tables (and the new `membership_settings` columns) haven't been created on this Supabase project yet — this app has no DDL path (ADR-14), so they need running by hand. `database/shift_slots_queries.py` returns `[]` for a missing table, so the dropdown is simply hidden and the fixed Monthly/Quarterly/… plans keep working; `get_charge_config()` returns all-zero amounts, so no charge is offered.
+**Fix:** run the `CREATE TABLE shift_slots …`, `CREATE TABLE membership_charges …`, and the three `ALTER TABLE` blocks from `database/supabase_migration.sql` (dated 2026-09-02) once in the Supabase SQL Editor, then add slots in Settings → Shift Slots and amounts in Settings → Membership Settings. See TD-89 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+
+## "Seat / locker / deposit charges aren't available yet on this system" when creating a membership
+
+**Cause, since 2026-09-02 (ADR-66):** a compulsory or ticked extra charge has a real non-zero amount configured, but the `membership_charges` table doesn't exist yet on this project. Like the admission-fee/discount messages above, this hard-fails rather than silently dropping the charge (it's money folded into `total_fee`) — the just-inserted membership row is deleted so nothing is half-saved.
+**Fix:** create the `membership_charges` table (see above), or set the extra-charge amounts to ₹0 / mark them Optional and don't tick them for now.
+
+## The security-deposit "Refund" button on the student page does nothing / "That charge cannot be refunded"
+
+**Cause:** the refund only applies to a `membership_charges` row that is `refundable` (the Security Deposit) and not already refunded. If the membership predates ADR-66, or was sold with no deposit, there is no row to refund. A refund writes a Cashbook **Expense** (`Security Deposit Refund`) and stamps `refunded_on`; it deliberately does **not** change the membership's `total_fee`/`paid`/`pending` (TD-87).
+
 ## How do I delete / remove a student? An Inactive student still shows in the list
 
 **By design:** there is no delete-student action. To retire a student, open **Edit Student → Status → Inactive**. Since 2026-08-30 (ADR-60) this:

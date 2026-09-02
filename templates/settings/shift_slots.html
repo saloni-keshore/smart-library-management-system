@@ -1,0 +1,315 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Shift Slots{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 settings-page">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Shift Slots</h2>
+            <p class="text-muted mb-0">
+                Time-window shifts a membership can be sold on. The
+                Morning / Afternoon / Evening / Night bucket is worked out
+                from the start time (leave the bucket on <em>Auto</em>);
+                override it only for a slot with no single start time.
+            </p>
+        </div>
+        <a href="{{ url_for('setting.index') }}" class="btn btn-secondary rounded-3">
+            <i class="bi bi-arrow-left"></i> Back to Settings
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <h5 class="text-primary mb-3">How the shift buckets work</h5>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-2" style="max-width: 32rem;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Bucket</th>
+                            <th>Start time falls between</th>
+                            <th class="text-end">Window length</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for w in bucket_windows %}
+                        <tr>
+                            <td><span class="badge bg-secondary-subtle text-secondary">{{ w.bucket }}</span></td>
+                            <td>{{ w.start }} &ndash; {{ w.end }}{% if w.bucket == 'Night' %} (past midnight){% endif %}</td>
+                            <td class="text-end">{{ w.span_hours }} hrs</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="text-muted small mb-0">
+                A slot's <strong>bucket</strong> comes from when it starts, not how long it
+                runs &mdash; a 7-hour slot starting 7AM is Morning, a 7-hour slot starting
+                4PM is Evening. Each slot's own length (end &minus; start) is shown in the
+                Hours column below. Leave <em>Bucket</em> on <em>Auto</em> unless a slot has
+                no single start time (a split or any-time slot).
+            </p>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <h5 class="text-primary mb-3" id="slotFormTitle">Add a shift slot</h5>
+
+            <form method="POST" id="slotForm"
+                  action="{{ url_for('setting.shift_slots') }}">
+                <input type="hidden" name="slot_id" id="slot_id" value="">
+
+                <div class="row g-3">
+                    <div class="col-lg-4 col-md-6">
+                        <label class="form-label">Slot name</label>
+                        <input class="form-control" type="text" name="name" id="f_name"
+                               placeholder="e.g. 7AM-2PM" required>
+                    </div>
+                    <div class="col-lg-2 col-md-3">
+                        <label class="form-label">Start time</label>
+                        <input class="form-control" type="time" name="start_time" id="f_start">
+                        <div class="form-text">Blank = any time / Full Day</div>
+                    </div>
+                    <div class="col-lg-2 col-md-3">
+                        <label class="form-label">End time</label>
+                        <input class="form-control" type="time" name="end_time" id="f_end">
+                    </div>
+                    <div class="col-lg-2 col-md-6">
+                        <label class="form-label">Hours</label>
+                        <select class="form-select" name="hours_label" id="f_hours">
+                            {% for h in hours_labels %}
+                            <option value="{{ h }}">{{ h }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-md-6">
+                        <label class="form-label">Bucket</label>
+                        <select class="form-select" name="time_bucket" id="f_bucket">
+                            <option value="">Auto (from start time)</option>
+                            <option value="Morning">Morning</option>
+                            <option value="Afternoon">Afternoon</option>
+                            <option value="Evening">Evening</option>
+                            <option value="Night">Night</option>
+                            <option value="Full Day">Full Day</option>
+                        </select>
+                    </div>
+
+                    <div class="col-lg-3 col-md-6">
+                        <label class="form-label">Monthly fee (₹)</label>
+                        <input class="form-control" type="number" min="0" step="0.01"
+                               name="monthly_fee" id="f_fee" value="0">
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <div class="form-check form-switch mt-4 pt-1">
+                            <input class="form-check-input" type="checkbox"
+                                   name="is_night_hourly" id="f_night">
+                            <label class="form-check-label" for="f_night">
+                                Bill per hour (night)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <label class="form-label">Night hourly rate (₹)</label>
+                        <input class="form-control" type="number" min="0" step="0.01"
+                               name="night_hourly_rate" id="f_rate" value="0">
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <label class="form-label">Sort order</label>
+                        <input class="form-control" type="number" step="1"
+                               name="sort_order" id="f_sort" value="0">
+                    </div>
+                </div>
+
+                <div class="alert alert-light border py-2 px-3 mt-3 mb-0" id="slot_preview"></div>
+
+                <div class="mt-3">
+                    <button class="btn btn-primary px-4" type="submit" id="slotSubmit">
+                        <i class="bi bi-plus-lg"></i> Add slot
+                    </button>
+                    <button class="btn btn-link" type="button" id="slotCancel" hidden>
+                        Cancel edit
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <h5 class="text-primary mb-3">Configured slots</h5>
+
+            {% if slots %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Name</th>
+                            <th>Window</th>
+                            <th>Hours</th>
+                            <th class="text-end">Monthly fee</th>
+                            <th>Bucket</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in slots %}
+                        <tr {% if not s.active %}class="text-muted"{% endif %}>
+                            <td class="fw-semibold">{{ s.name }}</td>
+                            <td>
+                                {% if s.start_time %}{{ s.start_time[:5] }} - {{ s.end_time[:5] if s.end_time else '?' }}{% else %}Any time{% endif %}
+                            </td>
+                            <td>
+                                {{ s.hours_label }}
+                                {% if s.span_hours is not none %}<span class="text-muted">&middot; {{ s.span_hours }}h</span>{% endif %}
+                                {% if s.is_night_hourly %}<span class="badge bg-info-subtle text-info">₹{{ '%g'|format(s.night_hourly_rate) }}/hr</span>{% endif %}
+                            </td>
+                            <td class="text-end">₹{{ '{:,.0f}'.format(s.monthly_fee) }}</td>
+                            <td>
+                                <span class="badge bg-secondary-subtle text-secondary">{{ s.resolved_bucket }}</span>
+                                {% if s.time_bucket %}<span class="badge bg-warning-subtle text-warning">override</span>{% endif %}
+                            </td>
+                            <td>{{ 'Active' if s.active else 'Disabled' }}</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-primary edit-slot"
+                                    data-slot='{{ s | tojson }}'>Edit</button>
+                                <form method="POST" class="d-inline"
+                                      action="{{ url_for('setting.shift_slot_toggle', slot_id=s.slot_id) }}">
+                                    <button class="btn btn-sm btn-outline-secondary" type="submit">
+                                        {{ 'Disable' if s.active else 'Enable' }}
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-light border mb-0">
+                No shift slots yet. Add one above, or leave this empty to keep
+                selling on the fixed Monthly / Quarterly / … plans.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById('slotForm');
+    var title = document.getElementById('slotFormTitle');
+    var submit = document.getElementById('slotSubmit');
+    var cancel = document.getElementById('slotCancel');
+    var preview = document.getElementById('slot_preview');
+    var fStart = document.getElementById('f_start');
+    var fEnd = document.getElementById('f_end');
+    var fBucket = document.getElementById('f_bucket');
+    var fNight = document.getElementById('f_night');
+    var createAction = "{{ url_for('setting.shift_slots') }}";
+    var editActionTpl = "{{ url_for('setting.shift_slot_edit', slot_id=0) }}";
+
+    // Same start-time -> bucket windows the server derives from
+    // (database/membership_queries.py's _BUCKET_BOUNDS / describe_time_buckets).
+    var bucketWindows = {{ bucket_windows | tojson }};
+
+    function toMin(hhmm) {
+        var m = /^(\d{1,2}):(\d{2})/.exec(hhmm || '');
+        return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null;
+    }
+
+    function spanHours(startStr, endStr) {
+        var lo = toMin(startStr), hi = toMin(endStr);
+        if (lo === null || hi === null) return null;
+        var span = ((hi - lo) % 1440 + 1440) % 1440;
+        return span ? Math.round(span / 6) / 10 : 24;
+    }
+
+    // Mirrors resolve_slot_bucket(): explicit override, then no start time,
+    // then the night-hourly switch, then derive from the start-time window.
+    function deriveBucket(startStr) {
+        var m = toMin(startStr);
+        if (m === null) return 'Full Day';
+        for (var i = 0; i < bucketWindows.length; i++) {
+            var w = bucketWindows[i];
+            if (w.bucket === 'Night') continue;
+            if (m >= toMin(w.start) && m < toMin(w.end)) return w.bucket;
+        }
+        return 'Night';
+    }
+
+    function updatePreview() {
+        var startStr = fStart.value, endStr = fEnd.value;
+        var override = fBucket.value;
+        var bucket, suffix = '';
+        if (override) { bucket = override; suffix = ' (override)'; }
+        else if (!toMin(startStr)) bucket = 'Full Day';
+        else if (fNight.checked) bucket = 'Night';
+        else bucket = deriveBucket(startStr);
+
+        var parts = [];
+        if (!toMin(startStr)) {
+            parts.push('Any time');
+        } else {
+            var h = spanHours(startStr, endStr);
+            if (h !== null) parts.push('Runs ~' + h + 'h');
+        }
+        parts.push('lands in ' + bucket + suffix);
+        preview.textContent = parts.join(' · ');
+    }
+
+    [fStart, fEnd, fBucket].forEach(function (el) {
+        el.addEventListener('input', updatePreview);
+        el.addEventListener('change', updatePreview);
+    });
+    fNight.addEventListener('change', updatePreview);
+
+    function resetForm() {
+        form.reset();
+        document.getElementById('slot_id').value = '';
+        form.action = createAction;
+        title.textContent = 'Add a shift slot';
+        submit.innerHTML = '<i class="bi bi-plus-lg"></i> Add slot';
+        cancel.hidden = true;
+        updatePreview();
+    }
+
+    cancel.addEventListener('click', resetForm);
+
+    document.querySelectorAll('.edit-slot').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var s = JSON.parse(btn.getAttribute('data-slot'));
+            document.getElementById('slot_id').value = s.slot_id;
+            document.getElementById('f_name').value = s.name || '';
+            fStart.value = s.start_time ? s.start_time.slice(0, 5) : '';
+            fEnd.value = s.end_time ? s.end_time.slice(0, 5) : '';
+            document.getElementById('f_hours').value = s.hours_label || 'Custom';
+            fBucket.value = s.time_bucket || '';
+            document.getElementById('f_fee').value = s.monthly_fee || 0;
+            fNight.checked = !!s.is_night_hourly;
+            document.getElementById('f_rate').value = s.night_hourly_rate || 0;
+            document.getElementById('f_sort').value = s.sort_order || 0;
+            form.action = editActionTpl.replace('/0/edit', '/' + s.slot_id + '/edit');
+            title.textContent = 'Edit shift slot';
+            submit.innerHTML = '<i class="bi bi-check-lg"></i> Save changes';
+            cancel.hidden = false;
+            updatePreview();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    });
+
+    updatePreview();
+}());
+</script>
+{% endblock %}

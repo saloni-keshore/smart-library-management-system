@@ -63,7 +63,9 @@ def get_library_settings(admin_id):
     return _normalize_timestamps(dict(response.data[0]))
 
 
-_CAPACITY_FIELDS = ("morning_capacity", "afternoon_capacity", "evening_capacity")
+_CAPACITY_FIELDS = (
+    "morning_capacity", "afternoon_capacity", "evening_capacity", "night_capacity"
+)
 
 
 _UNDEFINED_COLUMN_ERROR_CODES = {
@@ -150,6 +152,7 @@ def create_library_settings(admin_id, data):
         "morning_capacity": data["morning_capacity"],
         "afternoon_capacity": data["afternoon_capacity"],
         "evening_capacity": data["evening_capacity"],
+        "night_capacity": data["night_capacity"],
     })
 
 
@@ -182,6 +185,7 @@ def update_library_settings(admin_id, data):
         "morning_capacity": data["morning_capacity"],
         "afternoon_capacity": data["afternoon_capacity"],
         "evening_capacity": data["evening_capacity"],
+        "night_capacity": data["night_capacity"],
         "updated_at": _now_iso(),
     })
 

@@ -604,21 +604,48 @@ def get_avg_revenue_per_student(admin_id):
 # Purpose Analytics, which deliberately counts every student ever admitted.
 # ---------------------------------------------------------------------------
 
-CANONICAL_SHIFTS = ["Morning", "Afternoon", "Evening"]
+# "Night" became a real 4th canonical shift with ADR-65's time-window slots
+# (a genuinely sellable night shift, with its own library_settings.night_
+# capacity). "Full Day" is a bucket a membership can occupy but is NOT a
+# capacity-bearing shift - a Full Day member sits in a seat across every
+# window - so it's tallied like OTHER_SHIFT_LABEL: counted in the totals,
+# never against a single shift's utilization %.
+CANONICAL_SHIFTS = ["Morning", "Afternoon", "Evening", "Night"]
 OTHER_SHIFT_LABEL = "Other"
+FULL_DAY_LABEL = "Full Day"
 DEFAULT_SHIFT_CAPACITY = 50
 
-_SHIFT_ALIASES = {"MORNING": "Morning", "AFTERNOON": "Afternoon", "EVENING": "Evening"}
+_SHIFT_ALIASES = {
+    "MORNING": "Morning", "AFTERNOON": "Afternoon",
+    "EVENING": "Evening", "NIGHT": "Night",
+}
+
+# Buckets a membership's ADR-65 time_bucket snapshot may name directly.
+_OCCUPANCY_BUCKETS = set(CANONICAL_SHIFTS) | {FULL_DAY_LABEL}
 
 
 def _canonical_shift(value):
     """Maps a student's normalize_category()'d shift ("MORNING", ...) to
     its display label. Anything else (blank, or a free-text value like
-    "FULL DAY" that predates students/edit.html's 3-option dropdown) is
-    bucketed under OTHER_SHIFT_LABEL rather than mis-tallied into one of
-    the 3 canonical shifts or crashing."""
+    "FULL DAY" that predates students/edit.html's dropdown) is bucketed
+    under OTHER_SHIFT_LABEL rather than mis-tallied into a canonical shift
+    or crashing."""
 
     return _SHIFT_ALIASES.get((value or "").strip().upper(), OTHER_SHIFT_LABEL)
+
+
+def _membership_bucket(m):
+    """The shift a membership occupies for Occupancy Analytics: its ADR-65
+    `time_bucket` snapshot when the membership was sold on a shift slot,
+    otherwise the student's free-text `shift` bucketed the old way. A
+    snapshot value that isn't a recognised bucket falls back to "Other"."""
+
+    bucket = (m.get("time_bucket") or "").strip()
+    if bucket in _OCCUPANCY_BUCKETS:
+        return bucket
+    if bucket:
+        return OTHER_SHIFT_LABEL
+    return _canonical_shift(m.get("shift"))
 
 
 def get_shift_capacities(admin_id):
@@ -634,6 +661,7 @@ def get_shift_capacities(admin_id):
         "Morning": settings.get("morning_capacity") or DEFAULT_SHIFT_CAPACITY,
         "Afternoon": settings.get("afternoon_capacity") or DEFAULT_SHIFT_CAPACITY,
         "Evening": settings.get("evening_capacity") or DEFAULT_SHIFT_CAPACITY,
+        "Night": settings.get("night_capacity") or DEFAULT_SHIFT_CAPACITY,
     }
 
 
@@ -657,14 +685,15 @@ def get_active_memberships(admin_id):
 
 
 def get_shift_occupancy(admin_id):
-    """Occupied-seat count per canonical shift (+ "Other"), from the
-    currently active-membership population."""
+    """Occupied-seat count per canonical shift (+ "Full Day" + "Other"),
+    from the currently active-membership population."""
 
     occupied = {shift: 0 for shift in CANONICAL_SHIFTS}
+    occupied[FULL_DAY_LABEL] = 0
     occupied[OTHER_SHIFT_LABEL] = 0
 
     for m in get_active_memberships(admin_id):
-        occupied[_canonical_shift(m.get("shift"))] += 1
+        occupied[_membership_bucket(m)] += 1
 
     return occupied
 
@@ -690,10 +719,11 @@ def get_occupancy_summary(admin_id):
         })
 
     total_capacity = sum(capacities.values())
-    total_occupied = sum(occupied.values())  # includes "Other"
+    total_occupied = sum(occupied.values())  # includes "Full Day" + "Other"
 
     return {
         "shifts": shifts,
+        "fullday_occupied": occupied[FULL_DAY_LABEL],
         "other_occupied": occupied[OTHER_SHIFT_LABEL],
         "total_capacity": total_capacity,
         "total_occupied": total_occupied,
@@ -736,13 +766,15 @@ def get_purpose_shift_matrix(admin_id):
     active = get_active_memberships(admin_id)
 
     columns = list(CANONICAL_SHIFTS)
-    if any(_canonical_shift(m.get("shift")) == OTHER_SHIFT_LABEL for m in active):
+    if any(_membership_bucket(m) == FULL_DAY_LABEL for m in active):
+        columns.append(FULL_DAY_LABEL)
+    if any(_membership_bucket(m) == OTHER_SHIFT_LABEL for m in active):
         columns.append(OTHER_SHIFT_LABEL)
 
     matrix = {}
     for m in active:
         purpose = (m.get("purpose") or "").strip() or NO_PURPOSE_LABEL
-        shift = _canonical_shift(m.get("shift"))
+        shift = _membership_bucket(m)
         row = matrix.setdefault(purpose, {col: 0 for col in columns})
         row[shift] += 1
 

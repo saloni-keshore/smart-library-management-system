@@ -15,6 +15,12 @@ AUTO_CATEGORIES = [
     "Admission Fee",
     "Membership Fee",
     "Membership Renewal",
+    # Membership extra charges (ADR-66) - created only by record_payment()'s
+    # per-component split when a membership is sold/renewed with the matching
+    # charge applied. Never manually enterable, same as the three above.
+    "Seat Reservation",
+    "Locker",
+    "Security Deposit",
 ]
 
 MANUAL_INCOME_CATEGORIES = [
@@ -36,6 +42,10 @@ MANUAL_EXPENSE_CATEGORIES = [
     "Stationery",
     "Tea & Snacks",
     "Other Expenses",
+    # Returned to a member when their refundable Security Deposit (ADR-66) is
+    # given back - written by routes/membership.py's refund_charge() via
+    # insert_transaction(), and manually enterable too.
+    "Security Deposit Refund",
 ]
 
 ALL_CATEGORIES = AUTO_CATEGORIES + MANUAL_INCOME_CATEGORIES + MANUAL_EXPENSE_CATEGORIES

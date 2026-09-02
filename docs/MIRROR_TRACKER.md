@@ -47,6 +47,8 @@ As of ADR-24 (2026-07-24), these four tables are **not** tracked as mirrors belo
 
 This closed 4 of the `admins` bridge's original 7 FK dependents in one slice — see that section below.
 
+The tables added after the SQLite era — `ai_center_settings`, `panda_conversations`/`panda_messages`, and (2026-09-02, ADR-65/66) `shift_slots` and `membership_charges` — never had a SQLite mirror and never will; there is no live SQLite schema left to mirror into. They are Supabase-only from creation.
+
 ## Summary
 
 | Mirror table | Source of truth since | Readers remaining | FK dependents still requiring it | Status |

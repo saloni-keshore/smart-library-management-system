@@ -31,6 +31,7 @@ from database.bi_queries import (
     get_occupancy_insights,
     CANONICAL_SHIFTS,
     OTHER_SHIFT_LABEL,
+    FULL_DAY_LABEL,
 )
 
 business_intelligence_bp = Blueprint(
@@ -381,15 +382,18 @@ def _revenue_analytics_data(admin_id):
 
 
 SHIFT_TIME_LABELS = {
-    "Morning": "7:00 AM - 2:00 PM",
-    "Afternoon": "2:00 PM - 8:00 PM",
-    "Evening": "8:00 PM - 11:00 PM",
+    "Morning": "5:00 AM - 12:00 PM",
+    "Afternoon": "12:00 PM - 4:00 PM",
+    "Evening": "4:00 PM - 9:00 PM",
+    "Night": "9:00 PM - 5:00 AM",
 }
 
 SHIFT_COLORS = {
     "Morning": "#2563eb",
     "Afternoon": "#f59e0b",
     "Evening": "#7c3aed",
+    "Night": "#0f766e",
+    FULL_DAY_LABEL: "#475569",
     OTHER_SHIFT_LABEL: "#64748b",
 }
 
@@ -424,10 +428,14 @@ def _occupancy_analytics_data(admin_id):
     distribution_labels = [s["name"] for s in shifts]
     distribution_data = [s["occupied"] for s in shifts]
     distribution_colors = [SHIFT_COLORS[s["name"]] for s in shifts]
-    if summary["other_occupied"] > 0:
-        distribution_labels.append(OTHER_SHIFT_LABEL)
-        distribution_data.append(summary["other_occupied"])
-        distribution_colors.append(SHIFT_COLORS[OTHER_SHIFT_LABEL])
+    for extra_label, extra_count in (
+        (FULL_DAY_LABEL, summary.get("fullday_occupied", 0)),
+        (OTHER_SHIFT_LABEL, summary["other_occupied"]),
+    ):
+        if extra_count > 0:
+            distribution_labels.append(extra_label)
+            distribution_data.append(extra_count)
+            distribution_colors.append(SHIFT_COLORS[extra_label])
 
     plan_labels = list(plan_occupancy.keys())
     plan_colors = [PURPOSE_CHART_COLORS[i % len(PURPOSE_CHART_COLORS)] for i in range(len(plan_labels))]
@@ -444,6 +452,7 @@ def _occupancy_analytics_data(admin_id):
             "morning_occupancy_pct": shifts_by_name["Morning"]["utilization_pct"],
             "afternoon_occupancy_pct": shifts_by_name["Afternoon"]["utilization_pct"],
             "evening_occupancy_pct": shifts_by_name["Evening"]["utilization_pct"],
+            "night_occupancy_pct": shifts_by_name["Night"]["utilization_pct"],
             "peak_shift": max(shifts, key=lambda s: s["utilization_pct"])["name"],
         },
         "shifts": shifts,
