@@ -151,6 +151,11 @@ This has had **three distinct real causes** found across two sessions — don't 
 **Cause, since 2026-09-02 (ADR-65/66):** the `shift_slots` / `membership_charges` tables (and the new `membership_settings` columns) haven't been created on this Supabase project yet — this app has no DDL path (ADR-14), so they need running by hand. `database/shift_slots_queries.py` returns `[]` for a missing table, so the dropdown is simply hidden and the fixed Monthly/Quarterly/… plans keep working; `get_charge_config()` returns all-zero amounts, so no charge is offered.
 **Fix:** run the `CREATE TABLE shift_slots …`, `CREATE TABLE membership_charges …`, and the three `ALTER TABLE` blocks from `database/supabase_migration.sql` (dated 2026-09-02) once in the Supabase SQL Editor, then add slots in Settings → Shift Slots and amounts in Settings → Membership Settings. See TD-89 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
 
+## Settings → Shift Slots: the Start / End time box shows a 24-hour picker, not AM/PM
+
+**Cause, since 2026-09-02 (ADR-68):** those are native `<input type="time">` fields. Whether the browser draws a 12-hour (AM/PM) or 24-hour spinner is set by the **browser / operating-system locale**, and the page cannot override it. Nothing is wrong — the Shift Timing Guide, the "e.g. 7:00 AM" helper text, and the auto-detected **Shift Category** / **Duration** fields all use 12-hour terms regardless of what the picker shows, and the value stored is `HH:MM` either way.
+**Fix:** none needed for correctness. To get an AM/PM picker, switch the OS/browser region/time format to one that uses 12-hour time. A locale-independent AM/PM widget is TD-96 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md).
+
 ## "Seat / locker / deposit charges aren't available yet on this system" when creating a membership
 
 **Cause, since 2026-09-02 (ADR-66):** a compulsory or ticked extra charge has a real non-zero amount configured, but the `membership_charges` table doesn't exist yet on this project. Like the admission-fee/discount messages above, this hard-fails rather than silently dropping the charge (it's money folded into `total_fee`) — the just-inserted membership row is deleted so nothing is half-saved.
@@ -172,6 +177,11 @@ This has had **three distinct real causes** found across two sessions — don't 
 
 **Cause (historical, fixed 2026-07-22):** `routes/student.py`'s `edit()` had no `try/except` around its `UPDATE` — setting a mobile number already used by another student of the same admin violates `students`' `UNIQUE(mobile, admin_id)` and raised an unhandled `sqlite3.IntegrityError`. See the "database is locked" entry above for the follow-on effect this had on unrelated requests, and [CHANGELOG.md](CHANGELOG.md) for the fix.
 **If you still see this:** you're on a version of the code from before this fix.
+
+## "This mobile number is already registered / already belongs to X" when I'm sure I used a different number
+
+**Cause (by design, since 2026-08-28, ADR-58; message clarified 2026-09-01, ADR-64):** a phone number identifies exactly one person per library — `routes/enquiries.py`'s `add()`/`edit()` and `routes/student.py`'s `admission()`/`edit()` all block on a match against the **canonical** number, not the name. `utils/normalization.py`'s `clean_mobile()` strips `+91`/spaces/dashes and a leading `0` before comparing, so two numbers that *look* different can canonicalize to the same 10 digits. On the Admission screen specifically, the mobile field is **read-only** — it's inherited from the enquiry you're admitting, not whatever you may have typed elsewhere, so the number that actually gets checked is the one already saved on that enquiry.
+**Fix:** read the flash message — since ADR-64 it names the existing person (with their Student # when they're already admitted) and shows the exact canonical number that collided. Open that record and compare its number with the one you intended. If it's genuinely the same person, use **Renew** / **Log Another Enquiry** from their profile instead of creating a new one. If it's truly a different person, they need their own distinct number — this app does not support two people sharing one phone number (see TD-85 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)). To check your data for existing duplicate/invalid numbers directly, run `python -m database.audit_mobile_identity` (read-only).
 
 ## Downloading a backup gives you more data than expected (historical — fixed 2026-07-25)
 

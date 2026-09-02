@@ -340,17 +340,32 @@ def _fmt_hhmm(minutes):
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
+def _fmt_12h(minutes):
+    """Whole minutes-since-midnight -> a friendly 12-hour "h:MM AM/PM"
+    (e.g. 300 -> "5:00 AM", 1260 -> "9:00 PM"). For the human-readable
+    Shift Timing Guide only; the bucket maths still works in 24h minutes."""
+    minutes %= 24 * 60
+    hour, minute = divmod(minutes, 60)
+    suffix = "AM" if hour < 12 else "PM"
+    return f"{(hour % 12) or 12}:{minute:02d} {suffix}"
+
+
 def describe_time_buckets():
     """The Morning/Afternoon/Evening/Night start-time windows as display
-    rows - `{"bucket", "start", "end", "span_hours"}` - derived from
-    _BUCKET_BOUNDS so a Settings reference can't drift from what
-    derive_time_bucket() actually does. `span_hours` is the width of the
-    window a slot's *start* must fall inside to land in that bucket, not a
-    slot's own running length. Night is the midnight-wrapping remainder from
-    the last boundary's end back round to the first boundary's start."""
+    rows - `{"bucket", "start", "end", "start_12h", "end_12h", "span_hours"}`
+    - derived from _BUCKET_BOUNDS so a Settings reference can't drift from
+    what derive_time_bucket() actually does. `start`/`end` are 24h "HH:MM"
+    (used by the page's client-side mirror of the bucket rule); `start_12h`/
+    `end_12h` are the same instants in friendly 12-hour AM/PM form for the
+    Shift Timing Guide. `span_hours` is the width of the window a slot's
+    *start* must fall inside to land in that bucket, not a slot's own running
+    length. Night is the midnight-wrapping remainder from the last boundary's
+    end back round to the first boundary's start."""
 
     rows = [
-        {"bucket": label, "start": _fmt_hhmm(lo), "end": _fmt_hhmm(hi),
+        {"bucket": label,
+         "start": _fmt_hhmm(lo), "end": _fmt_hhmm(hi),
+         "start_12h": _fmt_12h(lo), "end_12h": _fmt_12h(hi),
          "span_hours": (hi - lo) // 60}
         for lo, hi, label in _BUCKET_BOUNDS
     ]
@@ -360,6 +375,8 @@ def describe_time_buckets():
         "bucket": "Night",
         "start": _fmt_hhmm(night_lo),
         "end": _fmt_hhmm(night_hi),
+        "start_12h": _fmt_12h(night_lo),
+        "end_12h": _fmt_12h(night_hi),
         "span_hours": (24 * 60 - night_lo + night_hi) // 60,
     })
     return rows

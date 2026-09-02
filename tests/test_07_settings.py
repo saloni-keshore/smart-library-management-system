@@ -43,13 +43,15 @@ def test_settings_index_loads(logged_in_client):
 
 def test_shift_slots_page_loads_with_bucket_reference(logged_in_client):
     """Settings > Shift Slots renders (even with the table absent) and shows
-    the 'How the shift buckets work' reference card + the live-hint scaffold
-    (ADR-65 follow-up)."""
+    the 'Shift Timing Guide' (12-hour, generated from describe_time_buckets)
+    + the auto-detect scaffold (ADR-65 / ADR-68 UX pass)."""
     client, admin = logged_in_client
     resp = client.get("/settings/shift-slots")
     assert resp.status_code == 200
-    assert b"How the shift buckets work" in resp.data
-    assert b"05:00" in resp.data and b"21:00" in resp.data   # Morning start, Night start
+    assert b"Shift Timing Guide" in resp.data
+    assert b"5:00 AM" in resp.data and b"9:00 PM" in resp.data   # Morning start, Night start (12h)
+    assert b"05:00" in resp.data and b"21:00" in resp.data       # 24h blob still fed to the JS mirror
+    assert b'id="f_shift_display"' in resp.data                  # auto-filled Shift Category
     assert b'id="slot_preview"' in resp.data
     assert b"var bucketWindows" in resp.data
 
