@@ -17,6 +17,18 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-09-09 — Floating Panda widget no longer covers page-bottom buttons
+
+- **Feature:** Bug fix, not a new feature. `components/panda_widget.html`'s floating button (`.panda-toggle-btn`, `position: fixed; right:24px; bottom:24px`, `z-index: 1055`, loaded globally on every logged-in page via `layouts/base.html`) sits in the same on-screen corner a page's last bottom-right action button lands in once the admin has scrolled down to it — most visibly `templates/memberships/create.html`'s "Save & Continue", which on a short form (no shift slots / no extra charges configured) ends up right at the bottom of the viewport. `.content-wrapper` only had 24px of bottom padding, so that button could render directly underneath the widget's 60px-diameter hit area. A click there was captured by the widget (silently toggling the closed chat panel) instead of submitting the form — no page navigation, no validation tooltip, no error: the admin was simply stuck re-clicking a button that was never actually receiving the click. Reported as "Save & Continue does nothing" while trying to complete a student's membership (student stuck on `Pending`).
+- **Files changed:**
+  - `static/css/style.css` — `.content-wrapper` bottom padding `24px` → `104px` (desktop), and its `@media (max-width:991.98px)` override `16px` → `16px 16px 96px` (mobile) — enough clearance (widget's 24px offset + 60px button + buffer) that no page's trailing content can render underneath the floating widget.
+- **Why:** Direct user report — clicking "Save & Continue" on Create Membership appeared to do nothing.
+- **Database changes:** None.
+- **UI changes:** Every page now has slightly more blank space below its content (global, not membership-page-specific — the widget is loaded on every logged-in page, so the same overlap risk existed everywhere a form's primary button was the last element on a short page).
+- **Future impact:** General fix, not scoped to one page — removes this failure mode for any current or future bottom-right action button. Leaves **TD-97** (see 11_FUTURE_WORK.md): the fix is a fixed padding buffer sized to the widget's current 60px/24px footprint; if the widget's size/position ever changes, this padding must be revisited alongside it, since nothing ties the two together automatically.
+
+---
+
 ## 2026-09-02 — Settings › Shift Slots: enter start/end, the shift is auto-detected (ADR-68)
 
 - **Feature:** UX simplification of the same-day Shift Slots page (ADR-65). The admin now primarily enters just the **Start time** and **End time** of a slot; the page fills in the **Shift Category** (Morning / Afternoon / Evening / Night) from the start time and the **Duration** (end − start) as read-only fields, live as they type. The old always-visible "Bucket" `<select>` is moved into a collapsed **"Exceptional slot? Set the shift manually"** `<details>` panel (same `name="time_bucket"`, same options) for split / full-day / no-single-start-time slots only. A new **"Shift Timing Guide"** card replaces the old "How the shift buckets work" table, showing the four windows in friendly 12-hour AM/PM form (5:00 AM – 12:00 PM → Morning, 12:00 PM – 4:00 PM → Afternoon, 4:00 PM – 9:00 PM → Evening, 9:00 PM – 5:00 AM → Night). The word "bucket" is gone from the visible UI — it's "Shift" / "Shift Category" everywhere the admin looks.
