@@ -17,6 +17,18 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-09-09 — Floating Panda widget: the bottom-padding fix was incomplete, added right-side clearance too
+
+- **Feature:** Bug fix, follow-up to the same-day entry below. The first fix widened `.content-wrapper`'s *bottom* padding, reasoning that the widget only overlapped content once a page was scrolled to its true end. That's only half the picture: `.panda-widget` is `position: fixed; right:24px` with a 60px-diameter button, and `.content-wrapper` had **no right padding at all** — its `width: calc(100% - 248px)` runs flush to the viewport's right edge. Any right-aligned bottom-of-form button (the common `d-flex justify-content-between` "Back" / "Save & Continue" pattern) therefore rendered within ~40px of the true viewport edge, well inside the widget's ~84px horizontal footprint, regardless of exact scroll position — confirmed live on Create Membership, where the widget visibly overlapped the right portion of "Save & Continue" (its arrow icon) even after the bottom-padding fix shipped, and the admin remained stuck.
+- **Files changed:**
+  - `static/css/style.css` — `.content-wrapper` padding `24px 24px 104px` → `24px 100px 104px 24px` (desktop); mobile override `16px 16px 96px` → `16px 88px 96px 16px`. Right-side clearance now comfortably exceeds the widget's footprint (24px offset + 60px button, 16px + 60px on mobile) on both axes, not just vertically.
+- **Why:** Direct user report that "Save & Continue" was still unresponsive after the first fix, with a screenshot showing the widget still overlapping the button's right edge.
+- **Database changes:** None.
+- **UI changes:** Every page's content area is narrower by ~76-88px on the right (global, same reasoning as the bottom-padding change below — the widget loads on every logged-in page).
+- **Future impact:** Closes the actual failure mode; the bottom-padding-only fix below did not. **TD-97** (11_FUTURE_WORK.md) is updated, not resolved — the same "two independently-chosen pixel values" fragility now applies on both axes.
+
+---
+
 ## 2026-09-09 — Floating Panda widget no longer covers page-bottom buttons
 
 - **Feature:** Bug fix, not a new feature. `components/panda_widget.html`'s floating button (`.panda-toggle-btn`, `position: fixed; right:24px; bottom:24px`, `z-index: 1055`, loaded globally on every logged-in page via `layouts/base.html`) sits in the same on-screen corner a page's last bottom-right action button lands in once the admin has scrolled down to it — most visibly `templates/memberships/create.html`'s "Save & Continue", which on a short form (no shift slots / no extra charges configured) ends up right at the bottom of the viewport. `.content-wrapper` only had 24px of bottom padding, so that button could render directly underneath the widget's 60px-diameter hit area. A click there was captured by the widget (silently toggling the closed chat panel) instead of submitting the form — no page navigation, no validation tooltip, no error: the admin was simply stuck re-clicking a button that was never actually receiving the click. Reported as "Save & Continue does nothing" while trying to complete a student's membership (student stuck on `Pending`).

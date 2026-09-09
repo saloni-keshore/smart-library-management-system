@@ -162,7 +162,7 @@
 
     margin-left:248px;
     width:calc(100% - 248px);
-    padding:24px 24px 104px;
+    padding:24px 100px 104px 24px;
     background:#f8fafc;
     min-height:100vh;
 
@@ -1220,7 +1220,7 @@
 
         margin-left:0;
         width:100%;
-        padding:16px 16px 96px;
+        padding:16px 88px 96px 16px;
 
     }
 
