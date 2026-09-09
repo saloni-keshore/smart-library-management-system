@@ -1,6 +1,7 @@
 import secrets
 from datetime import date
 
+import httpx
 from flask import (
     Blueprint,
     render_template,
@@ -13,7 +14,7 @@ from flask import (
 from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
-from database.payment_queries import record_payment, get_payment_id_by_receipt_number
+from database.payment_queries import record_payment
 from database.membership_settings_queries import get_membership_settings
 from database.membership_queries import (
     get_effective_status,
@@ -59,6 +60,54 @@ def _sanitize_int(value):
     try:
         return int(value)
     except (TypeError, ValueError):
+        return None
+
+
+def _fetch_student(supabase, student_id, admin_id):
+    """This admin's student row, or None - shared by create()/renew()."""
+    try:
+        response = (
+            supabase.table("students")
+            .select("*")
+            .eq("student_id", student_id)
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        return response.data[0] if response.data else None
+    except (APIError, httpx.TransportError):
+        return None
+
+
+def _has_existing_membership(supabase, student_id):
+    """True if this student has ever had a membership row - renew()'s guard
+    that Create must run first for a brand-new student."""
+    try:
+        response = (
+            supabase.table("memberships")
+            .select("membership_id")
+            .eq("student_id", student_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(response.data)
+    except (APIError, httpx.TransportError):
+        return False
+
+
+def _latest_membership_shift_slot_id(supabase, student_id):
+    """shift_slot_id off this student's most recent membership row, or None
+    - renew()'s pre-selected shift slot in the form."""
+    try:
+        response = (
+            supabase.table("memberships")
+            .select("shift_slot_id")
+            .eq("student_id", student_id)
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return response.data[0].get("shift_slot_id") if response.data else None
+    except (APIError, httpx.TransportError):
         return None
 
 
@@ -163,17 +212,7 @@ def create(student_id):
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
 
-    try:
-        student_response = (
-            supabase.table("students")
-            .select("*")
-            .eq("student_id", student_id)
-            .eq("admin_id", admin_id)
-            .execute()
-        )
-        student = student_response.data[0] if student_response.data else None
-    except APIError:
-        student = None
+    student = _fetch_student(supabase, student_id, admin_id)
 
     if student is None:
         flash("Student not found.", "danger")
@@ -219,7 +258,17 @@ def create(student_id):
     # short-circuit before creating a second identical membership.
     idempotency_key = request.form.get("idempotency_key") or None
     if idempotency_key:
-        existing_membership = find_membership_by_idempotency_key(idempotency_key)
+        # A dropped connection here (httpx.TransportError, TD-70/TD-99) is
+        # treated the same as the "idempotency_key isn't a column yet"
+        # case find_membership_by_idempotency_key() itself already
+        # degrades to: proceed as if no earlier submission was found. This
+        # dedup check is an invisible safety net (TD-30/ADR-53), not a hard
+        # gate - failing the whole request over it would be worse than
+        # occasionally skipping the duplicate check.
+        try:
+            existing_membership = find_membership_by_idempotency_key(idempotency_key)
+        except httpx.TransportError:
+            existing_membership = None
         if existing_membership is not None:
             flash("This membership was already created.", "info")
             return redirect(url_for("student.view", student_id=student_id))
@@ -340,13 +389,25 @@ def create(student_id):
     pending_amount = total_fee - paid_amount
 
     # membership_id assigned explicitly from Supabase's own MAX (ADR-29).
-    next_id_response = (
-        supabase.table("memberships")
-        .select("membership_id")
-        .order("membership_id", desc=True)
-        .limit(1)
-        .execute()
-    )
+    # Catches httpx.TransportError alongside APIError (TD-70/TD-99): a
+    # transient dropped connection here is not an APIError, and this call
+    # previously had no try/except at all - an unhandled crash, not a
+    # friendly "please try again" flash.
+    try:
+        next_id_response = (
+            supabase.table("memberships")
+            .select("membership_id")
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except (APIError, httpx.TransportError):
+        flash(
+            "Could not create this membership due to a database error. "
+            "Nothing was saved - please try again.",
+            "danger",
+        )
+        return _render()
     new_membership_id = (
         next_id_response.data[0]["membership_id"] + 1
         if next_id_response.data else 1
@@ -391,7 +452,7 @@ def create(student_id):
             "danger",
         )
         return _render()
-    except APIError:
+    except (APIError, httpx.TransportError):
         flash(
             "Could not create this membership due to a database error. "
             "Nothing was saved - please try again.",
@@ -431,6 +492,17 @@ def create(student_id):
             "danger",
         )
         return _render()
+    except (APIError, httpx.TransportError):
+        # Previously uncaught here (TD-70/TD-99) - any other database error
+        # or dropped connection while writing the extra-charge rows must
+        # roll back the membership too, same as ChargeTableUnavailable above.
+        _delete_membership_and_charges(supabase, new_membership_id)
+        flash(
+            "Could not create this membership due to a database error. "
+            "Nothing was saved - please try again.",
+            "danger",
+        )
+        return _render()
 
     receipt_number = None
     payment_id = None
@@ -448,7 +520,7 @@ def create(student_id):
             buckets, old_paid=0, amount=paid_amount
         )
         try:
-            receipt_number = record_payment(
+            receipt_number, payment_id = record_payment(
                 admin_id,
                 membership_id=new_membership_id,
                 student_id=student_id,
@@ -461,8 +533,7 @@ def create(student_id):
                 source="Admission",
                 idempotency_key=f"{idempotency_key}-payment" if idempotency_key else None,
             )
-            payment_id = get_payment_id_by_receipt_number(receipt_number)
-        except APIError:
+        except (APIError, httpx.TransportError):
             _delete_membership_and_charges(supabase, new_membership_id)
             flash(
                 "Could not create this membership due to a database error. "
@@ -497,35 +568,14 @@ def renew(student_id):
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
 
-    try:
-        student_response = (
-            supabase.table("students")
-            .select("*")
-            .eq("student_id", student_id)
-            .eq("admin_id", admin_id)
-            .execute()
-        )
-        student = student_response.data[0] if student_response.data else None
-    except APIError:
-        student = None
+    student = _fetch_student(supabase, student_id, admin_id)
 
     if student is None:
         flash("Student not found.", "danger")
         return redirect(url_for("student.index"))
 
     # Guard: must have at least one existing membership to renew
-    try:
-        existing_response = (
-            supabase.table("memberships")
-            .select("membership_id")
-            .eq("student_id", student_id)
-            .limit(1)
-            .execute()
-        )
-        has_existing = bool(existing_response.data)
-    except APIError:
-        has_existing = False
-
+    has_existing = _has_existing_membership(supabase, student_id)
     if not has_existing:
         flash("No existing membership found. Please create a membership first.", "warning")
         return redirect(url_for("membership.create", student_id=student_id))
@@ -541,20 +591,7 @@ def renew(student_id):
     # ones (seat reservation, locker).
 
     # Pre-select the shift slot the student's latest membership was sold on.
-    prev_slot_id = None
-    try:
-        prev = (
-            supabase.table("memberships")
-            .select("shift_slot_id")
-            .eq("student_id", student_id)
-            .order("membership_id", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if prev.data:
-            prev_slot_id = prev.data[0].get("shift_slot_id")
-    except APIError:
-        prev_slot_id = None
+    prev_slot_id = _latest_membership_shift_slot_id(supabase, student_id)
 
     def _render():
         return render_template(
@@ -576,7 +613,14 @@ def renew(student_id):
     # membership twice or inserting a second new row.
     idempotency_key = request.form.get("idempotency_key") or None
     if idempotency_key:
-        existing_membership = find_membership_by_idempotency_key(idempotency_key)
+        # See create()'s equivalent block above for why a dropped
+        # connection (httpx.TransportError, TD-70/TD-99) here degrades to
+        # "proceed as if no earlier submission was found" instead of
+        # crashing.
+        try:
+            existing_membership = find_membership_by_idempotency_key(idempotency_key)
+        except httpx.TransportError:
+            existing_membership = None
         if existing_membership is not None:
             flash("This membership renewal was already recorded.", "info")
             return redirect(url_for("student.view", student_id=student_id))
@@ -653,14 +697,24 @@ def renew(student_id):
 
     pending_amount = total_fee - paid_amount
 
-    # Same explicit-id bridging as create() (ADR-29).
-    next_id_response = (
-        supabase.table("memberships")
-        .select("membership_id")
-        .order("membership_id", desc=True)
-        .limit(1)
-        .execute()
-    )
+    # Same explicit-id bridging as create() (ADR-29). Catches
+    # httpx.TransportError alongside APIError (TD-70/TD-99) - see create()'s
+    # equivalent block for why.
+    try:
+        next_id_response = (
+            supabase.table("memberships")
+            .select("membership_id")
+            .order("membership_id", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except (APIError, httpx.TransportError):
+        flash(
+            "Could not renew this membership due to a database error. "
+            "Nothing was saved - please try again.",
+            "danger",
+        )
+        return _render()
     new_membership_id = (
         next_id_response.data[0]["membership_id"] + 1
         if next_id_response.data else 1
@@ -715,7 +769,7 @@ def renew(student_id):
                 {"membership_status": "Expired"}
             ).eq("student_id", student_id).eq("membership_status", "Active").execute()
         existing_membership = insert_membership(supabase, membership_row)
-    except APIError:
+    except (APIError, httpx.TransportError):
         _reactivate_previous()
         flash(
             "Could not renew this membership due to a database error. "
@@ -754,6 +808,17 @@ def renew(student_id):
             "danger",
         )
         return _render()
+    except (APIError, httpx.TransportError):
+        # Previously uncaught here (TD-70/TD-99) - see create()'s equivalent
+        # block above.
+        _delete_membership_and_charges(supabase, new_membership_id)
+        _reactivate_previous()
+        flash(
+            "Could not renew this membership due to a database error. "
+            "Nothing was saved - please try again.",
+            "danger",
+        )
+        return _render()
 
     receipt_number = None
     payment_id = None
@@ -768,7 +833,7 @@ def renew(student_id):
         else:
             category = "Membership Renewal"
         try:
-            receipt_number = record_payment(
+            receipt_number, payment_id = record_payment(
                 admin_id,
                 membership_id=new_membership_id,
                 student_id=student_id,
@@ -781,8 +846,7 @@ def renew(student_id):
                 source="Renewal",
                 idempotency_key=f"{idempotency_key}-payment" if idempotency_key else None,
             )
-            payment_id = get_payment_id_by_receipt_number(receipt_number)
-        except APIError:
+        except (APIError, httpx.TransportError):
             _delete_membership_and_charges(supabase, new_membership_id)
             _reactivate_previous()
             flash(

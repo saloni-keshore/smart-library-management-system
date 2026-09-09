@@ -268,29 +268,6 @@ def get_payments_for_admin(admin_id, prefix=None):
     return payments
 
 
-def get_payment_id_by_receipt_number(receipt_number):
-    """Look up the payment_id a receipt_number belongs to.
-
-    record_payment() only ever returned receipt_number (its long-standing
-    return shape, kept as-is here). Callers that need the new payment's ID
-    - to redirect to its receipt page, routes/payment.py's collect() and
-    routes/membership.py's create()/renew() - use this instead of widening
-    record_payment()'s return value. receipt_number is globally unique
-    (enforced by generate_receipt_number()'s uniqueness loop), so this
-    always resolves to at most one row.
-    """
-
-    supabase = get_supabase_client()
-    resp = (
-        supabase.table("payments")
-        .select("payment_id")
-        .eq("receipt_number", receipt_number)
-        .limit(1)
-        .execute()
-    )
-    return resp.data[0]["payment_id"] if resp.data else None
-
-
 def _flag_cashbook_unsynced(supabase, payment_id, admin_id, amount, category):
     """TD-43/ADR-53: insert_income_entry() below failed even after its own
     retry - the payment itself is kept (it's already valid, already
@@ -338,12 +315,27 @@ def record_payment(
     idempotency_key=None
 ):
     """Insert one `payments` row and its matching automatic Cashbook Income
-    entry.
+    entry(ies).
 
-    Returns the generated receipt_number. Caller is still responsible for
-    any membership-row update (paid_amount/pending_amount) and for its own
-    SQLite mirror transaction (`memberships` isn't migrated yet - see
-    docs/MIRROR_TRACKER.md).
+    Returns `(receipt_number, payment_id)` - as of 2026-09-09, callers no
+    longer need a separate get_payment_id_by_receipt_number() lookup to
+    redirect to the new payment's receipt page, since payment_id is already
+    known here (computed below) before this function returns. Caller is
+    still responsible for any membership-row update (paid_amount/
+    pending_amount) and for its own SQLite mirror transaction (`memberships`
+    isn't migrated yet - see docs/MIRROR_TRACKER.md).
+
+    A same-day (2026-09-09) attempt to run this function's independent
+    Supabase calls concurrently (ThreadPoolExecutor) to cut wall-clock time
+    was reverted - see TD-99 in 11_FUTURE_WORK.md for why: it caused a real
+    `httpx.RemoteProtocolError: Server disconnected` (the shared, cached
+    `get_supabase_client()` instance is not configured for concurrent use
+    from multiple threads) and, separately, made insert_income_entry()'s
+    own count/MAX-based id generation collide against *itself* across the
+    concurrent Cashbook writes for one payment, exhausting its 2-attempt
+    retry and flagging a payment `cashbook_synced = False` that should have
+    synced cleanly. Every Supabase call in this function is deliberately
+    sequential.
 
     As of 2026-07-24 (ADR-28), Supabase is the only store - `payment_id` is
     computed explicitly (Supabase `MAX(payment_id) + 1`, the same pattern
@@ -385,7 +377,7 @@ def record_payment(
     if idempotency_key:
         existing = find_payment_by_idempotency_key(idempotency_key)
         if existing is not None:
-            return existing["receipt_number"]
+            return existing["receipt_number"], existing["payment_id"]
 
     receipt_number = generate_receipt_number(admin_id)
 
@@ -428,7 +420,7 @@ def record_payment(
             # inserted this exact idempotency_key (TD-30, ADR-53).
             existing = find_payment_by_idempotency_key(idempotency_key)
             if existing is not None:
-                return existing["receipt_number"]
+                return existing["receipt_number"], existing["payment_id"]
             raise
         if not _is_undefined_column_error(error):
             raise
@@ -443,6 +435,17 @@ def record_payment(
         else [(cat, amt) for cat, amt in category if amt > 0]
     )
 
+    # Deliberately sequential (see this function's docstring, TD-99): each
+    # insert_income_entry() call derives its own reference_id/entry_id from
+    # a live count/MAX query, so running multiple at once against the same
+    # admin's cashbook measurably raises the odds of two calls colliding on
+    # the same values in the same instant - confirmed live (2026-09-09) when
+    # a concurrent version of this loop caused one component's
+    # insert_income_entry() to exhaust both its own retry attempts and fall
+    # back to _flag_cashbook_unsynced() for a payment that should have
+    # synced cleanly. That retry exists for a different concurrent *request*
+    # racing this one, not for this function's own components racing each
+    # other.
     for component_category, component_amount in components:
         cashbook_reference = insert_income_entry(
             admin_id,
@@ -461,4 +464,4 @@ def record_payment(
                 supabase, payment_id, admin_id, component_amount, component_category
             )
 
-    return receipt_number
+    return receipt_number, payment_id

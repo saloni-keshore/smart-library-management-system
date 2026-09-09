@@ -7,6 +7,7 @@ why no SQLite mirror is kept (no other table enforces a foreign key against
 this one).
 """
 
+import httpx
 from postgrest.exceptions import APIError
 
 from database.settings_queries import _now_iso
@@ -42,7 +43,7 @@ def get_membership_settings(admin_id):
             .eq("admin_id", admin_id)
             .execute()
         )
-    except APIError:
+    except (APIError, httpx.TransportError):
         return None
 
     return response.data[0] if response.data else None

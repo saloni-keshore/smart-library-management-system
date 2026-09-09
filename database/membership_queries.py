@@ -14,6 +14,7 @@ docs/11_FUTURE_WORK.md). Everything here is that one definition, reused.
 
 from datetime import date as _date
 
+import httpx
 from postgrest.exceptions import APIError
 
 from database.supabase_client import get_supabase_client
@@ -85,7 +86,7 @@ def get_active_membership(student_id):
             .execute()
         )
         row = response.data[0] if response.data else None
-    except APIError:
+    except (APIError, httpx.TransportError):
         row = None
 
     if row is not None and get_effective_status(row["membership_status"], row["end_date"]) == "Active":

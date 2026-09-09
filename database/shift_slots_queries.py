@@ -14,6 +14,7 @@ the fixed duration plans keep working. Writes let `APIError` propagate for
 routes/setting.py to turn into a clear flash message.
 """
 
+import httpx
 from postgrest.exceptions import APIError
 
 from database.id_sequence import insert_with_next_id
@@ -73,7 +74,7 @@ def get_shift_slots(admin_id, include_inactive=False):
         if not include_inactive:
             query = query.eq("active", 1)
         response = query.execute()
-    except APIError:
+    except (APIError, httpx.TransportError):
         return []
 
     slots = response.data or []

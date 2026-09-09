@@ -1,6 +1,7 @@
 import secrets
 from datetime import datetime
 
+import httpx
 from flask import (
     Blueprint,
     render_template,
@@ -16,7 +17,6 @@ from database.supabase_client import get_supabase_client
 from database.payment_queries import (
     record_payment,
     get_payments_for_admin,
-    get_payment_id_by_receipt_number,
     find_payment_by_idempotency_key,
 )
 from database.membership_queries import (
@@ -115,7 +115,7 @@ def collect(membership_id):
             .execute()
         )
         membership = membership_response.data[0] if membership_response.data else None
-    except APIError:
+    except (APIError, httpx.TransportError):
         membership = None
 
     if membership is None:
@@ -133,7 +133,7 @@ def collect(membership_id):
             .execute()
         )
         student = student_response.data[0] if student_response.data else None
-    except APIError:
+    except (APIError, httpx.TransportError):
         student = None
 
     if student is None:
@@ -212,7 +212,10 @@ def collect(membership_id):
             supabase.table("memberships").update(
                 {"paid_amount": new_paid, "pending_amount": new_pending}
             ).eq("membership_id", membership_id).execute()
-        except APIError:
+        except (APIError, httpx.TransportError):
+            # Catches httpx.TransportError alongside APIError (TD-70/TD-99):
+            # a dropped connection here is not an APIError and, uncaught,
+            # crashes as an unhandled 500 instead of this friendly flash.
             flash(
                 "Could not record this payment due to a database error. "
                 "Nothing was saved - please try again.",
@@ -253,7 +256,7 @@ def collect(membership_id):
         )
 
         try:
-            receipt_number = record_payment(
+            receipt_number, payment_id = record_payment(
                 admin_id,
                 membership_id=membership_id,
                 student_id=student["student_id"],
@@ -266,7 +269,7 @@ def collect(membership_id):
                 source="Payments",
                 idempotency_key=idempotency_key
             )
-        except APIError:
+        except (APIError, httpx.TransportError):
             # Restore Supabase to its pre-payment values so the source of
             # truth doesn't advance ahead of a failed payment write - same
             # revert shape as before ADR-29 removed the SQLite mirror.
@@ -296,7 +299,6 @@ def collect(membership_id):
             f"Payment of ₹{amount:.0f} collected successfully. Receipt No: {receipt_number}",
             "success"
         )
-        payment_id = get_payment_id_by_receipt_number(receipt_number)
         if payment_id:
             return redirect(url_for("payment.receipt", payment_id=payment_id))
         return redirect(url_for("student.view", student_id=student["student_id"]))
@@ -344,7 +346,7 @@ def receipt(payment_id):
             .execute()
         )
         student = student_response.data[0] if student_response.data else None
-    except APIError:
+    except (APIError, httpx.TransportError):
         student = None
 
     if student is None:
