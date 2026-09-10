@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS students (
     shift TEXT,
     join_date DATE,
     status TEXT DEFAULT 'Active',
+    -- 'Regular' (the enquiry -> admission path) or 'Casual' (a walk-in
+    -- registered via routes/student.py's quick_admit(), ADR-71 - paid per
+    -- visit with the "Day Pass" plan). Drives the Students list badge/filter
+    -- and skips the "incomplete admission" banner.
+    student_type TEXT DEFAULT 'Regular',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -85,6 +90,17 @@ CREATE TABLE IF NOT EXISTS students (
     FOREIGN KEY (admin_id) REFERENCES admins(admin_id),
     FOREIGN KEY (enquiry_id) REFERENCES enquiries(enquiry_id)
 );
+
+-- 2026-09-09 (Walk-in / Day Pass, ADR-71): student_type above is new. Same
+-- manual-application requirement as every other post-provisioning column
+-- (ADR-14) - run by hand, once, in the Supabase SQL Editor:
+--
+--   ALTER TABLE students ADD COLUMN IF NOT EXISTS student_type TEXT DEFAULT 'Regular';
+--
+-- Silently degrades if skipped: routes/student.py's quick_admit()/admission()
+-- strip it from the insert and retry (ADR-38 precedent), so every student
+-- just reads as 'Regular' and the Casual badge/filter is inert. Quick Admit
+-- and the Day Pass plan still work. See ADR-71 / TD-102.
 
 
 -- Memberships
@@ -518,6 +534,14 @@ CREATE TABLE IF NOT EXISTS membership_settings (
     locker_compulsory INTEGER NOT NULL DEFAULT 0 CHECK (locker_compulsory IN (0, 1)),
     security_deposit_compulsory INTEGER NOT NULL DEFAULT 1 CHECK (security_deposit_compulsory IN (0, 1)),
 
+    -- Walk-in / Day Pass (ADR-71). day_pass_fee is the flat per-visit charge
+    -- pre-filled when the "Day Pass" plan is picked in Create/Renew
+    -- Membership; day_pass_days is that pass's term (default 1). Editable per
+    -- visit - Day Pass rides the ADR-70 manual_fee path, so a hand-typed
+    -- amount wins.
+    day_pass_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+    day_pass_days INTEGER NOT NULL DEFAULT 1,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(admin_id)
@@ -543,6 +567,17 @@ CREATE TABLE IF NOT EXISTS membership_settings (
 -- get_charge_config() falls back to built-in defaults (all fees 0), so no
 -- charge is ever applied until the columns exist and an admin sets an
 -- amount. See ADR-66.
+--
+-- 2026-09-09 (Walk-in / Day Pass, ADR-71): day_pass_fee / day_pass_days above
+-- are new. Same manual-application requirement:
+--
+--   ALTER TABLE membership_settings
+--     ADD COLUMN IF NOT EXISTS day_pass_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
+--     ADD COLUMN IF NOT EXISTS day_pass_days INTEGER NOT NULL DEFAULT 1;
+--
+-- Same silent degrade: save_membership_settings() strips them and retries, so
+-- until the columns exist the Day Pass plan just pre-fills fee 0 / 1 day and
+-- staff type the amount. See ADR-71 / TD-102.
 
 -- Data & Backup: one row per admin, tracks the last manual backup taken.
 -- Kept separate from library_settings because a backup can be taken before
@@ -643,9 +678,13 @@ CREATE TABLE IF NOT EXISTS panda_messages (
 -- Morning/Afternoon/Evening/Night from start_time"
 -- (database/membership_queries.py's derive_time_bucket), a non-NULL value
 -- is the admin's explicit override. hours_label ('Full Day' | '7' | '4' |
--- 'Night-hourly' | 'Custom') is a price/label hint only - it never affects
--- the bucket. is_night_hourly slots are billed night_hourly_rate x
--- staff-entered hours instead of monthly_fee x plan term.
+-- 'Custom') is a price/label hint only - it never affects the bucket. Every
+-- slot is billed monthly_fee x plan term; for a genuinely hourly / short
+-- visit the operator picks the "Custom hours" shift on Create/Renew instead
+-- (ADR-70), which works for any time of day. (The removed 2026-09-10
+-- is_night_hourly / night_hourly_rate per-hour night toggle - ADR-65's
+-- original design - was redundant once admins could define their own Night
+-- shift and once "Custom hours" existed; see ADR-72.)
 --
 -- NOTE: brand-new table, same manual-application requirement as
 -- ai_center_settings / panda_* above (this app has no DDL path, ADR-14/38/40).
@@ -664,8 +703,6 @@ CREATE TABLE IF NOT EXISTS shift_slots (
     hours_label TEXT NOT NULL DEFAULT 'Custom',
     monthly_fee DOUBLE PRECISION NOT NULL DEFAULT 0,
     time_bucket TEXT,
-    is_night_hourly INTEGER NOT NULL DEFAULT 0 CHECK (is_night_hourly IN (0, 1)),
-    night_hourly_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

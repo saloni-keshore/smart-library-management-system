@@ -21,6 +21,11 @@ AUTO_CATEGORIES = [
     "Seat Reservation",
     "Locker",
     "Security Deposit",
+    # Walk-in / Day Pass (ADR-71) - created only by record_payment() when a
+    # "Day Pass" plan membership is sold/renewed for a Casual student. Never
+    # manually enterable: the student's membership/payment history is the
+    # record, so it can't be double-booked from the Cashbook form.
+    "Day Pass",
 ]
 
 MANUAL_INCOME_CATEGORIES = [

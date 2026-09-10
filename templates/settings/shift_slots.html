@@ -114,20 +114,10 @@
                         <label class="form-label">Monthly fee (₹)</label>
                         <input class="form-control" type="number" min="0" step="0.01"
                                name="monthly_fee" id="f_fee" value="0">
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="form-check form-switch mt-4 pt-1">
-                            <input class="form-check-input" type="checkbox"
-                                   name="is_night_hourly" id="f_night">
-                            <label class="form-check-label" for="f_night">
-                                Bill per hour (night)
-                            </label>
+                        <div class="form-text">
+                            For an hourly / one-off visit, pick "Custom hours" on
+                            Create / Renew instead &mdash; works for any shift.
                         </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <label class="form-label">Night hourly rate (₹)</label>
-                        <input class="form-control" type="number" min="0" step="0.01"
-                               name="night_hourly_rate" id="f_rate" value="0">
                     </div>
                     <div class="col-lg-3 col-md-6">
                         <label class="form-label">Sort order</label>
@@ -202,7 +192,6 @@
                             <td>
                                 {{ s.hours_label }}
                                 {% if s.span_hours is not none %}<span class="text-muted">&middot; {{ s.span_hours }}h</span>{% endif %}
-                                {% if s.is_night_hourly %}<span class="badge bg-info-subtle text-info">₹{{ '%g'|format(s.night_hourly_rate) }}/hr</span>{% endif %}
                             </td>
                             <td class="text-end">₹{{ '{:,.0f}'.format(s.monthly_fee) }}</td>
                             <td>
@@ -245,7 +234,6 @@
     var fStart = document.getElementById('f_start');
     var fEnd = document.getElementById('f_end');
     var fBucket = document.getElementById('f_bucket');
-    var fNight = document.getElementById('f_night');
     var shiftDisplay = document.getElementById('f_shift_display');
     var durationDisplay = document.getElementById('f_duration_display');
     var overrideBox = document.getElementById('slotOverride');
@@ -269,7 +257,8 @@
     }
 
     // Mirrors resolve_slot_bucket(): explicit override, then no start time,
-    // then the night-hourly switch, then derive from the start-time window.
+    // then derive from the start-time window (a >=21:00 / <05:00 start is
+    // Night on its own).
     function deriveBucket(startStr) {
         var m = toMin(startStr);
         if (m === null) return 'Full Day';
@@ -288,7 +277,6 @@
         var bucket, manual = false;
         if (override) { bucket = override; manual = true; }
         else if (!hasStart) bucket = 'Full Day';
-        else if (fNight.checked) bucket = 'Night';
         else bucket = deriveBucket(startStr);
 
         var h = hasStart ? spanHours(startStr, endStr) : null;
@@ -310,7 +298,6 @@
         el.addEventListener('input', updatePreview);
         el.addEventListener('change', updatePreview);
     });
-    fNight.addEventListener('change', updatePreview);
 
     function resetForm() {
         form.reset();
@@ -336,8 +323,6 @@
             fBucket.value = s.time_bucket || '';
             overrideBox.open = !!s.time_bucket;
             document.getElementById('f_fee').value = s.monthly_fee || 0;
-            fNight.checked = !!s.is_night_hourly;
-            document.getElementById('f_rate').value = s.night_hourly_rate || 0;
             document.getElementById('f_sort').value = s.sort_order || 0;
             form.action = editActionTpl.replace('/0/edit', '/' + s.slot_id + '/edit');
             title.textContent = 'Edit shift slot';

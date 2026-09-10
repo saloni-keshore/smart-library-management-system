@@ -92,6 +92,9 @@ MEMBERSHIP_SETTING_FIELDS = {
     "seat_reservation_compulsory": ("Seat Reservation Compulsory", "boolean"),
     "locker_compulsory": ("Locker Compulsory", "boolean"),
     "security_deposit_compulsory": ("Security Deposit Compulsory", "boolean"),
+    # Walk-in / Day Pass (ADR-71)
+    "day_pass_fee": ("Day Pass Fee (per visit)", "currency"),
+    "day_pass_days": ("Day Pass Days", "number"),
 }
 # reminder_days/send_reminders moved to Settings > Notification Settings
 # (library_settings.reminder_*/notify_* columns) - see
@@ -118,6 +121,8 @@ MEMBERSHIP_SETTING_DEFAULTS = {
     "seat_reservation_compulsory": 0,
     "locker_compulsory": 0,
     "security_deposit_compulsory": 1,
+    "day_pass_fee": 0.0,
+    "day_pass_days": 1,
 }
 
 RECEIPT_PREFIX_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,10}$")
@@ -388,6 +393,10 @@ def membership_settings():
                     1 if request.form.get("locker_compulsory") else 0,
                 "security_deposit_compulsory":
                     1 if request.form.get("security_deposit_compulsory") else 0,
+
+                # Walk-in / Day Pass (ADR-71)
+                "day_pass_fee": number("day_pass_fee", 0),
+                "day_pass_days": number("day_pass_days", 1, integer=True),
             }
         except ValueError as error:
             flash(str(error), "danger")
@@ -480,8 +489,6 @@ def _parse_shift_slot_form(form):
         "hours_label": hours_label,
         "monthly_fee": _amount("monthly_fee"),
         "time_bucket": time_bucket,
-        "is_night_hourly": 1 if form.get("is_night_hourly") else 0,
-        "night_hourly_rate": _amount("night_hourly_rate"),
         "sort_order": sort_order,
     }
 

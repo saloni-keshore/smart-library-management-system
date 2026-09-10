@@ -171,6 +171,8 @@ Renew Membership
 
                             <option value="Custom">Custom</option>
 
+                            <option value="Day Pass">Day Pass (walk-in)</option>
+
                         </select>
 
                     </div>
@@ -203,6 +205,7 @@ Renew Membership
 
                         <select class="form-select" id="shift_slot_id" name="shift_slot_id">
                             <option value="">&mdash; None (use plan fee) &mdash;</option>
+                            <option value="custom">&mdash; Custom hours (type the fee below) &mdash;</option>
                             {% for bucket in ['Morning', 'Afternoon', 'Evening', 'Night', 'Full Day'] %}
                                 {% set bucket_slots = shift_slots | selectattr('resolved_bucket', 'equalto', bucket) | list %}
                                 {% if bucket_slots %}
@@ -210,10 +213,8 @@ Renew Membership
                                     {% for s in bucket_slots %}
                                     <option value="{{ s.slot_id }}"
                                             {% if prev_slot_id and s.slot_id == prev_slot_id %}selected{% endif %}
-                                            data-night="{{ 1 if s.is_night_hourly else 0 }}"
-                                            data-fee="{{ s.monthly_fee }}"
-                                            data-rate="{{ s.night_hourly_rate }}">
-                                        {{ s.name }}{% if s.is_night_hourly %} (₹{{ '%g'|format(s.night_hourly_rate) }}/hr){% else %} &mdash; ₹{{ '{:,.0f}'.format(s.monthly_fee) }}/mo{% endif %}
+                                            data-fee="{{ s.monthly_fee }}">
+                                        {{ s.name }} &mdash; ₹{{ '{:,.0f}'.format(s.monthly_fee) }}/mo
                                     </option>
                                     {% endfor %}
                                 </optgroup>
@@ -223,12 +224,14 @@ Renew Membership
 
                     </div>
 
-                    <div class="col-md-3 mb-3 d-none" id="night_hours_group">
+                    <div class="col-md-3 mb-3 d-none" id="custom_hours_group">
 
-                        <label class="form-label fw-bold">Night hours</label>
+                        <label class="form-label fw-bold">Hours</label>
 
                         <input type="number" class="form-control"
-                               id="night_hours" name="night_hours" min="1" value="0">
+                               id="custom_hours" name="custom_hours" min="1" value="1" disabled>
+
+                        <div class="form-text">Length of this custom shift.</div>
 
                     </div>
 
@@ -236,7 +239,7 @@ Renew Membership
                 {% endif %}
 
                 {% if charge_config %}
-                <div class="mb-3">
+                <div class="mb-3" id="extra_charges_card">
 
                     <label class="form-label fw-bold">Extra Charges</label>
 
@@ -471,8 +474,9 @@ const totalPayableDisplay = document.getElementById("total_payable_display");
 const totalPayableInput = document.getElementById("total_payable_input");
 const pendingPreview = document.getElementById("pending_preview");
 const shiftSlot = document.getElementById("shift_slot_id");          // may be null
-const nightHoursGroup = document.getElementById("night_hours_group");
-const nightHours = document.getElementById("night_hours");
+const customHoursGroup = document.getElementById("custom_hours_group");
+const customHours = document.getElementById("custom_hours");
+const extraChargesCard = document.getElementById("extra_charges_card");
 const extraChargeBoxes = Array.from(document.querySelectorAll(".extra-charge"));
 
 // All sourced from Settings; the server (routes/membership.py's renew())
@@ -482,6 +486,9 @@ const extraChargeBoxes = Array.from(document.querySelectorAll(".extra-charge"));
 const planPricing = {{ plan_pricing | tojson }};
 const planMonths = {{ plan_months | tojson }};
 const chargeConfig = {{ charge_config | tojson }};
+// "Day Pass" plan preset (ADR-71) - flat walk-in fee + term from Settings.
+const dayPassFee = {{ day_pass_fee | tojson }};
+const dayPassDays = {{ day_pass_days | tojson }};
 
 function calculateEndDate(){
     if(joiningDate.value && duration.value){
@@ -495,20 +502,30 @@ function currentMonths(){
     return planMonths[plan.value] || 1;
 }
 
+// "Custom hours" in the shift dropdown = a free-hand shift: staff enter the
+// hours and type the fee by hand, exactly like the Custom *plan*'s manual
+// total. routes/membership.py's renew() keys on shift_slot_id == "custom".
+function isCustomShift(){
+    return !!(shiftSlot && shiftSlot.value === "custom");
+}
+
+// True whenever the Total Payable is a hand-typed number rather than derived
+// (Custom plan, Custom-hours shift, or the Day Pass walk-in preset).
+function manualFee(){
+    return plan.value === "Custom" || plan.value === "Day Pass" || isCustomShift();
+}
+
 function selectedSlotOption(){
-    if(!shiftSlot || !shiftSlot.value) return null;
+    if(!shiftSlot || !shiftSlot.value || shiftSlot.value === "custom") return null;
     return shiftSlot.options[shiftSlot.selectedIndex];
 }
 
 function baseFee(){
-    if(plan.value === "Custom"){
+    if(manualFee()){
         return parseFloat(totalPayableInput.value) || 0;
     }
     const opt = selectedSlotOption();
     if(opt){
-        if(opt.dataset.night === "1"){
-            return (parseFloat(opt.dataset.rate) || 0) * (parseInt(nightHours.value) || 0);
-        }
         return (parseFloat(opt.dataset.fee) || 0) * currentMonths();
     }
     if(planPricing[plan.value]) return planPricing[plan.value].fee;
@@ -516,7 +533,7 @@ function baseFee(){
 }
 
 function chargesTotal(){
-    if(plan.value === "Custom") return 0;
+    if(manualFee()) return 0;
     const months = currentMonths();
     let sum = 0;
     (chargeConfig || []).forEach(function(c){
@@ -529,32 +546,43 @@ function chargesTotal(){
 }
 
 function updateTotalPayable(){
-    const isCustom = plan.value === "Custom";
+    const manual = manualFee();
 
-    totalPayableDisplay.classList.toggle("d-none", isCustom);
-    totalPayableInput.classList.toggle("d-none", !isCustom);
+    totalPayableDisplay.classList.toggle("d-none", manual);
+    totalPayableInput.classList.toggle("d-none", !manual);
+    // Extra charges aren't re-charged on a hand-typed total (Custom plan or
+    // Custom-hours shift) - hide the box so it can't look like they will be.
+    if(extraChargesCard) extraChargesCard.classList.toggle("d-none", manual);
 
-    const total = isCustom ? baseFee() : baseFee() + chargesTotal();
+    const total = manual ? baseFee() : baseFee() + chargesTotal();
     totalPayableDisplay.value = total;
-    if(!isCustom) totalPayableInput.value = total;
+    if(!manual) totalPayableInput.value = total;
 
-    if(nightHoursGroup){
-        const opt = selectedSlotOption();
-        nightHoursGroup.classList.toggle("d-none", !(opt && opt.dataset.night === "1"));
+    if(customHoursGroup){
+        const cs = isCustomShift();
+        customHoursGroup.classList.toggle("d-none", !cs);
+        // A hidden-but-enabled <input min="1"> fails HTML5 constraint
+        // validation and silently blocks the whole form submit (the browser
+        // can't focus a display:none field to show a tooltip). Disabling it
+        // bars it from validation and drops it from the POST; the server
+        // reads a missing custom_hours as 0.
+        customHours.disabled = !cs;
     }
 
     updatePendingPreview();
 }
 
 function updatePendingPreview(){
-    const isCustom = plan.value === "Custom";
-    const total = parseFloat(isCustom ? totalPayableInput.value : totalPayableDisplay.value) || 0;
+    const total = parseFloat(manualFee() ? totalPayableInput.value : totalPayableDisplay.value) || 0;
     const paid = parseFloat(paidAmount.value) || 0;
     pendingPreview.value = Math.max(total - paid, 0);
 }
 
 plan.addEventListener("change", function(){
-    if(plan.value !== "Custom" && planPricing[plan.value]){
+    if(plan.value === "Day Pass"){
+        duration.value = dayPassDays;
+        totalPayableInput.value = dayPassFee;   // pre-fill; staff can edit
+    }else if(plan.value !== "Custom" && planPricing[plan.value]){
         duration.value = planPricing[plan.value].days;
     }else{
         duration.value = "";
@@ -568,7 +596,7 @@ duration.addEventListener("input", calculateEndDate);
 paidAmount.addEventListener("input", updatePendingPreview);
 totalPayableInput.addEventListener("input", updatePendingPreview);
 if(shiftSlot) shiftSlot.addEventListener("change", updateTotalPayable);
-if(nightHours) nightHours.addEventListener("input", updateTotalPayable);
+if(customHours) customHours.addEventListener("input", updateTotalPayable);
 extraChargeBoxes.forEach(function(box){ box.addEventListener("change", updateTotalPayable); });
 
 updateTotalPayable();

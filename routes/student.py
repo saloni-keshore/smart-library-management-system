@@ -12,7 +12,11 @@ from flask import (
 from postgrest.exceptions import APIError
 
 from database.id_sequence import insert_with_next_id
-from database.membership_queries import get_memberships_for_admin, get_effective_status
+from database.membership_queries import (
+    get_memberships_for_admin,
+    get_effective_status,
+    _is_undefined_column_error,
+)
 from database.membership_charges_queries import get_membership_charges
 from database.supabase_client import get_supabase_client
 from utils.normalization import (
@@ -99,8 +103,13 @@ def index():
             get_effective_status(m["membership_status"], m["end_date"]) if m else None
         )
 
+        # A Casual walk-in (ADR-71) is registered without an enquiry and may
+        # sit membership-less between visits by design - it must not inflate
+        # the "N admissions incomplete" banner meant for half-done Regular
+        # admissions.
         student["admission_incomplete"] = (
-            student["status"] in ("Pending", "Active")
+            student.get("student_type") != "Casual"
+            and student["status"] in ("Pending", "Active")
             and (
                 student["membership_id"] is None
                 or float(student["pending_amount"] or 0) > 0
@@ -114,6 +123,98 @@ def index():
         students=students,
         incomplete_count=incomplete_count,
     )
+
+
+def _insert_student_row(row):
+    """insert_with_next_id() for `students`, tolerating a live database that
+    doesn't have the ADR-71 `student_type` column yet (TD-102): drop it and
+    retry, the same silent-degrade the settings columns use (ADR-38). Every
+    student then just reads as 'Regular'."""
+    try:
+        return insert_with_next_id("students", "student_id", row)
+    except APIError as error:
+        if "student_type" not in row or not _is_undefined_column_error(error):
+            raise
+        fallback = {k: v for k, v in row.items() if k != "student_type"}
+        return insert_with_next_id("students", "student_id", fallback)
+
+
+@student_bp.route("/quick-admit", methods=["GET", "POST"])
+def quick_admit():
+    """Register a walk-in / short-visit person fast (ADR-71): no enquiry,
+    address / ID proof optional. Creates a 'Casual', 'Pending' student and
+    sends staff to membership.create(), where the Day Pass plan pre-fills the
+    flat per-visit fee. If the mobile is already on file that's a returning
+    visitor - jump to their profile, where Renew lives (ADR-58)."""
+
+    if "admin_id" not in session:
+        return redirect("/")
+
+    admin_id = session["admin_id"]
+    supabase = get_supabase_client()
+
+    if request.method != "POST":
+        return render_template("students/quick_admit.html")
+
+    full_name = normalize_name(request.form.get("full_name", ""))
+    mobile = clean_mobile(request.form.get("mobile", ""))
+    purpose = normalize_category(request.form.get("purpose", "")) or None
+    shift = normalize_category(request.form.get("shift", "")) or None
+
+    if not full_name:
+        flash("Visitor name is required.", "danger")
+        return render_template("students/quick_admit.html", form=request.form)
+    if not mobile:
+        flash("Enter a valid 10-digit mobile number.", "danger")
+        return render_template("students/quick_admit.html", form=request.form)
+
+    # Returning visitor: one mobile == one person (ADR-58). Send staff to the
+    # existing profile - Renew (Day Pass again) is one click from there.
+    try:
+        existing_response = (
+            supabase.table("students")
+            .select("student_id, full_name")
+            .eq("mobile", mobile)
+            .eq("admin_id", admin_id)
+            .execute()
+        )
+        existing = existing_response.data[0] if existing_response.data else None
+    except APIError:
+        existing = None
+
+    if existing is not None:
+        flash(
+            f"{existing['full_name']} (Student #{existing['student_id']}) is already "
+            "on file - use Renew to record this visit.",
+            "info",
+        )
+        return redirect(url_for("student.view", student_id=existing["student_id"]))
+
+    student_row = {
+        "admin_id": admin_id,
+        "enquiry_id": None,
+        "full_name": full_name,
+        "mobile": mobile,
+        "address": "",
+        "id_proof": "",
+        "purpose": purpose,
+        "shift": shift,
+        "join_date": date.today().isoformat(),
+        "status": "Pending",
+        "student_type": "Casual",
+    }
+
+    try:
+        new_student_id = _insert_student_row(student_row)
+    except APIError:
+        flash("Something went wrong. Please try again.", "danger")
+        return render_template("students/quick_admit.html", form=request.form)
+
+    flash(
+        "Walk-in registered. Pick the Day Pass plan below to record the visit.",
+        "success",
+    )
+    return redirect(url_for("membership.create", student_id=new_student_id))
 
 
 @student_bp.route("/admission/<int:enquiry_id>", methods=["GET", "POST"])
@@ -207,8 +308,11 @@ def admission(enquiry_id):
 
         if existing is not None:
             flash(
-                f"{existing['full_name']} is already registered. "
-                "Renew their membership or log another enquiry from their profile.",
+                f"That mobile number ({mobile}) is already registered to "
+                f"{existing['full_name']} (Student #{existing['student_id']}). If this "
+                "is a different person, admit them with their own mobile number; "
+                "otherwise renew this membership or log another enquiry from their "
+                "profile.",
                 "info",
             )
             return redirect(url_for("student.view", student_id=existing["student_id"]))
@@ -398,7 +502,7 @@ def edit(student_id):
         try:
             collision_response = (
                 supabase.table("students")
-                .select("student_id")
+                .select("student_id, full_name")
                 .eq("mobile", mobile)
                 .eq("admin_id", admin_id)
                 .neq("student_id", student_id)
@@ -410,8 +514,9 @@ def edit(student_id):
 
         if collision is not None:
             flash(
-                "Another student already uses that mobile number. "
-                "Please use a different number.",
+                f"That mobile number ({mobile}) already belongs to another student, "
+                f"{collision['full_name']} (Student #{collision['student_id']}). "
+                "A mobile number identifies one person - please use a different number.",
                 "danger"
             )
             return render_template("students/edit.html", student=student)

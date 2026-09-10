@@ -23,6 +23,14 @@ _CHARGE_FIELDS = (
     "locker_compulsory", "security_deposit_compulsory",
 )
 
+# Walk-in / Day Pass (ADR-71) - same silent strip-and-retry as the charge
+# columns above for a project that hasn't run the ALTER yet.
+_DAY_PASS_FIELDS = ("day_pass_fee", "day_pass_days")
+
+# Every optional post-provisioning column - dropped together on an
+# undefined-column error so the base save still succeeds.
+_OPTIONAL_FIELDS = _CHARGE_FIELDS + _DAY_PASS_FIELDS
+
 _UNDEFINED_COLUMN_ERROR_CODES = {"42703", "PGRST204"}
 
 
@@ -82,7 +90,7 @@ def save_membership_settings(admin_id, data):
         "allow_early_renewal": data["allow_early_renewal"],
         "updated_at": _now_iso(),
     }
-    for field in _CHARGE_FIELDS:
+    for field in _OPTIONAL_FIELDS:
         if field in data:
             payload[field] = data[field]
 
@@ -93,9 +101,10 @@ def save_membership_settings(admin_id, data):
     except APIError as error:
         if not _is_undefined_column_error(error):
             raise
-        # ADR-66 charge columns not on this project yet - persist the rest
-        # (ADR-38 precedent); get_charge_config() then keeps returning 0s.
-        fallback = {k: v for k, v in payload.items() if k not in _CHARGE_FIELDS}
+        # ADR-66 charge columns / ADR-71 day-pass columns not on this project
+        # yet - persist the rest (ADR-38 precedent); get_charge_config() then
+        # keeps returning 0s and the Day Pass plan defaults to fee 0 / 1 day.
+        fallback = {k: v for k, v in payload.items() if k not in _OPTIONAL_FIELDS}
         supabase.table("membership_settings").upsert(
             fallback, on_conflict="admin_id"
         ).execute()

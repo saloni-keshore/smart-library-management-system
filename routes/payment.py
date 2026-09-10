@@ -61,12 +61,13 @@ def _plan_label(membership):
 
     plan_name = membership.get("plan_name") or "-"
 
-    if plan_name == "CUSTOM":
+    if plan_name in ("CUSTOM", "DAY PASS"):
+        base = "Day Pass" if plan_name == "DAY PASS" else "Custom"
         days = membership.get("duration_days")
         if days:
-            label = f"Custom - {days} day" + ("s" if days != 1 else "")
+            label = f"{base} - {days} day" + ("s" if days != 1 else "")
         else:
-            label = "Custom"
+            label = base
     else:
         label = plan_name
 

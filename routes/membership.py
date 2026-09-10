@@ -63,6 +63,28 @@ def _sanitize_int(value):
         return None
 
 
+def _custom_shift_label(hours):
+    """Snapshot name for a Custom-hours shift (no shift_slots row exists for
+    it) - e.g. "Custom (3 hrs)". Shown on the receipt via _plan_label()."""
+    return f"Custom ({hours} hr{'s' if hours != 1 else ''})"
+
+
+def _day_pass_config(settings):
+    """(flat fee, term days) for the "Day Pass" plan preset (ADR-71), from
+    Settings > Membership Settings. Safe defaults (0 / 1) when the columns
+    aren't on this project yet (TD-102) or hold junk."""
+    settings = settings or {}
+    try:
+        fee = float(settings.get("day_pass_fee") or 0)
+    except (TypeError, ValueError):
+        fee = 0.0
+    try:
+        days = int(settings.get("day_pass_days") or 1)
+    except (TypeError, ValueError):
+        days = 1
+    return max(fee, 0.0), max(days, 1)
+
+
 def _fetch_student(supabase, student_id, admin_id):
     """This admin's student row, or None - shared by create()/renew()."""
     try:
@@ -237,6 +259,7 @@ def create(student_id):
     shift_slots = get_shift_slots(admin_id)
     slots_by_id = {s["slot_id"]: s for s in shift_slots}
     charge_config = get_charge_config(settings)
+    day_pass_fee, day_pass_days = _day_pass_config(settings)
 
     def _render():
         return render_template(
@@ -247,6 +270,8 @@ def create(student_id):
             shift_slots=shift_slots,
             charge_config=charge_config,
             plan_months=PLAN_MONTHS,
+            day_pass_fee=day_pass_fee,
+            day_pass_days=day_pass_days,
             idempotency_key=secrets.token_urlsafe(24),
         )
 
@@ -292,18 +317,23 @@ def create(student_id):
         return _render()
 
     # Shift slot (ADR-65) - optional; when set, its monthly fee x plan term
-    # replaces the flat plan fee below.
+    # replaces the flat plan fee below. The sentinel "custom" is not a real
+    # slot: it means a free-hand shift where staff enter the hours and type
+    # the fee by hand (handled like a Custom plan's manual total below).
+    raw_shift_slot = request.form.get("shift_slot_id")
+    is_custom_shift = raw_shift_slot == "custom"
+    custom_hours = _sanitize_int(request.form.get("custom_hours")) or 0
+
     slot = None
-    shift_slot_id = _sanitize_int(request.form.get("shift_slot_id"))
+    shift_slot_id = None if is_custom_shift else _sanitize_int(raw_shift_slot)
     if shift_slot_id is not None:
         slot = slots_by_id.get(shift_slot_id)
         if slot is None:
             flash("The selected shift is not available. Please pick another.", "danger")
             return _render()
 
-    night_hours = _sanitize_int(request.form.get("night_hours")) or 0
-    if slot is not None and slot.get("is_night_hourly") and night_hours <= 0:
-        flash("Enter the number of night hours for this shift.", "danger")
+    if is_custom_shift and custom_hours <= 0:
+        flash("Enter the number of hours for the custom shift.", "danger")
         return _render()
 
     try:
@@ -317,11 +347,20 @@ def create(student_id):
         return _render()
 
     is_custom = raw_plan == "Custom"
+    # "Day Pass" (ADR-71) is a walk-in preset: the form pre-fills the flat
+    # day_pass_fee / day_pass_days from Settings, but the amount stays
+    # editable per visit, so it rides the same hand-typed path as Custom.
+    is_day_pass = raw_plan == "Day Pass"
+    # A hand-typed Total Payable: a Custom plan, a Custom-hours shift on any
+    # plan, or a Day Pass. All take the staff-entered total verbatim and skip
+    # extra charges (below).
+    manual_fee = is_custom or is_custom_shift or is_day_pass
 
-    # Base fee: a Custom plan's staff-entered total, else the shift-slot
-    # component, else the configured plan fee. Never trusted from client
-    # input except for Custom (ADR-45/ADR-65).
-    if is_custom:
+    # Base fee: a hand-typed total (Custom plan / Custom-hours shift / Day
+    # Pass), else the shift-slot component, else the configured plan fee.
+    # Never trusted from client input except for those manual cases
+    # (ADR-45/ADR-65/ADR-71).
+    if manual_fee:
         try:
             base_fee = float(request.form.get("total_fee", 0) or 0)
         except ValueError:
@@ -331,7 +370,7 @@ def create(student_id):
             flash("Total Payable cannot be negative.", "danger")
             return _render()
     elif slot is not None:
-        base_fee = compute_slot_charge(slot, raw_plan, night_hours)
+        base_fee = compute_slot_charge(slot, raw_plan)
         if base_fee is None:
             flash("Membership plan is required.", "danger")
             return _render()
@@ -347,7 +386,7 @@ def create(student_id):
     # is never applied on a Custom plan, whose manual total is the whole
     # payable.
     applied = _resolve_applied_charges(charge_config, request.form, raw_plan)
-    if is_custom:
+    if manual_fee:
         applied = []
     registration_amount = next(
         (a["amount"] for a in applied if a["key"] == "registration"), 0.0
@@ -413,6 +452,28 @@ def create(student_id):
         if next_id_response.data else 1
     )
 
+    # Shift snapshot on the row: a real slot carries its id/name/bucket; a
+    # Custom-hours shift has no slot row, so record a descriptive name only
+    # (it flows onto the receipt via routes/payment.py's _plan_label()).
+    if is_custom_shift:
+        shift_snapshot = {
+            "shift_slot_id": None,
+            "shift_slot_name": _custom_shift_label(custom_hours),
+            "time_bucket": None,
+        }
+    elif slot:
+        shift_snapshot = {
+            "shift_slot_id": slot["slot_id"],
+            "shift_slot_name": slot["name"],
+            "time_bucket": resolve_slot_bucket(slot),
+        }
+    else:
+        shift_snapshot = {
+            "shift_slot_id": None,
+            "shift_slot_name": None,
+            "time_bucket": None,
+        }
+
     membership_row = {
         "membership_id": new_membership_id,
         "student_id": student_id,
@@ -429,9 +490,7 @@ def create(student_id):
         "remarks": remarks,
         "membership_status": "Active",
         "idempotency_key": idempotency_key,
-        "shift_slot_id": slot["slot_id"] if slot else None,
-        "shift_slot_name": slot["name"] if slot else None,
-        "time_bucket": resolve_slot_bucket(slot) if slot else None,
+        **shift_snapshot,
     }
 
     try:
@@ -508,17 +567,23 @@ def create(student_id):
     payment_id = None
 
     if paid_amount > 0:
-        # Admission-fee-first waterfall across every charge bucket, then the
-        # membership fee (ADR-62/ADR-66). Brand-new membership => old_paid 0.
-        buckets = [("Admission Fee", admission_fee_amount)]
-        buckets += [(a["cashbook"], a["amount"]) for a in extra_charges]
-        buckets.append((
-            "Membership Fee",
-            max(0.0, total_fee - admission_fee_amount - extras_total),
-        ))
-        components = split_payment_across_buckets(
-            buckets, old_paid=0, amount=paid_amount
-        )
+        if is_day_pass:
+            # A walk-in visit (ADR-71) - one flat charge, its own Cashbook
+            # category, no admission/membership split.
+            components = "Day Pass"
+        else:
+            # Admission-fee-first waterfall across every charge bucket, then
+            # the membership fee (ADR-62/ADR-66). Brand-new membership =>
+            # old_paid 0.
+            buckets = [("Admission Fee", admission_fee_amount)]
+            buckets += [(a["cashbook"], a["amount"]) for a in extra_charges]
+            buckets.append((
+                "Membership Fee",
+                max(0.0, total_fee - admission_fee_amount - extras_total),
+            ))
+            components = split_payment_across_buckets(
+                buckets, old_paid=0, amount=paid_amount
+            )
         try:
             receipt_number, payment_id = record_payment(
                 admin_id,
@@ -529,8 +594,11 @@ def create(student_id):
                 amount=paid_amount,
                 remarks=remarks,
                 category=components,
-                description=remarks or f"Admission payment - {plan_name}",
-                source="Admission",
+                description=remarks or (
+                    "Day Pass visit" if is_day_pass
+                    else f"Admission payment - {plan_name}"
+                ),
+                source="Day Pass" if is_day_pass else "Admission",
                 idempotency_key=f"{idempotency_key}-payment" if idempotency_key else None,
             )
         except (APIError, httpx.TransportError):
@@ -592,6 +660,7 @@ def renew(student_id):
 
     # Pre-select the shift slot the student's latest membership was sold on.
     prev_slot_id = _latest_membership_shift_slot_id(supabase, student_id)
+    day_pass_fee, day_pass_days = _day_pass_config(settings)
 
     def _render():
         return render_template(
@@ -602,6 +671,8 @@ def renew(student_id):
             charge_config=recurring_charges,
             plan_months=PLAN_MONTHS,
             prev_slot_id=prev_slot_id,
+            day_pass_fee=day_pass_fee,
+            day_pass_days=day_pass_days,
             idempotency_key=secrets.token_urlsafe(24),
         )
 
@@ -633,17 +704,22 @@ def renew(student_id):
     remarks = normalize_free_text(request.form.get("remarks"))
     payment_mode = request.form.get("payment_mode", "Cash")
 
+    # "custom" shift sentinel - a free-hand shift with staff-typed hours and
+    # fee, same handling as create() (ADR-65).
+    raw_shift_slot = request.form.get("shift_slot_id")
+    is_custom_shift = raw_shift_slot == "custom"
+    custom_hours = _sanitize_int(request.form.get("custom_hours")) or 0
+
     slot = None
-    shift_slot_id = _sanitize_int(request.form.get("shift_slot_id"))
+    shift_slot_id = None if is_custom_shift else _sanitize_int(raw_shift_slot)
     if shift_slot_id is not None:
         slot = slots_by_id.get(shift_slot_id)
         if slot is None:
             flash("The selected shift is not available. Please pick another.", "danger")
             return _render()
 
-    night_hours = _sanitize_int(request.form.get("night_hours")) or 0
-    if slot is not None and slot.get("is_night_hourly") and night_hours <= 0:
-        flash("Enter the number of night hours for this shift.", "danger")
+    if is_custom_shift and custom_hours <= 0:
+        flash("Enter the number of hours for the custom shift.", "danger")
         return _render()
 
     try:
@@ -656,8 +732,10 @@ def renew(student_id):
         return _render()
 
     is_custom = raw_plan == "Custom"
+    is_day_pass = raw_plan == "Day Pass"   # walk-in preset (ADR-71)
+    manual_fee = is_custom or is_custom_shift or is_day_pass
 
-    if is_custom:
+    if manual_fee:
         try:
             base_fee = float(request.form.get("total_fee", 0) or 0)
         except ValueError:
@@ -667,7 +745,7 @@ def renew(student_id):
             flash("Total Payable cannot be negative.", "danger")
             return _render()
     elif slot is not None:
-        base_fee = compute_slot_charge(slot, raw_plan, night_hours)
+        base_fee = compute_slot_charge(slot, raw_plan)
         if base_fee is None:
             flash("Membership plan is required.", "danger")
             return _render()
@@ -679,7 +757,7 @@ def renew(student_id):
 
     # A renewal re-charges only the recurring extras (seat / locker).
     applied = (
-        [] if is_custom
+        [] if manual_fee
         else _resolve_applied_charges(
             charge_config, request.form, raw_plan, recurring_only=True
         )
@@ -742,6 +820,27 @@ def renew(student_id):
                 {"membership_status": "Active"}
             ).in_("membership_id", previously_active_ids).execute()
 
+    # Shift snapshot: real slot -> id/name/bucket; Custom-hours shift -> a
+    # descriptive name only (no shift_slots row exists). Mirrors create().
+    if is_custom_shift:
+        shift_snapshot = {
+            "shift_slot_id": None,
+            "shift_slot_name": _custom_shift_label(custom_hours),
+            "time_bucket": None,
+        }
+    elif slot:
+        shift_snapshot = {
+            "shift_slot_id": slot["slot_id"],
+            "shift_slot_name": slot["name"],
+            "time_bucket": resolve_slot_bucket(slot),
+        }
+    else:
+        shift_snapshot = {
+            "shift_slot_id": None,
+            "shift_slot_name": None,
+            "time_bucket": None,
+        }
+
     membership_row = {
         "membership_id": new_membership_id,
         "student_id": student_id,
@@ -757,9 +856,7 @@ def renew(student_id):
         "remarks": remarks,
         "membership_status": "Active",
         "idempotency_key": idempotency_key,
-        "shift_slot_id": slot["slot_id"] if slot else None,
-        "shift_slot_name": slot["name"] if slot else None,
-        "time_bucket": resolve_slot_bucket(slot) if slot else None,
+        **shift_snapshot,
     }
 
     existing_membership = None
@@ -824,7 +921,10 @@ def renew(student_id):
     payment_id = None
 
     if paid_amount > 0:
-        if applied:
+        if is_day_pass:
+            # A repeat walk-in visit (ADR-71) - flat charge, own category.
+            category = "Day Pass"
+        elif applied:
             buckets = [(a["cashbook"], a["amount"]) for a in applied]
             buckets.append(("Membership Renewal", total_fee - extras_total))
             category = split_payment_across_buckets(
@@ -842,8 +942,11 @@ def renew(student_id):
                 amount=paid_amount,
                 remarks=remarks,
                 category=category,
-                description=remarks or f"Membership renewal - {plan_name}",
-                source="Renewal",
+                description=remarks or (
+                    "Day Pass visit" if is_day_pass
+                    else f"Membership renewal - {plan_name}"
+                ),
+                source="Day Pass" if is_day_pass else "Renewal",
                 idempotency_key=f"{idempotency_key}-payment" if idempotency_key else None,
             )
         except (APIError, httpx.TransportError):

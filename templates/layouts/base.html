@@ -90,6 +90,28 @@
             form.appendChild(input);
         }, true);
 
+        // Safety net: a form control the user cannot see (a display:none
+        // ancestor) can still fail HTML5 constraint validation and silently
+        // abort the whole submit - no POST, no flash, no focusable field for
+        // a tooltip. "Save & Continue does nothing" has been exactly this
+        // more than once (ADR-72). When it happens, disable the unreachable
+        // offender (dropping it from validation and the POST - the server
+        // re-validates every field) and re-submit once. A *visible* invalid
+        // field is left alone: the browser shows its normal tooltip.
+        document.addEventListener("invalid", function(event) {
+            const el = event.target;
+            if (el.disabled || el.type === "hidden" || el.offsetParent !== null) return;
+            el.disabled = true;
+            const form = el.form;
+            if (form && !form.dataset.revalidating) {
+                form.dataset.revalidating = "1";
+                setTimeout(function() {
+                    delete form.dataset.revalidating;
+                    if (typeof form.requestSubmit === "function") form.requestSubmit();
+                }, 0);
+            }
+        }, true);
+
         const sidebarToggle = document.getElementById("sidebarToggle");
         const sidebarWrapper = document.querySelector(".sidebar-wrapper");
         const sidebarBackdrop = document.getElementById("sidebarBackdrop");

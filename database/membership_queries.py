@@ -298,8 +298,8 @@ def get_admission_fee(settings):
 PLAN_MONTHS = {"Monthly": 1, "Quarterly": 3, "Half-Yearly": 6, "Yearly": 12}
 
 # Start-of-window -> canonical shift. The window's *start* decides the
-# bucket; how many hours it runs (Full Day / 7 / 4 / Night-hourly) never
-# does. Boundaries are half-open: [05:00,12:00) Morning, [12:00,16:00)
+# bucket; how many hours it runs (Full Day / 7 / 4 / Custom) never does.
+# Boundaries are half-open: [05:00,12:00) Morning, [12:00,16:00)
 # Afternoon, [16:00,21:00) Evening, the rest (>=21:00 or <05:00) Night.
 _BUCKET_BOUNDS = (
     (5 * 60, 12 * 60, "Morning"),
@@ -385,8 +385,9 @@ def describe_time_buckets():
 
 def resolve_slot_bucket(slot):
     """The canonical shift a shift_slots row belongs to. The admin's
-    explicit time_bucket override wins; then a Full-Day hours label or a
-    night-hourly slot; otherwise it's derived from start_time."""
+    explicit time_bucket override wins; then a Full-Day hours label;
+    otherwise it's derived from start_time (a >=21:00 / <05:00 start lands
+    in "Night" on its own - there is no separate night flag)."""
 
     if not slot:
         return None
@@ -395,22 +396,19 @@ def resolve_slot_bucket(slot):
         return override
     if (slot.get("hours_label") or "").strip().lower() in ("full day", "full-day", "fullday"):
         return "Full Day"
-    if slot.get("is_night_hourly"):
-        return "Night"
     return derive_time_bucket(slot.get("start_time"))
 
 
-def compute_slot_charge(slot, plan_name, night_hours=0):
+def compute_slot_charge(slot, plan_name):
     """The pre-extra-charge fee for a membership sold on `slot`:
-    night_hourly_rate x hours for a night-hourly slot, else monthly_fee x
-    the plan's month count. Returns None when the charge can't be derived
-    here (no slot, or a Custom plan with no month count) and the caller
-    must take a staff-entered total instead."""
+    monthly_fee x the plan's month count. Returns None when the charge can't
+    be derived here (no slot, or a Custom plan with no month count) and the
+    caller must take a staff-entered total instead. Hourly / short-visit
+    pricing is the "Custom hours" shift (ADR-70), handled by the caller, not
+    here."""
 
     if not slot:
         return None
-    if slot.get("is_night_hourly"):
-        return float(slot.get("night_hourly_rate") or 0) * (night_hours or 0)
     months = PLAN_MONTHS.get(plan_name)
     if months is None:
         return None

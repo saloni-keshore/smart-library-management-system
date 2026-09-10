@@ -267,6 +267,7 @@ erDiagram
         int enquiry_id FK
         text mobile
         text status
+        text student_type "ADR-71 - Regular/Casual, column missing on live DB (TD-102)"
     }
     MEMBERSHIPS {
         int membership_id PK
@@ -288,9 +289,8 @@ erDiagram
         int admin_id FK
         text name "UK per admin"
         time start_time "nullable = any time"
-        real monthly_fee
+        real monthly_fee "only price - x plan term (ADR-72 dropped the night per-hour rate)"
         text time_bucket "nullable = auto-derive from start_time"
-        int is_night_hourly
         int active
     }
     MEMBERSHIP_CHARGES {
@@ -344,6 +344,8 @@ erDiagram
         real locker_fee "ADR-66, TD-89"
         real security_deposit_amount "ADR-66, TD-89"
         int registration_compulsory "ADR-66"
+        real day_pass_fee "ADR-71 - flat walk-in fee, column missing on live DB (TD-102)"
+        int day_pass_days "ADR-71 - Day Pass term, default 1"
         int reminder_days "unused, superseded (TD-23)"
     }
     BACKUP_LOG {

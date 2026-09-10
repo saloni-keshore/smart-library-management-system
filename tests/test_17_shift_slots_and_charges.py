@@ -73,24 +73,20 @@ def test_resolve_slot_bucket_precedence():
     assert resolve_slot_bucket({"start_time": "07:00", "time_bucket": "Evening"}) == "Evening"
     # full-day hours label with no start time
     assert resolve_slot_bucket({"start_time": None, "hours_label": "Full Day"}) == "Full Day"
-    # night-hourly slot
-    assert resolve_slot_bucket({"start_time": "22:00", "is_night_hourly": 1}) == "Night"
+    # a late start lands in Night on its own (no separate night flag - ADR-72)
+    assert resolve_slot_bucket({"start_time": "22:00"}) == "Night"
+    assert resolve_slot_bucket({"start_time": "03:00"}) == "Night"
     assert resolve_slot_bucket(None) is None
 
 
 # --- compute_slot_charge --------------------------------------------------
 
 def test_slot_charge_multiplies_by_plan_term():
-    slot = {"monthly_fee": 1000, "is_night_hourly": 0}
+    slot = {"monthly_fee": 1000}
     assert compute_slot_charge(slot, "Monthly") == 1000
     assert compute_slot_charge(slot, "Quarterly") == 3000
     assert compute_slot_charge(slot, "Half-Yearly") == 6000
     assert compute_slot_charge(slot, "Yearly") == 12000
-
-
-def test_slot_charge_night_hourly():
-    slot = {"night_hourly_rate": 20, "is_night_hourly": 1}
-    assert compute_slot_charge(slot, "Monthly", night_hours=8) == 160
 
 
 def test_slot_charge_custom_and_none():
