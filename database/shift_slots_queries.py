@@ -2,8 +2,10 @@
 Reusable, admin-isolated data access for Settings > Shift Slots (ADR-65).
 
 A shift slot is one time-window membership option a library sells - a name,
-an optional start/end time, an hours label, and a monthly fee (or a
-per-hour rate for a night-hourly slot). One admin owns many slots.
+an optional start/end time, an hours label, and a monthly fee. One admin
+owns many slots. (Hourly / short-visit pricing is the "Custom hours" shift
+on Create/Renew - ADR-70 - not a per-slot setting; the ADR-65
+is_night_hourly / night_hourly_rate toggle was removed 2026-09-10, ADR-72.)
 
 `shift_slots` is a brand-new table, not applicable by this app itself - see
 its CREATE TABLE comment in database/supabase_migration.sql (this app has no
@@ -27,11 +29,10 @@ from database.supabase_client import get_supabase_client
 # server-managed (slot_id, admin_id, timestamps).
 _SLOT_FIELDS = (
     "name", "start_time", "end_time", "hours_label", "monthly_fee",
-    "time_bucket", "is_night_hourly", "night_hourly_rate", "active",
-    "sort_order",
+    "time_bucket", "active", "sort_order",
 )
 
-HOURS_LABELS = ["Full Day", "7", "4", "Night-hourly", "Custom"]
+HOURS_LABELS = ["Full Day", "7", "4", "Custom"]
 
 
 def _clean_payload(data):
