@@ -15,6 +15,10 @@ env/
 
 # Environment variables / secrets
 .env
+# Real per-environment env files (local .env.test, etc.); templates are committed.
+.env.*
+!.env.example
+!.env.test.example
 
 # SQLite data is operational data; keep it out of source control.
 database/*.db

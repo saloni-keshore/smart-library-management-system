@@ -192,16 +192,21 @@ def add():
         if existing:
             if existing["student_id"]:
                 flash(
-                    f"{existing['full_name']} ({mobile}) is already registered. "
-                    "Renew their membership or log another enquiry from their profile.",
+                    f"That mobile number ({mobile}) already belongs to "
+                    f"{existing['full_name']} (Student #{existing['student_id']}), who is "
+                    "already registered. If this is a different person, use their own "
+                    "mobile number; otherwise renew their membership or log another "
+                    "enquiry from their profile.",
                     "info",
                 )
                 return redirect(
                     url_for("student.view", student_id=existing["student_id"])
                 )
             flash(
-                f"An enquiry for {mobile} already exists ({existing['full_name']}). "
-                "Edit it, start admission, or log another enquiry from here.",
+                f"An enquiry for that mobile number ({mobile}) already exists "
+                f"({existing['full_name']}). If this is a different person, use their "
+                "own mobile number; otherwise edit that enquiry, start admission, or "
+                "log another enquiry from there.",
                 "info",
             )
             return redirect(
@@ -265,8 +270,14 @@ def edit(enquiry_id):
         # belongs to someone else (ADR-58).
         clash = _find_person_by_mobile(supabase, admin_id, mobile)
         if clash and clash["enquiry_id"] != enquiry_id:
+            who = (
+                f"{clash['full_name']} (Student #{clash['student_id']})"
+                if clash["student_id"]
+                else f"{clash['full_name']} (another enquiry)"
+            )
             flash(
-                f"That mobile number already belongs to {clash['full_name']}.",
+                f"That mobile number ({mobile}) already belongs to {who}. "
+                "A mobile number identifies one person - please use a different number.",
                 "danger",
             )
             return redirect(url_for("enquiry.edit", enquiry_id=enquiry_id))

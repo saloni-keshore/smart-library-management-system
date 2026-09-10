@@ -97,6 +97,8 @@ def test_admission_duplicate_mobile_blocked(logged_in_client):
     # Back-button / double submit: POST the same admission a second time.
     resp = admit_student(client, eid)
     assert b"already registered" in resp.data
+    assert mobile.encode() in resp.data          # names the colliding number
+    assert b"Test Enquirer" in resp.data         # names the existing student
 
     supabase = get_supabase_client()
     count = (
@@ -184,10 +186,13 @@ def test_edit_student_success(logged_in_client):
     assert b"Student updated successfully" in resp.data
 
 
-def test_edit_student_duplicate_mobile_crashes_or_handled(logged_in_client):
+def test_edit_student_duplicate_mobile_rejected(logged_in_client):
     """Edit sets mobile to a value already used by another student of the
-    same admin -> violates UNIQUE(mobile, admin_id). No try/except exists
-    around this UPDATE in routes/student.py. Verifying actual behavior."""
+    same admin. routes/student.py checks for this collision before writing
+    (a phone number identifies one person - ADR-58), so it's a friendly
+    flash + re-rendered form, never a 500 - regardless of whether the
+    database-level UNIQUE(mobile, admin_id) constraint is actually applied
+    on this project (see database/audit_mobile_identity.py)."""
     client, admin = logged_in_client
     _, sid1 = _new_enquiry_and_admit(client, admin["admin_id"], mobile="9777788881")
     _, sid2 = _new_enquiry_and_admit(client, admin["admin_id"], mobile="9777788882")
@@ -204,8 +209,10 @@ def test_edit_student_duplicate_mobile_crashes_or_handled(logged_in_client):
         },
         follow_redirects=True,
     )
-    # Document actual behavior for the report either way.
-    assert resp.status_code in (200, 500)
+    assert resp.status_code == 200
+    assert b"already belongs to" in resp.data
+    assert b"9777788881" in resp.data            # names the colliding number
+    assert get_student_by_id(sid2)["mobile"] == "9777788882"  # unchanged
 
 
 def test_edit_student_empty_full_name(logged_in_client):

@@ -22,7 +22,7 @@ No `debug=True` and no host/port override — defaults to `127.0.0.1:5000` with 
 
 ## Config — `config.py`
 
-Defines `Config` (base: `SECRET_KEY`, `SESSION_COOKIE_SECURE`, `PERMANENT_SESSION_LIFETIME`, `MAX_CONTENT_LENGTH`, `CSRF_ENABLED`, `ENABLE_SELF_SERVICE_PASSWORD_RESET`, `LOG_LEVEL` — all sourced from env vars with defaults), `DevelopmentConfig(Config)` (`DEBUG = True`, `SESSION_COOKIE_SECURE = False`), and `ProductionConfig(Config)` (`DEBUG = False`, `TESTING = False`). `app.py`'s `create_app()` selects one via `app.config.from_object(DevelopmentConfig if environment == "development" else ProductionConfig)`, keyed off `APP_ENV`. `config.py` also calls `load_dotenv()` at import time — it's the app's single `.env`-loading entry point, imported before any route module reads `os.environ`.
+Defines `Config` (base: `SECRET_KEY`, `SESSION_COOKIE_SECURE`, `PERMANENT_SESSION_LIFETIME`, `MAX_CONTENT_LENGTH`, `CSRF_ENABLED`, `ENABLE_SELF_SERVICE_PASSWORD_RESET`, `LOG_LEVEL` — all sourced from env vars with defaults), `DevelopmentConfig(Config)` (`DEBUG = True`, `SESSION_COOKIE_SECURE = False`), and `ProductionConfig(Config)` (`DEBUG = False`, `TESTING = False`). `app.py`'s `create_app()` selects one via `app.config.from_object(DevelopmentConfig if environment == "development" else ProductionConfig)`, keyed off `APP_ENV`. `config.py` also calls `load_dotenv()` at import time — it's the app's single `.env`-loading entry point, imported before any route module reads `os.environ`. **As of 2026-09-09 (ADR-69):** local dev, Render, and Vercel all point `SUPABASE_URL`/`SUPABASE_SECRET_KEY` at one shared project (local dev is just another host). The `pytest` suite is the exception — `tests/conftest.py` calls `load_dotenv(<repo root>/.env.test, override=True)` *before* it imports `config`/`app`, so a git-ignored `.env.test` (dedicated throwaway project) wins over `.env` for the suite only; without one, tests use `.env`.
 
 ## Database connection — `database/supabase_client.py`
 
@@ -35,7 +35,7 @@ def get_supabase_client():
 ```
 
 - A single client instance is created once (`functools.lru_cache`) and reused across requests — unlike SQLite's per-request connection, this is a plain HTTP client wrapper (PostgREST over HTTPS), not a stateful connection that needs opening/closing per request.
-- Reads `SUPABASE_URL`/`SUPABASE_SECRET_KEY` from the environment (via `.env` in development); raises `RuntimeError` if either is unset.
+- Reads `SUPABASE_URL`/`SUPABASE_SECRET_KEY` from the environment (via `.env` in development); raises `RuntimeError` if either is unset. Because the client is `@lru_cache`d and reads `os.environ` on first call, anything that needs a different project (the test suite — see `.env.test` under "Config") must set those vars *before* this module is first imported.
 - No connection pooling concerns apply the way they did for SQLite (see the now-resolved "`database is locked`" entry in [TROUBLESHOOTING.md](TROUBLESHOOTING.md)) — Supabase/PostgREST handles concurrent requests server-side.
 - Foreign keys, uniqueness, and `NOT NULL` constraints are enforced by Postgres itself, per `database/supabase_migration.sql` — unlike SQLite's `PRAGMA foreign_keys = ON` (never actually set per-connection in the old code), Postgres FKs are always enforced. See [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md).
 

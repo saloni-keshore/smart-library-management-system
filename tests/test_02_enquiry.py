@@ -105,6 +105,7 @@ def test_add_enquiry_existing_phone_blocked_redirects_to_record(logged_in_client
     resp, data = make_enquiry(client, full_name="Someone Else", mobile="9111122223")
     assert resp.status_code == 200
     assert b"already exists" in resp.data
+    assert b"9111122223" in resp.data            # names the colliding number
     assert b"First Person" in resp.data          # landed on the existing record
     assert b"Someone Else" not in resp.data      # the second name was discarded
     assert _enquiry_count_for_mobile(admin["admin_id"], "9111122223") == 1
@@ -120,6 +121,8 @@ def test_add_enquiry_existing_phone_of_admitted_person_redirects_to_student(logg
     resp, data = make_enquiry(client, full_name="Ignored", mobile="9111144445")
     assert resp.status_code == 200
     assert b"already registered" in resp.data
+    assert b"9111144445" in resp.data            # names the colliding number
+    assert b"Admitted Person" in resp.data       # names the existing student
     assert b"Renew" in resp.data                 # landed on the student profile
     assert _enquiry_count_for_mobile(admin["admin_id"], "9111144445") == 1
 
@@ -190,6 +193,8 @@ def test_edit_enquiry_mobile_collision_rejected(logged_in_client):
     )
     assert resp.status_code == 200
     assert b"already belongs to" in resp.data
+    assert b"9111177771" in resp.data            # names the colliding number
+    assert b"Person A" in resp.data              # names the existing owner
     assert get_enquiry_by_id(b_id)["mobile"] == "9111177772"  # unchanged
 
 

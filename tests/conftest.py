@@ -5,8 +5,22 @@ import string
 from datetime import date, timedelta
 
 import pytest
+from dotenv import load_dotenv
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, _REPO_ROOT)
+
+# Run the whole suite against a dedicated throwaway Supabase project, never the
+# project the local app / Vercel deployment share. Every test here registers
+# QA admins, enquiries and payments (see the fixtures below), so pointing pytest
+# at the shared project would pollute real data. `.env.test` (git-ignored, see
+# `.env.test.example`) supplies that project's SUPABASE_URL / SUPABASE_SECRET_KEY;
+# `override=True` means it wins over any values already loaded from `.env` by the
+# plain `load_dotenv()` calls in config.py / database/supabase_client.py. This
+# must run before those modules are imported so the lru_cache'd Supabase client
+# and Flask config pick up the test project. If `.env.test` is absent, the suite
+# falls back to `.env` unchanged.
+load_dotenv(os.path.join(_REPO_ROOT, ".env.test"), override=True)
 
 from app import create_app  # noqa: E402
 from database.supabase_client import get_supabase_client  # noqa: E402

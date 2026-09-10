@@ -55,6 +55,8 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
 1. Create a virtual environment for this deployment and run `pip install -r requirements.txt` (this includes `waitress`).
 2. Start the app: `waitress-serve --call wsgi:create_app`, behind HTTPS (via whatever reverse proxy/TLS termination your hosting setup uses).
 
+**Running the pytest suite (ADR-69):** never point `.env` at this — or any real — library's project while running `pytest`. The suite registers admins and creates enquiries/memberships/payments with no teardown. Copy `.env.test.example` to `.env.test` (git-ignored) with a **dedicated throwaway** Supabase project's URL + service-role key (schema applied the same way as Step A); `tests/conftest.py` loads `.env.test` with `override=True` before the app imports, so the suite binds there. With no `.env.test`, it falls back to `.env`.
+
 ## Step D — Verify isolation before go-live
 
 1. Check this deployment's log file (`instance/smart-library.log`, or console output on first run) for the line `Connected Supabase project: ...<last-24-chars-of-URL>` and visually confirm it matches the project you created in Step A, not any other library's.
