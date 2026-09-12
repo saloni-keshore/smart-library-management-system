@@ -1,0 +1,142 @@
+/* ==========================================================
+   ENQUIRIES PAGES
+   Page-scoped styles for templates/enquiries/*.html - visual
+   restyle only (part of the shared UI redesign, see
+   docs/DECISIONS.md). Prefixed custom properties + a single
+   ".enquiries-page" wrapper class so nothing here leaks onto
+   other pages (pattern mirrors static/css/cashbook.css).
+========================================================== */
+
+:root{
+
+    --enq-radius:16px;
+    --enq-radius-sm:10px;
+    --enq-border:#e5e2f1;
+    --enq-muted:#94a3b8;
+
+}
+
+.enquiries-page{
+
+    animation:enqFadeIn .35s ease;
+
+}
+
+@keyframes enqFadeIn{
+
+    from{ opacity:0; transform:translateY(8px); }
+    to{ opacity:1; transform:translateY(0); }
+
+}
+
+/* Cards */
+
+.enquiries-page .card{
+
+    border-radius:var(--enq-radius);
+    border:1px solid var(--enq-border);
+    box-shadow:var(--shadow-indigo-sm);
+
+}
+
+.enquiries-page .card-header{
+
+    font-family:'Sora','Poppins',sans-serif;
+    background:#fff;
+    border-bottom:1px solid var(--enq-border);
+
+}
+
+/* Table */
+
+.enquiries-page .table thead th{
+
+    background:#f8fafc;
+    color:#64748b;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    border-bottom:1px solid var(--enq-border);
+    white-space:nowrap;
+
+}
+
+.enquiries-page .table td{
+
+    vertical-align:middle;
+
+}
+
+/* Pill status badges */
+
+.enquiries-page .badge{
+
+    border-radius:20px;
+    padding:.4em .85em;
+    font-size:11px;
+    font-weight:600;
+
+}
+
+.enquiries-page .badge-soft-primary{ background:rgba(37,99,235,.12); color:#1d4ed8; box-shadow:0 2px 8px -2px rgba(37,99,235,.22); }
+.enquiries-page .badge-soft-warning{ background:rgba(245,158,11,.16); color:#b45309; box-shadow:0 2px 8px -2px rgba(245,158,11,.26); }
+.enquiries-page .badge-soft-secondary{ background:rgba(100,116,139,.14); color:#475569; }
+
+/* Primary gradient CTA (matches the redesign's shared brand gradient) */
+
+.enquiries-page .btn-gradient{
+
+    background:linear-gradient(120deg, var(--accent), var(--accent2));
+    border:none;
+    color:#fff;
+    font-weight:600;
+    border-radius:var(--enq-radius-sm);
+    font-family:'Sora','Poppins',sans-serif;
+    box-shadow:0 8px 18px -5px rgba(79,70,229,.35);
+    transition:filter .2s ease, box-shadow .2s ease;
+
+}
+
+.enquiries-page .btn-gradient:hover,
+.enquiries-page .btn-gradient:focus{
+
+    color:#fff;
+    filter:brightness(1.06);
+
+}
+
+/* Quick "Convert" text-link action, alongside the full actions dropdown */
+
+.enquiries-page .enquiry-convert-link{
+
+    color:var(--accent);
+    font-weight:600;
+    font-size:12.5px;
+    text-decoration:none;
+    white-space:nowrap;
+
+}
+
+.enquiries-page .enquiry-convert-link:hover{
+
+    text-decoration:underline;
+    color:var(--accent-dark);
+
+}
+
+.enquiries-page .dropdown-toggle-kebab{
+
+    border-radius:8px;
+
+}
+
+/* Remarks / detail blocks on the view page */
+
+.enquiries-page .enquiry-remarks-box{
+
+    border-radius:12px;
+    border:1px solid var(--enq-border);
+    background:#f8fafc;
+
+}

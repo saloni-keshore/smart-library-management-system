@@ -1,0 +1,410 @@
+/* ==========================================================
+   MEMBERSHIPS - shared styles for the list, create and renew
+   pages. Page-scoped under .memberships-page (list) and
+   .membership-form-page (create/renew) so nothing here leaks
+   onto other pages - same isolation pattern as cashbook.css's
+   .cashbook-page. Reuses the global brand tokens declared in
+   static/css/style.css's :root (--accent/--accent2/...) rather
+   than hardcoding new brand colors.
+========================================================== */
+
+.memberships-page,
+.membership-form-page{
+
+    animation: memFadeIn .35s ease;
+
+}
+
+@keyframes memFadeIn{
+
+    from{ opacity:0; transform:translateY(8px); }
+    to{ opacity:1; transform:translateY(0); }
+
+}
+
+
+/* ==========================================================
+   LIST PAGE
+========================================================== */
+
+.memberships-page .mem-toolbar{
+
+    max-width:1240px;
+    margin:0 auto 16px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+
+}
+
+.memberships-page .mem-search{
+
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:9px 14px;
+    width:300px;
+    max-width:100%;
+    color:#94a3b8;
+    font-size:15px;
+
+}
+
+.memberships-page .mem-search{
+
+    box-shadow:0 3px 12px -4px rgba(79,70,229,.10);
+
+}
+
+.memberships-page .mem-search:focus-within{
+
+    border-color:var(--accent, #4f46e5);
+    box-shadow:0 0 0 4px rgba(79,70,229,.10), 0 6px 16px -4px rgba(79,70,229,.16);
+
+}
+
+.memberships-page .mem-search input{
+
+    border:none;
+    outline:none;
+    flex:1;
+    font-size:13px;
+    color:#0f172a;
+    background:transparent;
+
+}
+
+.memberships-page .mem-status-filter{
+
+    display:flex;
+    background:#f1f5f9;
+    border-radius:9px;
+    padding:3px;
+    gap:2px;
+
+}
+
+.memberships-page .mem-status-filter button{
+
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:#64748b;
+    font-size:12.5px;
+    font-weight:600;
+    padding:7px 14px;
+    border-radius:7px;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+
+}
+
+.memberships-page .mem-status-filter button.active{
+
+    background:#fff;
+    color:#0f172a;
+    box-shadow:0 1px 2px rgba(15,23,42,.08);
+
+}
+
+.memberships-page .mem-toolbar-count{
+
+    margin-left:auto;
+    color:#94a3b8;
+    font-size:12.5px;
+    font-weight:600;
+    white-space:nowrap;
+
+}
+
+.memberships-page .mem-toolbar-card{
+
+    max-width:1240px;
+    margin:0 auto;
+    border:1px solid #e5e2f1;
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:var(--shadow-indigo-sm, 0 4px 16px -4px rgba(79,70,229,.14));
+
+}
+
+.memberships-page .mem-col-index{
+
+    width:44px;
+
+}
+
+.memberships-page .mem-pending-due{
+
+    color:#dc2626;
+    font-weight:700;
+
+}
+
+.memberships-page .table thead th{
+
+    background:var(--accent-soft, #eef0fe);
+    color:#3730a3;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    border-bottom:2px solid var(--accent, #4f46e5);
+    white-space:nowrap;
+    padding:14px 16px;
+
+}
+
+.memberships-page .table tbody td{
+
+    font-size:13.5px;
+    color:#334155;
+    vertical-align:middle;
+    padding:13px 16px;
+
+}
+
+.memberships-page .table tbody tr:hover{
+
+    background:#f8fafc;
+
+}
+
+.memberships-page .mem-pill{
+
+    display:inline-flex;
+    align-items:center;
+    padding:3px 12px;
+    border-radius:20px;
+    font-size:11px;
+    font-weight:600;
+
+}
+
+.memberships-page .mem-pill-active{ background:#dcfce7; color:#15803d; box-shadow:0 2px 8px -2px rgba(21,128,61,.24); }
+.memberships-page .mem-pill-expired{ background:#fee2e2; color:#dc2626; box-shadow:0 2px 8px -2px rgba(220,38,38,.22); }
+
+.memberships-page .mem-action-view{
+
+    width:32px;
+    height:32px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:9px;
+    border:1px solid #e2e8f0;
+    color:#64748b;
+    background:#fff;
+    text-decoration:none;
+    transition:background .15s ease, color .15s ease, box-shadow .15s ease;
+
+}
+
+.memberships-page .mem-action-view:hover{
+
+    background:#f1f5f9;
+    color:var(--accent, #4f46e5);
+    box-shadow:0 4px 12px -3px rgba(79,70,229,.24);
+
+}
+
+.memberships-page .mem-action-link{
+
+    color:var(--accent, #4f46e5);
+    font-weight:600;
+    font-size:12.5px;
+    text-decoration:none;
+
+}
+
+.memberships-page .mem-action-link:hover{ text-decoration:underline; }
+
+
+/* ==========================================================
+   CREATE / RENEW FORM PAGES
+========================================================== */
+
+.membership-form-page .mem-card{
+
+    background:#fff;
+    border:1px solid #e5e2f1;
+    border-radius:16px;
+    padding:22px;
+    margin-bottom:20px;
+    box-shadow:var(--shadow-indigo-sm, 0 4px 16px -4px rgba(79,70,229,.14));
+
+}
+
+.membership-form-page .mem-card:last-child{ margin-bottom:0; }
+
+.membership-form-page .mem-card-title{
+
+    font-family:'Sora','Poppins',sans-serif;
+    font-size:14.5px;
+    font-weight:600;
+    color:#0f172a;
+    margin-bottom:16px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+
+}
+
+.membership-form-page .mem-strip-card{
+
+    background:#fff;
+    border:1px solid #e5e2f1;
+    border-radius:14px;
+    padding:16px 20px;
+    margin-bottom:20px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:32px;
+    box-shadow:var(--shadow-indigo-sm, 0 4px 16px -4px rgba(79,70,229,.14));
+
+}
+
+.membership-form-page .mem-strip-label{
+
+    color:#94a3b8;
+    font-size:10.5px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+
+}
+
+.membership-form-page .mem-strip-value{
+
+    color:#0f172a;
+    font-size:13.5px;
+    font-weight:600;
+    margin-top:2px;
+
+}
+
+.membership-form-page .form-label{
+
+    font-family:'Sora','Poppins',sans-serif;
+    font-size:12.5px;
+    font-weight:600;
+    color:#334155;
+
+}
+
+.membership-form-page .form-control,
+.membership-form-page .form-select{
+
+    border-radius:10px;
+    border-color:#e2e8f0;
+
+}
+
+.membership-form-page .form-control:focus,
+.membership-form-page .form-select:focus{
+
+    border-color:var(--accent, #4f46e5);
+    box-shadow:0 0 0 4px rgba(79,70,229,.10), 0 6px 16px -4px rgba(79,70,229,.16);
+
+}
+
+/* Two-column layout: plan/fee cards + payment-mode/remarks/
+   submit on the left, a sticky running-total "Payment Summary"
+   card on the right. The three wrapper divs below only ever
+   group already-adjacent existing form rows in their original
+   order - nothing is reordered relative to anything else, only
+   grid-placed. Collapses to one column under 992px, where the
+   sidebar simply stops sticking and flows inline. */
+
+.membership-form-page .mem-form-grid{
+
+    display:grid;
+    grid-template-columns: 1fr 360px;
+    grid-template-areas:
+        "early side"
+        "late  side";
+    gap:20px;
+    align-items:start;
+
+}
+
+.membership-form-page .mem-form-main-early{ grid-area: early; min-width:0; }
+.membership-form-page .mem-form-main-late{ grid-area: late; min-width:0; }
+
+.membership-form-page .mem-form-sidebar{
+
+    grid-area: side;
+    position:sticky;
+    top:20px;
+
+}
+
+.membership-form-page .mem-form-sidebar .mem-card{
+
+    border-top:3px solid var(--accent, #4f46e5);
+
+}
+
+@media (max-width: 991.98px){
+
+    .membership-form-page .mem-form-grid{
+
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "early"
+            "side"
+            "late";
+
+    }
+
+    .membership-form-page .mem-form-sidebar{
+
+        position:static;
+
+    }
+
+}
+
+/* Progress stepper */
+
+.membership-form-page .mem-stepper{
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:12px;
+    margin-bottom:20px;
+
+}
+
+.membership-form-page .mem-step{
+
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:8px 16px;
+    border-radius:20px;
+    font-size:12.5px;
+    font-weight:600;
+
+}
+
+.membership-form-page .mem-step-done{
+
+    background:#dcfce7;
+    color:#15803d;
+    box-shadow:0 2px 8px -2px rgba(21,128,61,.24);
+
+}
+
+.membership-form-page .mem-step-active{
+
+    background:linear-gradient(120deg, var(--accent, #4f46e5), var(--accent2, #ea580c));
+    color:#fff;
+    box-shadow:0 6px 16px -4px rgba(79,70,229,.35);
+
+}

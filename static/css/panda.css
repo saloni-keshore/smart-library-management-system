@@ -3,8 +3,11 @@
    ai_center.css/business_intelligence.css/membership_distribution.css. */
 
 :root {
-    --panda-primary: #2563eb;
-    --panda-primary-dark: #1d4ed8;
+    --panda-primary: #4f46e5;
+    --panda-primary-dark: #4338ca;
+    --panda-accent2: #ea580c;
+    --panda-accent-soft: #eef0fe;
+    --panda-face: #ffffff;
     --panda-accent: #22c55e;
     --panda-warning: #f59e0b;
     --panda-danger: #ef4444;
@@ -13,6 +16,12 @@
     --panda-muted: #64748b;
     --panda-border: #eef2f7;
     --panda-bg: #f8fafc;
+
+    /* Real footprint of the floating button (width + offset from the edge),
+       plus a small buffer - style.css reads these to keep .content-inner
+       clear of the widget instead of guessing its own magic numbers (TD-97). */
+    --panda-clearance-right: 100px;
+    --panda-clearance-bottom: 104px;
 }
 
 .panda-widget {
@@ -30,8 +39,8 @@
     height: 60px;
     border-radius: 50%;
     border: none;
-    background: linear-gradient(135deg, var(--panda-primary), var(--panda-primary-dark));
-    box-shadow: 0 10px 24px rgba(37, 99, 235, .35);
+    background: linear-gradient(135deg, var(--panda-primary), var(--panda-accent2));
+    box-shadow: 0 10px 24px rgba(79, 70, 229, .35);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -42,12 +51,13 @@
 
 .panda-toggle-btn:hover {
     transform: scale(1.08);
-    box-shadow: 0 14px 30px rgba(37, 99, 235, .45);
+    box-shadow: 0 14px 30px rgba(79, 70, 229, .45);
 }
 
-.panda-toggle-emoji {
-    font-size: 30px;
-    line-height: 1;
+.panda-toggle-icon {
+    width: 32px;
+    height: 32px;
+    display: block;
 }
 
 .panda-badge {
@@ -90,7 +100,7 @@
     max-height: calc(100vh - 140px);
     background: #fff;
     border-radius: 20px;
-    box-shadow: 0 20px 50px rgba(15, 23, 42, .22);
+    box-shadow: 0 24px 56px -16px rgba(79, 70, 229, .28), 0 8px 20px -8px rgba(15, 23, 42, .10);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -111,7 +121,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 14px 16px;
-    background: linear-gradient(135deg, var(--panda-primary), var(--panda-primary-dark));
+    background: linear-gradient(135deg, var(--panda-primary), var(--panda-accent2));
     color: #fff;
     flex-shrink: 0;
 }
@@ -130,8 +140,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
     flex-shrink: 0;
+}
+
+.panda-avatar-icon {
+    width: 22px;
+    height: 22px;
+    display: block;
 }
 
 .panda-title {
@@ -285,11 +300,12 @@
     border-left: 4px solid var(--panda-primary);
     border-radius: 12px;
     padding: 10px 12px;
+    box-shadow: var(--shadow-indigo-sm);
 }
 
-.panda-insight-card.panda-severity-warning { border-left-color: var(--panda-warning); }
-.panda-insight-card.panda-severity-critical { border-left-color: var(--panda-danger); }
-.panda-insight-card.panda-severity-info { border-left-color: var(--panda-info); }
+.panda-insight-card.panda-severity-warning { border-left-color: var(--panda-warning); box-shadow: var(--shadow-amber-sm); }
+.panda-insight-card.panda-severity-critical { border-left-color: var(--panda-danger); box-shadow: var(--shadow-red-sm); }
+.panda-insight-card.panda-severity-info { border-left-color: var(--panda-info); box-shadow: var(--shadow-cyan-sm); }
 
 .panda-insight-icon {
     font-size: 18px;
@@ -324,12 +340,13 @@
     border-radius: 999px;
     padding: 7px 12px;
     cursor: pointer;
-    transition: background .15s ease, transform .1s ease;
+    transition: background .15s ease, transform .1s ease, box-shadow .15s ease;
 }
 
 .panda-suggestion-chip:hover {
-    background: #eff6ff;
+    background: var(--panda-accent-soft);
     transform: translateY(-1px);
+    box-shadow: var(--shadow-indigo-sm);
 }
 
 /* Chat messages */
@@ -363,7 +380,7 @@
 
 .panda-bubble-user {
     align-self: flex-end;
-    background: linear-gradient(135deg, var(--panda-primary), var(--panda-primary-dark));
+    background: linear-gradient(135deg, var(--panda-primary), var(--panda-accent2));
     color: #fff;
     border-bottom-right-radius: 4px;
 }
@@ -407,7 +424,8 @@
     justify-content: center;
     cursor: pointer;
     flex-shrink: 0;
-    transition: background .15s ease;
+    transition: background .15s ease, box-shadow .15s ease;
+    box-shadow: 0 6px 16px -4px rgba(79, 70, 229, .35);
 }
 
 .panda-send-btn:hover {
@@ -420,6 +438,10 @@
 }
 
 @media (max-width: 576px) {
+    :root {
+        --panda-clearance-right: 88px;
+        --panda-clearance-bottom: 96px;
+    }
     .panda-widget { right: 16px; bottom: 16px; }
     .panda-panel {
         right: 8px;

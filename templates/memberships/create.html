@@ -4,24 +4,27 @@
 Create Membership
 {% endblock %}
 
+{% block page_eyebrow %}MEMBERSHIPS{% endblock %}
+{% block page_title %}Create Membership{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/memberships.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container mt-4">
+<div class="membership-form-page">
 
     <!-- Progress -->
-    <div class="mb-4">
+    <div class="mem-stepper">
 
-        <div class="d-flex justify-content-center align-items-center gap-4">
+        <span class="mem-step mem-step-done">
+            ✓ Student
+        </span>
 
-            <span class="badge bg-success p-2">
-                ✓ Student
-            </span>
-
-            <span class="badge bg-primary p-2">
-                2. Membership &amp; Payment
-            </span>
-
-        </div>
+        <span class="mem-step mem-step-active">
+            2. Membership &amp; Payment
+        </span>
 
     </div>
 
@@ -39,60 +42,30 @@ Create Membership
         {% endif %}
     {% endwith %}
 
-    <div class="card shadow">
+    <div class="mem-strip-card">
 
-        <div class="card-header">
-
-            <h3 class="mb-0">
-
-                <i class="bi bi-person-vcard-fill"></i>
-
-                Membership Details
-
-            </h3>
-
+        <div>
+            <div class="mem-strip-label">Library ID</div>
+            <div class="mem-strip-value">LIB{{ "%04d"|format(student.student_id) }}</div>
         </div>
 
-        <div class="card-body">
+        <div>
+            <div class="mem-strip-label">Student Name</div>
+            <div class="mem-strip-value">{{ student.full_name }}</div>
+        </div>
 
-            <div class="row mb-4">
+    </div>
 
-                <div class="col-md-6">
+    <form method="POST">
+        <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
 
-                    <label class="fw-bold">
+        <div class="mem-form-grid">
 
-                        Library ID
+            <div class="mem-form-main-early">
 
-                    </label>
+                <div class="mem-card">
 
-                    <p>
-
-                        LIB{{ "%04d"|format(student.student_id) }}
-
-                    </p>
-
-                </div>
-
-                <div class="col-md-6">
-
-                    <label class="fw-bold">
-
-                        Student Name
-
-                    </label>
-
-                    <p>
-
-                        {{ student.full_name }}
-
-                    </p>
-
-                </div>
-
-            </div>
-
-            <form method="POST">
-                <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+                    <div class="mem-card-title"><i class="bi bi-calendar-week"></i> Plan &amp; Duration</div>
 
                 <div class="row">
 
@@ -232,6 +205,16 @@ Create Membership
 
                 </div>
 
+                </div>
+
+            </div>
+
+            <div class="mem-form-main-late">
+
+                <div class="mem-card">
+
+                    <div class="mem-card-title"><i class="bi bi-cash-coin"></i> Fee &amp; Charges</div>
+
                 <div class="row" id="fee_breakdown_row">
 
                     <div class="col-md-3 mb-3">
@@ -248,6 +231,18 @@ Create Membership
                             id="plan_fee_display"
                             readonly
                             value="0">
+
+                        <input
+                            type="number"
+                            class="form-control d-none"
+                            id="plan_fee_input"
+                            name="total_fee"
+                            min="0"
+                            value="0">
+
+                        <div class="form-text d-none" id="plan_fee_manual_hint">
+                            Type the fee to charge.
+                        </div>
 
                     </div>
 
@@ -308,134 +303,11 @@ Create Membership
                 </div>
                 {% endif %}
 
-                <div class="row">
-
-                    <div class="col-md-4 mb-3">
-
-                        <label class="form-label">
-
-                            Total Payable (₹)
-
-                        </label>
-
-                        <input
-                            type="text"
-                            class="form-control"
-                            id="total_payable_display"
-                            readonly
-                            value="0">
-
-                        <input
-                            type="number"
-                            class="form-control d-none"
-                            id="total_payable_input"
-                            name="total_fee"
-                            min="0"
-                            value="0">
-
-                    </div>
-
-                    <div class="col-md-4 mb-3">
-
-                        <label class="form-label">
-
-                            Discount (₹)
-
-                        </label>
-
-                        <input
-                            type="number"
-                            class="form-control"
-                            id="discount_amount"
-                            name="discount_amount"
-                            placeholder="0"
-                            min="0"
-                            value="0">
-
-                    </div>
-
-                    <div class="col-md-4 mb-3">
-
-                        <label class="form-label">
-
-                            Discount Reason
-
-                        </label>
-
-                        <input
-                            type="text"
-                            class="form-control"
-                            name="discount_reason"
-                            placeholder="Optional">
-
-                    </div>
-
                 </div>
 
-                <div class="row">
+                <div class="mem-card">
 
-                    <div class="col-md-4 mb-3">
-
-                        <label class="form-label">
-
-                            Final Payable (₹)
-
-                        </label>
-
-                        <input
-                            type="text"
-                            class="form-control"
-                            id="final_payable_display"
-                            readonly
-                            value="0">
-
-                        <div class="form-text">
-                            Total Payable minus Discount.
-                        </div>
-
-                    </div>
-
-                    <div class="col-md-4 mb-3">
-
-                        <label class="form-label">
-
-                            Paid (₹)
-
-                        </label>
-
-                        <input
-                            type="number"
-                            class="form-control"
-                            name="paid_amount"
-                            placeholder="Amount received now"
-                            min="0"
-                            value="0"
-                            required>
-
-                    </div>
-
-                    <div class="col-md-4 mb-3">
-
-                        <label class="form-label">
-
-                            Pending (₹)
-
-                        </label>
-
-                        <input
-                            type="text"
-                            class="form-control"
-                            id="pending_preview"
-                            readonly
-                            value="0">
-
-                        <div class="form-text">
-                            Estimated - Final Payable minus Paid.
-                        </div>
-
-                    </div>
-
-                </div>
+                    <div class="mem-card-title"><i class="bi bi-credit-card"></i> Payment</div>
 
                 <div class="row">
 
@@ -461,6 +333,25 @@ Create Membership
 
                     </div>
 
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label">
+
+                            Paid (₹)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            name="paid_amount"
+                            placeholder="Amount received now"
+                            min="0"
+                            value="0"
+                            required>
+
+                    </div>
+
                 </div>
 
                 <div class="mb-3">
@@ -478,35 +369,141 @@ Create Membership
 
                 </div>
 
-                <div class="d-flex justify-content-between">
+                </div>
 
-                    <a
-                        href="{{ url_for('student.index') }}"
-                        class="btn btn-secondary">
+            </div>
 
-                        <i class="bi bi-arrow-left"></i>
+            <div class="mem-form-sidebar">
 
-                        Back
+                <div class="mem-card">
 
-                    </a>
+                    <div class="mem-card-title"><i class="bi bi-receipt-cutoff"></i> Payment Summary</div>
 
-                    <button
-                        type="submit"
-                        class="btn btn-success">
+                    <div class="mb-3">
 
-                        Save & Continue
+                        <label class="form-label">
 
-                        <i class="bi bi-arrow-right"></i>
+                            Total Payable (₹)
 
-                    </button>
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="total_payable_display"
+                            readonly
+                            value="0">
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+
+                            Discount (₹)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="discount_amount"
+                            name="discount_amount"
+                            placeholder="0"
+                            min="0"
+                            value="0">
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+
+                            Discount Reason
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            name="discount_reason"
+                            placeholder="Optional">
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+
+                            Final Payable (₹)
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="final_payable_display"
+                            readonly
+                            value="0">
+
+                        <div class="form-text">
+                            Total Payable minus Discount.
+                        </div>
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+
+                            Pending (₹)
+
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="pending_preview"
+                            readonly
+                            value="0">
+
+                        <div class="form-text">
+                            Estimated - Final Payable minus Paid.
+                        </div>
+
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+
+                        <a
+                            href="{{ url_for('student.index') }}"
+                            class="btn btn-secondary">
+
+                            <i class="bi bi-arrow-left"></i>
+
+                            Back
+
+                        </a>
+
+                        <button
+                            type="submit"
+                            class="btn btn-success">
+
+                            Save & Continue
+
+                            <i class="bi bi-arrow-right"></i>
+
+                        </button>
+
+                    </div>
 
                 </div>
 
-            </form>
+            </div>
 
         </div>
 
-    </div>
+    </form>
 
 </div>
 
@@ -518,9 +515,10 @@ const duration = document.getElementById("duration");
 const endDate = document.getElementById("end_date");
 const paidAmount = document.querySelector("input[name='paid_amount']");
 const planFeeDisplay = document.getElementById("plan_fee_display");
+const planFeeInput = document.getElementById("plan_fee_input");
+const planFeeManualHint = document.getElementById("plan_fee_manual_hint");
 const admissionFeeGroup = document.getElementById("admission_fee_group");
 const totalPayableDisplay = document.getElementById("total_payable_display");
-const totalPayableInput = document.getElementById("total_payable_input");
 const discountAmount = document.getElementById("discount_amount");
 const finalPayableDisplay = document.getElementById("final_payable_display");
 const pendingPreview = document.getElementById("pending_preview");
@@ -573,7 +571,7 @@ function selectedSlotOption(){
 
 function baseFee(){
     if(manualFee()){
-        return parseFloat(totalPayableInput.value) || 0;
+        return parseFloat(planFeeInput.value) || 0;
     }
     const opt = selectedSlotOption();
     if(opt){
@@ -602,19 +600,25 @@ function chargesTotal(){
 function updateTotalPayable(){
     const manual = manualFee();
 
-    totalPayableDisplay.classList.toggle("d-none", manual);
-    totalPayableInput.classList.toggle("d-none", !manual);
+    // The Plan Fee box is normally a read-only derived figure. In manual
+    // modes (Custom plan, Custom-hours shift, Day Pass) there's nothing to
+    // derive it from, so swap it for an actual input right there instead of
+    // leaving a blank read-only box that looks editable but silently isn't.
+    planFeeDisplay.classList.toggle("d-none", manual);
+    planFeeInput.classList.toggle("d-none", !manual);
+    planFeeInput.disabled = !manual;
+    if(planFeeManualHint) planFeeManualHint.classList.toggle("d-none", !manual);
+
     admissionFeeGroup.classList.add("d-none");   // superseded by Extra Charges
     // Extra charges aren't applied on a hand-typed total (Custom plan or
     // Custom-hours shift) - hide the box so it can't look like it will be.
     if(extraChargesCard) extraChargesCard.classList.toggle("d-none", manual);
 
     const base = baseFee();
-    planFeeDisplay.value = manual ? "" : base;
+    if(!manual) planFeeDisplay.value = base;
 
     const total = manual ? base : base + chargesTotal();
     totalPayableDisplay.value = total;
-    if(!manual) totalPayableInput.value = total;
 
     if(customHoursGroup){
         const cs = isCustomShift();
@@ -633,7 +637,7 @@ function updateTotalPayable(){
 // Final Payable = Total Payable - Discount (ADR-46). Cosmetic; the server
 // recomputes and stores this as total_fee.
 function updateFinalPayable(){
-    const total = parseFloat(manualFee() ? totalPayableInput.value : totalPayableDisplay.value) || 0;
+    const total = parseFloat(totalPayableDisplay.value) || 0;
     const discount = parseFloat(discountAmount.value) || 0;
     finalPayableDisplay.value = Math.max(total - discount, 0);
     updatePendingPreview();
@@ -648,7 +652,7 @@ function updatePendingPreview(){
 plan.addEventListener("change", function(){
     if(plan.value === "Day Pass"){
         duration.value = dayPassDays;
-        totalPayableInput.value = dayPassFee;   // pre-fill; staff can edit
+        planFeeInput.value = dayPassFee;   // pre-fill; staff can edit
     }else if(plan.value !== "Custom" && planPricing[plan.value]){
         duration.value = planPricing[plan.value].days;
     }else{
@@ -661,7 +665,7 @@ plan.addEventListener("change", function(){
 joiningDate.addEventListener("change", calculateEndDate);
 duration.addEventListener("input", calculateEndDate);
 paidAmount.addEventListener("input", updatePendingPreview);
-totalPayableInput.addEventListener("input", updateFinalPayable);
+planFeeInput.addEventListener("input", updateTotalPayable);
 discountAmount.addEventListener("input", updateFinalPayable);
 if(shiftSlot) shiftSlot.addEventListener("change", updateTotalPayable);
 if(customHours) customHours.addEventListener("input", updateTotalPayable);

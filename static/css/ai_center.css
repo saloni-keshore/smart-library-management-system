@@ -10,7 +10,14 @@
 
 .ai-center-page{
 
-    --ai-primary:#2563eb;
+    /* Retargeted to the app's global brand tokens (style.css :root) so this
+       page-scoped palette (deliberately isolated from other pages, see file
+       header) still reads as the same indigo/orange brand instead of the
+       older flat blue. */
+    --ai-primary:var(--accent, #4f46e5);
+    --ai-primary-dark:var(--accent-dark, #4338ca);
+    --ai-primary-soft-bg:var(--accent-soft, #eef0fe);
+    --ai-accent2:var(--accent2, #ea580c);
     --ai-violet:#7c3aed;
     --ai-success:#16a34a;
     --ai-success-soft-bg:#dcfce7;
@@ -27,13 +34,14 @@
     --ai-ink:#0f172a;
     --ai-muted:#64748b;
     --ai-faint:#94a3b8;
-    --ai-shadow:0 10px 30px rgba(15,23,42,.06);
+    --ai-shadow:0 10px 30px -10px rgba(79,70,229,.16), 0 3px 8px -3px rgba(79,70,229,.06);
 
     background:var(--ai-bg);
 
 }
 
 .ai-center-page .page-title{
+    font-family:'Sora','Poppins',sans-serif;
     font-size:26px;
     font-weight:700;
     color:var(--ai-ink);
@@ -108,12 +116,13 @@
 
 .ai-center-page .ai-tab:hover{
     background:#f1f5f9;
-    color:var(--ai-ink);
+    color:var(--ai-primary-dark);
 }
 
 .ai-center-page .ai-tab.active{
-    background:var(--ai-primary);
+    background:linear-gradient(120deg, var(--ai-primary), var(--ai-accent2));
     color:#fff;
+    box-shadow:0 8px 18px rgba(79,70,229,.25);
 }
 
 .ai-center-page .ai-card{
@@ -122,6 +131,11 @@
     border-radius:18px;
     box-shadow:var(--ai-shadow);
     height:100%;
+    transition:box-shadow .25s ease;
+}
+
+.ai-center-page .ai-card:hover{
+    box-shadow:0 18px 38px -12px rgba(79,70,229,.24), 0 6px 14px -6px rgba(79,70,229,.10);
 }
 
 .ai-center-page .ai-card-body{
@@ -133,6 +147,7 @@
 }
 
 .ai-center-page .ai-card-header h3{
+    font-family:'Sora','Poppins',sans-serif;
     font-size:15px;
     font-weight:700;
     color:var(--ai-ink);
@@ -189,7 +204,7 @@
     background:var(--ai-card);
     border:1px solid var(--ai-border);
     border-radius:14px;
-    box-shadow:0 16px 34px rgba(15,23,42,.12);
+    box-shadow:0 18px 38px -10px rgba(79,70,229,.22);
 }
 
 .ai-center-page .ai-suggestion{
@@ -253,7 +268,7 @@
     width:48px;
     height:48px;
     border-radius:50%;
-    background:#eef2ff;
+    background:var(--ai-primary-soft-bg);
     color:var(--ai-primary);
     display:flex;
     align-items:center;
@@ -261,6 +276,7 @@
     font-weight:700;
     font-size:16px;
     flex:none;
+    box-shadow:var(--shadow-indigo-sm);
 }
 
 .ai-center-page .ai-student-id h4{
@@ -301,6 +317,7 @@
 }
 
 .ai-center-page .ai-score-num{
+    font-family:'Sora','Poppins',sans-serif;
     font-size:32px;
     font-weight:700;
     line-height:1;
@@ -419,6 +436,7 @@
 }
 
 .ai-center-page .ai-key-cell b{
+    font-family:'Sora','Poppins',sans-serif;
     font-size:16px;
     color:var(--ai-ink);
 }
@@ -497,13 +515,24 @@
 }
 
 .ai-center-page .ai-save-btn{
-    background:var(--ai-primary);
+    background:linear-gradient(120deg, var(--ai-primary), var(--ai-accent2));
     color:#fff;
     border:none;
     border-radius:10px;
     padding:11px 22px;
+    font-family:'Sora','Poppins',sans-serif;
     font-size:13.5px;
     font-weight:600;
+    transition:opacity .2s ease, box-shadow .2s ease;
+    box-shadow:0 8px 18px -5px rgba(79,70,229,.35);
+}
+
+.ai-center-page .ai-save-btn:hover{
+    box-shadow:0 10px 22px -5px rgba(79,70,229,.42);
+}
+
+.ai-center-page .ai-save-btn:hover{
+    opacity:.92;
 }
 
 /* ---------------- info banner ---------------- */
@@ -512,8 +541,8 @@
     display:flex;
     align-items:flex-start;
     gap:12px;
-    background:#eff6ff;
-    border:1px solid #dbeafe;
+    background:var(--ai-primary-soft-bg);
+    border:1px solid rgba(79,70,229,.18);
     border-radius:14px;
     padding:14px 18px;
     margin-bottom:18px;
@@ -570,7 +599,7 @@
     background:var(--ai-card);
     border:1px solid var(--ai-border);
     border-radius:12px;
-    box-shadow:0 16px 34px rgba(15,23,42,.14);
+    box-shadow:0 18px 38px -10px rgba(79,70,229,.24);
     padding:12px 14px;
     font-size:11.5px;
     line-height:1.45;

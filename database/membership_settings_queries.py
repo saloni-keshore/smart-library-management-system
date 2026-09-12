@@ -94,17 +94,24 @@ def save_membership_settings(admin_id, data):
         if field in data:
             payload[field] = data[field]
 
-    try:
-        supabase.table("membership_settings").upsert(
-            payload, on_conflict="admin_id"
-        ).execute()
-    except APIError as error:
-        if not _is_undefined_column_error(error):
-            raise
-        # ADR-66 charge columns / ADR-71 day-pass columns not on this project
-        # yet - persist the rest (ADR-38 precedent); get_charge_config() then
-        # keeps returning 0s and the Day Pass plan defaults to fee 0 / 1 day.
-        fallback = {k: v for k, v in payload.items() if k not in _OPTIONAL_FIELDS}
-        supabase.table("membership_settings").upsert(
-            fallback, on_conflict="admin_id"
-        ).execute()
+    # Progressive narrowing on an undefined-column error: drop the *newest*
+    # optional group first (ADR-71 day-pass), and only if it still fails drop
+    # the older group too (ADR-66 charges). A project that has the charge
+    # columns but not the day-pass columns must keep saving its Extra Charges
+    # settings - stripping the whole _OPTIONAL_FIELDS bundle on the first
+    # error (as this did before) silently wiped seat/locker/deposit fees and
+    # their compulsory flags on every save.
+    attempts = (
+        payload,
+        {k: v for k, v in payload.items() if k not in _DAY_PASS_FIELDS},
+        {k: v for k, v in payload.items() if k not in _OPTIONAL_FIELDS},
+    )
+    for index, attempt in enumerate(attempts):
+        try:
+            supabase.table("membership_settings").upsert(
+                attempt, on_conflict="admin_id"
+            ).execute()
+            return
+        except APIError as error:
+            if not _is_undefined_column_error(error) or index == len(attempts) - 1:
+                raise

@@ -4,29 +4,28 @@
 Renew Membership
 {% endblock %}
 
+{% block page_eyebrow %}MEMBERSHIPS{% endblock %}
+{% block page_title %}Renew Membership{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/memberships.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container-fluid mt-4">
+<div class="membership-form-page">
 
     <!-- Progress -->
 
-    <div class="mb-4">
+    <div class="mem-stepper">
 
-        <div class="d-flex justify-content-center gap-3">
+        <span class="mem-step mem-step-done">
+            ✓ Student
+        </span>
 
-            <span class="badge bg-success fs-6 px-3 py-2">
-
-                ✓ Student
-
-            </span>
-
-            <span class="badge bg-warning text-dark fs-6 px-3 py-2">
-
-                🔄 Renew Membership &amp; Payment
-
-            </span>
-
-        </div>
+        <span class="mem-step mem-step-active">
+            🔄 Renew Membership &amp; Payment
+        </span>
 
     </div>
 
@@ -44,68 +43,26 @@ Renew Membership
         {% endif %}
     {% endwith %}
 
-    <!-- Student Card -->
+    <!-- Student -->
 
-    <div class="card shadow-sm border-0 mb-4">
+    <div class="mem-strip-card">
 
-        <div class="card-header bg-primary text-white">
-
-            <h4 class="mb-0">
-
-                <i class="bi bi-person-circle"></i>
-
-                Student Information
-
-            </h4>
-
+        <div>
+            <div class="mem-strip-label">Library ID</div>
+            <div class="mem-strip-value">LIB{{ "%04d"|format(student.student_id) }}</div>
         </div>
 
-        <div class="card-body">
+        <div>
+            <div class="mem-strip-label">Student Name</div>
+            <div class="mem-strip-value">{{ student.full_name }}</div>
+        </div>
 
-            <div class="row">
-
-                <div class="col-md-4">
-
-                    <strong>Library ID</strong>
-
-                    <p class="mb-0">
-
-                        LIB{{ "%04d"|format(student.student_id) }}
-
-                    </p>
-
-                </div>
-
-                <div class="col-md-4">
-
-                    <strong>Student Name</strong>
-
-                    <p class="mb-0">
-
-                        {{ student.full_name }}
-
-                    </p>
-
-                </div>
-
-                <div class="col-md-4">
-
-                    <strong>Mobile</strong>
-
-                    <p class="mb-0">
-
-                        {{ student.mobile }}
-
-                    </p>
-
-                </div>
-
-            </div>
-
+        <div>
+            <div class="mem-strip-label">Mobile</div>
+            <div class="mem-strip-value">{{ student.mobile }}</div>
         </div>
 
     </div>
-
 
     <!-- Renewal Notice -->
 
@@ -121,33 +78,22 @@ Renew Membership
 
     </div>
 
+    <form method="POST">
+        <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
 
-    <!-- Membership Form -->
+        <div class="mem-form-grid">
 
-    <div class="card shadow">
+            <div class="mem-form-main-early">
 
-        <div class="card-header">
+                <div class="mem-card">
 
-            <h4 class="mb-0">
-
-                <i class="bi bi-arrow-repeat"></i>
-
-                Renew Membership
-
-            </h4>
-
-        </div>
-
-        <div class="card-body">
-
-            <form method="POST">
-                <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+                    <div class="mem-card-title"><i class="bi bi-calendar-week"></i> Plan &amp; Duration</div>
 
                 <div class="row">
 
                     <div class="col-md-6 mb-3">
 
-                        <label class="form-label fw-bold">
+                        <label class="form-label">
 
                             Membership Plan
 
@@ -179,7 +125,7 @@ Renew Membership
 
                     <div class="col-md-6 mb-3">
 
-                        <label class="form-label fw-bold">
+                        <label class="form-label">
 
                             Joining Date
 
@@ -238,7 +184,56 @@ Renew Membership
                 </div>
                 {% endif %}
 
+                <div class="row">
+
+                    <div class="col-md-3 mb-3">
+
+                        <label class="form-label">
+
+                            Duration (Days)
+
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="duration"
+                            name="duration_days"
+                            required>
+
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+
+                        <label class="form-label">
+
+                            End Date
+
+                        </label>
+
+                        <input
+                            type="date"
+                            class="form-control"
+                            id="end_date"
+                            name="end_date"
+                            readonly
+                            required>
+
+                    </div>
+
+                </div>
+
+                </div>
+
+            </div>
+
+            <div class="mem-form-main-late">
+
                 {% if charge_config %}
+                <div class="mem-card">
+
+                    <div class="mem-card-title"><i class="bi bi-cash-coin"></i> Fee &amp; Charges</div>
+
                 <div class="mb-3" id="extra_charges_card">
 
                     <label class="form-label fw-bold">Extra Charges</label>
@@ -272,53 +267,88 @@ Renew Membership
                     </div>
 
                 </div>
+
+                </div>
                 {% endif %}
 
+                <div class="mem-card">
+
+                    <div class="mem-card-title"><i class="bi bi-credit-card"></i> Payment</div>
 
                 <div class="row">
 
-                    <div class="col-md-3 mb-3">
+                    <div class="col-md-6 mb-3">
 
-                        <label class="form-label fw-bold">
+                        <label class="form-label">
 
-                            Duration (Days)
+                            Payment Mode
+
+                        </label>
+
+                        <select class="form-select" name="payment_mode">
+
+                            <option value="Cash">Cash</option>
+
+                            <option value="UPI">UPI</option>
+
+                            <option value="Card">Card</option>
+
+                            <option value="Bank Transfer">Bank Transfer</option>
+
+                        </select>
+
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+
+                        <label class="form-label">
+
+                            Paid (₹)
 
                         </label>
 
                         <input
                             type="number"
                             class="form-control"
-                            id="duration"
-                            name="duration_days"
-                            required>
-
-                    </div>
-
-                    <div class="col-md-3 mb-3">
-
-                        <label class="form-label fw-bold">
-
-                            End Date
-
-                        </label>
-
-                        <input
-                            type="date"
-                            class="form-control"
-                            id="end_date"
-                            name="end_date"
-                            readonly
+                            name="paid_amount"
+                            placeholder="Amount received now"
+                            min="0"
+                            value="0"
                             required>
 
                     </div>
 
                 </div>
 
-                <div class="row">
+                <div class="mb-3">
 
-                    <div class="col-md-4 mb-3">
+                    <label class="form-label">
 
-                        <label class="form-label fw-bold">
+                        Remarks
+
+                    </label>
+
+                    <textarea
+                        class="form-control"
+                        rows="4"
+                        name="remarks"
+                        placeholder="Optional remarks..."></textarea>
+
+                </div>
+
+                </div>
+
+            </div>
+
+            <div class="mem-form-sidebar">
+
+                <div class="mem-card">
+
+                    <div class="mem-card-title"><i class="bi bi-receipt-cutoff"></i> Payment Summary</div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
 
                             Total Payable (₹)
 
@@ -341,28 +371,9 @@ Renew Membership
 
                     </div>
 
-                    <div class="col-md-4 mb-3">
+                    <div class="mb-3">
 
-                        <label class="form-label fw-bold">
-
-                            Paid (₹)
-
-                        </label>
-
-                        <input
-                            type="number"
-                            class="form-control"
-                            name="paid_amount"
-                            placeholder="Amount received now"
-                            min="0"
-                            value="0"
-                            required>
-
-                    </div>
-
-                    <div class="col-md-4 mb-3">
-
-                        <label class="form-label fw-bold">
+                        <label class="form-label">
 
                             Pending (₹)
 
@@ -381,84 +392,37 @@ Renew Membership
 
                     </div>
 
-                </div>
+                    <div class="d-flex justify-content-between">
 
-                <div class="row">
+                        <a
+                            href="{{ url_for('student.view', student_id=student.student_id) }}"
+                            class="btn btn-secondary">
 
-                    <div class="col-md-6 mb-3">
+                            <i class="bi bi-arrow-left"></i>
 
-                        <label class="form-label fw-bold">
+                            Back
 
-                            Payment Mode
+                        </a>
 
-                        </label>
+                        <button
+                            type="submit"
+                            class="btn btn-warning">
 
-                        <select class="form-select" name="payment_mode">
+                            <i class="bi bi-arrow-repeat"></i>
 
-                            <option value="Cash">Cash</option>
+                            Renew & Continue to Payment
 
-                            <option value="UPI">UPI</option>
-
-                            <option value="Card">Card</option>
-
-                            <option value="Bank Transfer">Bank Transfer</option>
-
-                        </select>
+                        </button>
 
                     </div>
 
                 </div>
 
-
-                <div class="mb-3">
-
-                    <label class="form-label fw-bold">
-
-                        Remarks
-
-                    </label>
-
-                    <textarea
-                        class="form-control"
-                        rows="4"
-                        name="remarks"
-                        placeholder="Optional remarks..."></textarea>
-
-                </div>
-
-
-                <hr>
-
-
-                <div class="d-flex justify-content-between">
-
-                    <a
-                        href="{{ url_for('student.view', student_id=student.student_id) }}"
-                        class="btn btn-secondary">
-
-                        <i class="bi bi-arrow-left"></i>
-
-                        Back
-
-                    </a>
-
-                    <button
-                        type="submit"
-                        class="btn btn-warning">
-
-                        <i class="bi bi-arrow-repeat"></i>
-
-                        Renew & Continue to Payment
-
-                    </button>
-
-                </div>
-
-            </form>
+            </div>
 
         </div>
 
-    </div>
+    </form>
 
 </div>
 

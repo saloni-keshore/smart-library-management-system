@@ -4,9 +4,17 @@
 Students
 {% endblock %}
 
+{% block page_eyebrow %}STUDENTS{% endblock %}
+{% block page_title %}All Students{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/students.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-4 students-page">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -39,14 +47,6 @@ Students
 
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
 
-        <h2 class="mb-0">
-
-            <i class="bi bi-people-fill"></i>
-
-            Students
-
-        </h2>
-
         <div class="d-flex align-items-center gap-2 flex-wrap">
 
             <div class="btn-group btn-group-sm" role="group" id="typeFilter" aria-label="Student type filter">
@@ -54,11 +54,6 @@ Students
                 <button type="button" class="btn btn-outline-secondary" data-type="Regular">Regular</button>
                 <button type="button" class="btn btn-outline-secondary" data-type="Casual">Casual</button>
             </div>
-
-            <a href="{{ url_for('student.quick_admit') }}" class="btn btn-success btn-sm">
-                <i class="bi bi-person-badge"></i>
-                Quick Admit
-            </a>
 
             <input
                 type="text"
@@ -69,6 +64,11 @@ Students
 
         </div>
 
+        <a href="{{ url_for('student.quick_admit') }}" class="btn btn-success btn-sm btn-quick-admit">
+            <i class="bi bi-person-badge"></i>
+            Quick Admit
+        </a>
+
     </div>
 
     <div class="card shadow">
@@ -77,7 +77,7 @@ Students
 
             <table class="table table-hover align-middle" id="studentTable">
 
-                <thead class="table-dark">
+                <thead class="students-thead">
 
                     <tr>
 
@@ -124,7 +124,7 @@ Students
                     <td>
                         {{ student.full_name }}
                         {% if student.student_type == "Casual" %}
-                        <span class="badge bg-info text-dark ms-1">Casual</span>
+                        <span class="badge badge-soft-info ms-1">Casual</span>
                         {% endif %}
                     </td>
 
@@ -140,7 +140,7 @@ Students
 
                         {% if student.status == "Pending" %}
 
-                        <span class="badge bg-warning text-dark">
+                        <span class="badge badge-soft-warning">
 
                             Pending
 
@@ -148,7 +148,7 @@ Students
 
                         {% elif student.status != "Active" %}
 
-                        <span class="badge bg-secondary">
+                        <span class="badge badge-soft-secondary">
 
                             Inactive
 
@@ -156,7 +156,7 @@ Students
 
                         {% elif student.membership_status == "Active" %}
 
-                        <span class="badge bg-success">
+                        <span class="badge badge-soft-success">
 
                             Active
 
@@ -164,7 +164,7 @@ Students
 
                         {% elif student.membership_id %}
 
-                        <span class="badge bg-danger">
+                        <span class="badge badge-soft-danger">
 
                             Expired
 
@@ -172,7 +172,7 @@ Students
 
                         {% else %}
 
-                        <span class="badge bg-secondary">
+                        <span class="badge badge-soft-secondary">
 
                             No membership
 

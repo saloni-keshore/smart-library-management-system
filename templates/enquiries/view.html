@@ -4,9 +4,17 @@
 Enquiry Details
 {% endblock %}
 
+{% block page_eyebrow %}ENQUIRIES{% endblock %}
+{% block page_title %}{{ enquiry.full_name }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/enquiries.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container mt-4">
+<div class="container mt-4 enquiries-page">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -35,9 +43,9 @@ Enquiry Details
             </h3>
 
             <span class="badge
-                {% if enquiry.status == 'Admitted' %}bg-primary
-                {% elif enquiry.status == 'Interested' %}bg-warning text-dark
-                {% else %}bg-secondary{% endif %}">
+                {% if enquiry.status == 'Admitted' %}badge-soft-primary
+                {% elif enquiry.status == 'Interested' %}badge-soft-warning
+                {% else %}badge-soft-secondary{% endif %}">
 
                 {{ enquiry.status }}
 
@@ -85,7 +93,7 @@ Enquiry Details
 
             <h5>Remarks</h5>
 
-            <div class="border rounded p-3 bg-light">
+            <div class="enquiry-remarks-box p-3">
 
                 {{ enquiry.remarks or "No remarks available." }}
 
@@ -127,7 +135,7 @@ Enquiry Details
 
                 <a
                     href="{{ url_for('student.view', student_id=student.student_id) }}"
-                    class="btn btn-primary">
+                    class="btn btn-gradient">
 
                     <i class="bi bi-person-badge-fill"></i>
 
@@ -139,7 +147,7 @@ Enquiry Details
 
                 <a
                     href="{{ url_for('student.admission', enquiry_id=enquiry.enquiry_id) }}"
-                    class="btn btn-success">
+                    class="btn btn-gradient">
 
                     <i class="bi bi-mortarboard-fill"></i>
 

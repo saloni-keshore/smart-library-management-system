@@ -2,13 +2,16 @@
 
 {% block title %}Memberships{% endblock %}
 
+{% block page_eyebrow %}MEMBERSHIPS{% endblock %}
+{% block page_title %}All Memberships{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/memberships.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container-fluid mt-4">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-person-vcard"></i> Memberships</h2>
-    </div>
+<div class="memberships-page">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -24,64 +27,102 @@
         {% endif %}
     {% endwith %}
 
-    <div class="card shadow">
+    <div class="mem-toolbar">
 
-        <div class="card-body">
+        <div class="mem-search">
+            <i class="bi bi-search"></i>
+            <input type="text" id="memSearch" placeholder="Search by student or Library ID...">
+        </div>
 
-            <table class="table table-hover align-middle">
+        <div class="mem-status-filter" id="memStatusFilter">
+            <button type="button" class="active" data-status="all">All</button>
+            <button type="button" data-status="active">Active</button>
+            <button type="button" data-status="expired">Expired</button>
+        </div>
 
-                <thead class="table-dark">
+        <div class="mem-toolbar-count">
+            <span id="memVisibleCount">{{ memberships|length }}</span> of {{ memberships|length }} memberships
+        </div>
+
+    </div>
+
+    <div class="card shadow-sm mem-toolbar-card">
+
+        <div class="card-body p-0">
+
+            <div class="table-responsive">
+
+            <table class="table table-hover align-middle mb-0" id="membershipsTable">
+
+                <thead>
                     <tr>
-                        <th>#</th>
+                        <th class="mem-col-index">#</th>
                         <th>Library ID</th>
                         <th>Student</th>
                         <th>Plan</th>
                         <th>Start</th>
                         <th>End</th>
-                        <th>Fee</th>
-                        <th>Pending</th>
+                        <th class="text-end">Fee</th>
+                        <th class="text-end">Pending</th>
                         <th>Status</th>
-                        <th>Actions</th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
 
                 <tbody>
                 {% for m in memberships %}
-                <tr>
-                    <td>{{ loop.index }}</td>
-                    <td>LIB{{ "%04d"|format(m.student_id) }}</td>
-                    <td>{{ m.full_name }}</td>
+                <tr data-status="{{ 'active' if m.membership_status == 'Active' else 'expired' }}">
+                    <td class="mem-col-index text-muted">{{ loop.index }}</td>
+                    <td class="font-monospace">LIB{{ "%04d"|format(m.student_id) }}</td>
+                    <td class="fw-semibold text-dark">{{ m.full_name }}</td>
                     <td>{{ m.plan_name }}</td>
                     <td>{{ m.joining_date }}</td>
                     <td>{{ m.end_date }}</td>
-                    <td>₹{{ m.total_fee }}</td>
-                    <td>₹{{ m.pending_amount }}</td>
+                    <td class="text-end">₹{{ m.total_fee }}</td>
+                    <td class="text-end {{ 'mem-pending-due' if m.pending_amount > 0 else 'text-muted' }}">₹{{ m.pending_amount }}</td>
                     <td>
                         {% if m.membership_status == "Active" %}
-                        <span class="badge bg-success">Active</span>
+                        <span class="mem-pill mem-pill-active">Active</span>
                         {% else %}
-                        <span class="badge bg-danger">Expired</span>
+                        <span class="mem-pill mem-pill-expired">Expired</span>
                         {% endif %}
                     </td>
-                    <td>
-                        <a href="{{ url_for('student.view', student_id=m.student_id) }}" class="btn btn-sm btn-primary">
+                    <td class="text-center">
+                        <a href="{{ url_for('student.view', student_id=m.student_id) }}" class="mem-action-view" title="View student">
                             <i class="bi bi-eye"></i>
                         </a>
                         {% if m.pending_amount > 0 %}
-                        <a href="{{ url_for('payment.collect', membership_id=m.membership_id) }}" class="btn btn-sm btn-success">
-                            <i class="bi bi-credit-card"></i>
+                        <a href="{{ url_for('payment.collect', membership_id=m.membership_id) }}" class="mem-action-link ms-3">
+                            <i class="bi bi-credit-card"></i> Collect
                         </a>
                         {% endif %}
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="10" class="text-center text-muted">No memberships found.</td>
+                    <td colspan="10" class="p-0 border-0">
+                        <div class="empty-state">
+                            <i class="bi bi-person-vcard empty-state-icon"></i>
+                            <h6 class="empty-state-title">No memberships found</h6>
+                            <small class="empty-state-subtitle">New memberships are created from a student's profile.</small>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
+                <tr id="memNoMatchRow" hidden>
+                    <td colspan="10" class="p-0 border-0">
+                        <div class="empty-state">
+                            <i class="bi bi-search empty-state-icon"></i>
+                            <h6 class="empty-state-title">No matches</h6>
+                            <small class="empty-state-subtitle">Try a different search or filter.</small>
+                        </div>
+                    </td>
+                </tr>
                 </tbody>
 
             </table>
+
+            </div>
 
         </div>
 
@@ -89,4 +130,50 @@
 
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+
+const memSearch = document.getElementById("memSearch");
+const memStatusFilter = document.getElementById("memStatusFilter");
+const memNoMatchRow = document.getElementById("memNoMatchRow");
+const memVisibleCount = document.getElementById("memVisibleCount");
+const memRows = Array.from(document.querySelectorAll("#membershipsTable tbody tr[data-status]"));
+let activeStatus = "all";
+
+function applyMemFilters(){
+
+    const value = (memSearch.value || "").toLowerCase();
+    let visible = 0;
+
+    memRows.forEach(function(row){
+        const matchesText = row.innerText.toLowerCase().includes(value);
+        const matchesStatus = activeStatus === "all" || row.dataset.status === activeStatus;
+        const show = matchesText && matchesStatus;
+        row.style.display = show ? "" : "none";
+        if(show) visible++;
+    });
+
+    if(memVisibleCount) memVisibleCount.textContent = visible;
+    if(memNoMatchRow) memNoMatchRow.hidden = memRows.length === 0 || visible > 0;
+
+}
+
+if(memSearch){
+    memSearch.addEventListener("keyup", applyMemFilters);
+}
+
+if(memStatusFilter){
+    memStatusFilter.querySelectorAll("button").forEach(function(btn){
+        btn.addEventListener("click", function(){
+            memStatusFilter.querySelectorAll("button").forEach(function(b){ b.classList.remove("active"); });
+            btn.classList.add("active");
+            activeStatus = btn.dataset.status;
+            applyMemFilters();
+        });
+    });
+}
+
+</script>
 {% endblock %}

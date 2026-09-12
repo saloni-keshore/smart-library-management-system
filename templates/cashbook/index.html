@@ -4,6 +4,9 @@
 Cashbook
 {% endblock %}
 
+{% block page_eyebrow %}CASHBOOK{% endblock %}
+{% block page_title %}Cashbook{% endblock %}
+
 {% block styles %}
 <link rel="stylesheet"
       href="{{ url_for('static', filename='css/cashbook.css') }}">
@@ -17,7 +20,7 @@ Cashbook
         {% if messages %}
             {% for category, message in messages %}
 
-                <div class="alert alert-{{ category }}">
+                <div class="alert alert-{{ category }} rounded-3">
 
                     {{ message }}
 
@@ -28,7 +31,7 @@ Cashbook
     {% endwith %}
 
     {% if unsynced_payment_count %}
-        <div class="alert alert-warning">
+        <div class="alert alert-warning rounded-3">
             {{ unsynced_payment_count }} payment{{ 's' if unsynced_payment_count != 1 else '' }}
             missing a matching Cashbook ledger entry. The payment{{ 's were' if unsynced_payment_count != 1 else ' was' }}
             recorded successfully, but the automatic Income entry could not be created - contact
@@ -39,19 +42,11 @@ Cashbook
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
 
-        <div>
+        <p class="text-muted mb-0">
+            Track your library income, expenses and financial performance.
+        </p>
 
-            <h2 class="fw-bold mb-1">
-                Cashbook
-            </h2>
-
-            <p class="text-muted mb-0">
-                Track your library income, expenses and financial performance.
-            </p>
-
-        </div>
-
-        <button class="btn btn-primary rounded-3"
+        <button class="btn btn-primary rounded-3 cashbook-btn-gradient"
                 data-bs-toggle="modal"
                 data-bs-target="#transactionModal">
 

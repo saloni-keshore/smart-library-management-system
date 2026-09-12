@@ -4,6 +4,9 @@
 Library Profile
 {% endblock %}
 
+{% block page_eyebrow %}SETTINGS{% endblock %}
+{% block page_title %}Library Profile{% endblock %}
+
 {% block styles %}
 <link rel="stylesheet"
       href="{{ url_for('static', filename='css/settings.css') }}">
@@ -14,19 +17,11 @@ Library Profile
 <div class="container-fluid py-3 settings-page">
 
     <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 settings-subpage-header">
 
-        <div>
-
-            <h2 class="fw-bold mb-1">
-                Library Profile
-            </h2>
-
-            <p class="text-muted mb-0">
-                These details appear on receipts and reports across the app.
-            </p>
-
-        </div>
+        <p class="text-muted mb-0">
+            These details appear on receipts and reports across the app.
+        </p>
 
         <a href="{{ url_for('setting.index') }}" class="btn btn-secondary rounded-3">
             <i class="bi bi-arrow-left"></i>

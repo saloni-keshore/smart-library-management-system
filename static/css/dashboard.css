@@ -1,0 +1,218 @@
+/* ==========================================================
+   DASHBOARD PAGE
+
+   Scoped entirely under .dash-page, following the same
+   page-scoped-stylesheet pattern as business_intelligence.css /
+   cashbook.css: shared classes reused here (.stat-card,
+   .dashboard-card, .action-card, .icon-circle, .insight-item,
+   .chart-card-revenue / .chart-card-membership - all defined in
+   static/css/style.css) are only refined for this page and never
+   bleed into other pages that reuse the same shared classes.
+
+   Visual restyle only - see docs/CHANGELOG.md for the entry that
+   introduced this file. No Jinja variables, ids, or JS-read
+   selectors are touched by this stylesheet.
+========================================================== */
+
+.dash-page{
+
+    --dash-border:#e2e8f0;
+    --dash-ink:#0f172a;
+    --dash-muted:#64748b;
+    --dash-faint:#94a3b8;
+
+}
+
+
+/* ==========================================================
+   PAGE LEAD TEXT
+   Replaces the old in-page "Dashboard" heading now that
+   base.html's page header strip already renders the page title
+   (see docs/11_FUTURE_WORK.md TD-105).
+========================================================== */
+
+.dash-page .dash-lead-text{
+
+    margin:0 0 4px;
+    color:var(--dash-muted);
+    font-size:14px;
+
+}
+
+
+/* ==========================================================
+   SECTION LABELS
+========================================================== */
+
+.dash-page .dash-section-label{
+
+    font-family:'Sora','Poppins',sans-serif;
+    font-size:12px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--dash-muted);
+    margin-bottom:10px;
+
+}
+
+
+/* ==========================================================
+   KPI STAT CARDS
+========================================================== */
+
+.dash-page .stat-card{
+
+    border:1px solid var(--dash-border) !important;
+    box-shadow:var(--shadow-indigo-sm) !important;
+
+}
+
+.dash-page .stat-card:hover{
+
+    box-shadow:var(--shadow-indigo-md) !important;
+
+}
+
+.dash-page .stat-card-value,
+.dash-page .insight-value{
+
+    font-family:'Sora','Poppins',sans-serif;
+
+}
+
+.dash-page .icon-circle{
+
+    background:var(--accent-soft);
+
+}
+
+.dash-page .stat-card-footer small{
+
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    padding:3px 10px;
+    border-radius:999px;
+    font-size:.72rem;
+
+}
+
+.dash-page .stat-card-footer small.text-success{
+
+    background:#dcfce7;
+    box-shadow:0 2px 8px -2px rgba(22,163,74,.28);
+
+}
+
+.dash-page .stat-card-footer small.text-danger{
+
+    background:#fee2e2;
+    box-shadow:0 2px 8px -2px rgba(220,38,38,.24);
+
+}
+
+.dash-page .stat-card-footer small.text-primary{
+
+    background:var(--accent-soft);
+    box-shadow:0 2px 8px -2px rgba(79,70,229,.22);
+
+}
+
+
+/* ==========================================================
+   DASHBOARD / CHART CARDS
+   Flatter chrome at rest (border + no shadow) matching the
+   approved mockup's card language; hover lift/shadow from
+   style.css's .dashboard-card:hover is left untouched.
+========================================================== */
+
+.dash-page .dashboard-card{
+
+    border:1px solid var(--dash-border) !important;
+    box-shadow:var(--shadow-indigo-sm) !important;
+
+}
+
+.dash-page .dashboard-card:hover{
+
+    box-shadow:var(--shadow-indigo-md) !important;
+
+}
+
+.dash-page .dashboard-card .card-header{
+
+    border-bottom:1px solid var(--dash-border);
+
+}
+
+.dash-page .dashboard-card .card-header h4,
+.dash-page .dashboard-card .card-header h5,
+.dash-page .chart-card-revenue .card-header h5,
+.dash-page .chart-card-membership .card-header h5{
+
+    font-family:'Sora','Poppins',sans-serif;
+    font-size:15px;
+
+}
+
+#revenue-period-select{
+
+    border-color:var(--dash-border);
+
+}
+
+
+/* ==========================================================
+   TABLES - uppercase muted header labels
+========================================================== */
+
+.dash-page .dashboard-card thead.table-light th{
+
+    background-color:#fff;
+    color:var(--dash-faint);
+    font-size:10.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    border-top:1px solid #f1f5f9;
+    border-bottom:1px solid #f1f5f9;
+
+}
+
+.dash-page .dashboard-card table td{
+
+    font-size:13px;
+    color:#334155;
+
+}
+
+.dash-page .dashboard-card table thead th:last-child,
+.dash-page .dashboard-card table tbody td:not([colspan]):last-child{
+
+    text-align:right;
+
+}
+
+
+/* ==========================================================
+   QUICK ACTION CARDS
+========================================================== */
+
+.dash-page .action-card{
+
+    border-color:var(--dash-border);
+
+}
+
+
+/* ==========================================================
+   TRANSACTION MODALS (card chrome only)
+========================================================== */
+
+.dash-page .modal-header h4{
+
+    font-family:'Sora','Poppins',sans-serif;
+    font-size:18px;
+
+}

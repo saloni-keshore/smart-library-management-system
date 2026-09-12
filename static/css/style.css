@@ -10,13 +10,14 @@
     overflow:hidden;
     position:relative;
     height:128px;
+    box-shadow:var(--shadow-indigo-sm);
 
 }
 
 .stat-card:hover{
 
     transform:translateY(-3px);
-    box-shadow:0 10px 22px rgba(0,0,0,.08);
+    box-shadow:var(--shadow-indigo-md);
 
 }
 
@@ -91,6 +92,7 @@
     font-size:19px;
     flex-shrink:0;
     animation:floatIcon 4s ease-in-out infinite;
+    box-shadow:0 4px 12px -3px rgba(79,70,229,.20);
 
 }
 
@@ -127,371 +129,334 @@
 
 
 /* ==========================================================
-   DASHBOARD LAYOUT
+   GLOBAL DESIGN TOKENS
+   Redesign brand palette - indigo primary + orange secondary,
+   used for gradients/active states across every page.
 ========================================================== */
 
-.sidebar-wrapper{
+:root{
 
-    --sidebar-bg:#1a2234;
-    --sidebar-bg-alt:#212a3e;
-    --sidebar-border:rgba(255,255,255,.08);
-    --sidebar-text:#aab2c5;
-    --sidebar-text-muted:#6b7385;
-    --sidebar-text-strong:#e9edf5;
-    --sidebar-active-bg:#2563eb;
-    --sidebar-active-glow:rgba(37,99,235,.45);
-    --sidebar-hover-bg:#242e45;
-    --sidebar-logo-green:#22c55e;
-    --sidebar-logo-green-dark:#16a34a;
-    --sidebar-danger:#ef4444;
-    --sidebar-danger-hover:rgba(239,68,68,.15);
-
-    width:248px;
-    min-width:248px;
-    height:100vh;
-    position:fixed;
-    left:0;
-    top:70px;
-    overflow-y:auto;
-    background:var(--sidebar-bg);
-    border-right:1px solid var(--sidebar-border);
-
-}
-
-.content-wrapper{
-
-    margin-left:248px;
-    width:calc(100% - 248px);
-    padding:24px 100px 104px 24px;
-    background:#f8fafc;
-    min-height:100vh;
+    --accent:#4f46e5;
+    --accent-dark:#4338ca;
+    --accent2:#ea580c;
+    --accent-soft:#eef0fe;
 
 }
 
 
 /* ==========================================================
-   SIDEBAR
+   SOFT PASTEL SHADOWS
+   Diffused, color-tinted elevation used across every page instead
+   of flat black drop-shadows - each card/button/input gets a glow
+   in ITS OWN accent hue (indigo brand default, plus the semantic
+   success/danger/warning/violet/orange tints already used for
+   badges and icons everywhere) so depth reads as premium rather
+   than heavy. Two strengths: -sm for resting elevation, -md for
+   hover/emphasis. Referenced by every static/css/*.css file.
 ========================================================== */
 
-.sidebar{
+:root{
 
-    height:100%;
-    background:var(--sidebar-bg);
+    --shadow-indigo-sm:0 4px 16px -4px rgba(79,70,229,.14), 0 2px 6px -2px rgba(79,70,229,.06);
+    --shadow-indigo-md:0 14px 32px -10px rgba(79,70,229,.22), 0 4px 10px -4px rgba(79,70,229,.10);
+    --shadow-orange-sm:0 4px 16px -4px rgba(234,88,12,.14), 0 2px 6px -2px rgba(234,88,12,.06);
+    --shadow-orange-md:0 12px 28px -8px rgba(234,88,12,.24);
+    --shadow-green-sm:0 4px 14px -3px rgba(22,163,74,.18);
+    --shadow-green-md:0 10px 24px -6px rgba(22,163,74,.24);
+    --shadow-red-sm:0 4px 14px -3px rgba(220,38,38,.16);
+    --shadow-red-md:0 10px 24px -6px rgba(220,38,38,.22);
+    --shadow-amber-sm:0 4px 14px -3px rgba(245,158,11,.20);
+    --shadow-violet-sm:0 4px 14px -3px rgba(124,58,237,.18);
+    --shadow-cyan-sm:0 4px 14px -3px rgba(6,182,212,.18);
+
+}
+
+
+/* ==========================================================
+   TOP NAVIGATION
+   Single horizontal nav bar (replaces the old topbar+sidebar
+   pair - see docs/DECISIONS.md). Brand, links, search and
+   account controls in one dark bar; a lighter panel drops
+   down for the same links on narrow screens.
+========================================================== */
+
+.topnav{
+
+    background:#141b2e;
+    position:sticky;
+    top:0;
+    z-index:1030;
+
+}
+
+.topnav-inner{
+
+    height:64px;
     display:flex;
-    flex-direction:column;
-    padding:16px;
+    align-items:center;
+    gap:32px;
+    max-width:1600px;
+    margin:0 auto;
+    padding:0 24px;
 
 }
 
-.sidebar-header{
+.topnav-brand{
 
-    padding-top:4px;
-
-}
-
-.sidebar-header h4{
-
-    color:var(--sidebar-text-strong);
-    font-size:1.05rem;
-
-}
-
-.sidebar-header small{
-
-    color:var(--sidebar-text-muted);
-    font-size:.78rem;
-
-}
-
-.logo-circle{
-
-    width:48px;
-    height:48px;
-    margin:auto;
-    border-radius:14px;
-    background:linear-gradient(135deg, var(--sidebar-logo-green), var(--sidebar-logo-green-dark));
-    color:#fff;
     display:flex;
+    align-items:center;
+    gap:10px;
+    flex-shrink:0;
+
+}
+
+.topnav-toggle{
+
+    width:36px;
+    height:36px;
+    border:none;
+    border-radius:9px;
+    background:rgba(255,255,255,.08);
+    color:#e9eaf5;
+    display:flex;
+    align-items:center;
     justify-content:center;
-    align-items:center;
-    font-size:22px;
-    box-shadow:0 4px 14px rgba(34,197,94,.35);
+    font-size:18px;
 
 }
 
-.menu-title{
+.topnav-brand-link{
 
-    color:var(--sidebar-text-muted);
-    font-size:11px;
-    font-weight:600;
-    letter-spacing:1px;
-    margin:8px 12px;
-    display:block;
-
-}
-
-.sidebar .nav-link{
-
-    color:var(--sidebar-text);
-    padding:9px 14px;
-    border-radius:10px;
-    margin-bottom:4px;
     display:flex;
     align-items:center;
-    gap:12px;
-    font-size:.92rem;
-    transition:all .30s ease;
-    font-weight:500;
+    gap:10px;
+    text-decoration:none;
+    color:inherit;
 
 }
 
-.sidebar .nav-link i{
+.topnav-logo{
 
-    font-size:17px;
-    transition:.30s;
-
-}
-
-.sidebar .nav-link:hover{
-
-    background:var(--sidebar-hover-bg);
-    color:var(--sidebar-text-strong);
-    transform:translateX(4px);
-
-}
-
-.sidebar .nav-link:hover i{
-
-    transform:scale(1.15);
-
-}
-
-.sidebar .nav-link.active{
-
-    background:var(--sidebar-active-bg);
+    width:34px;
+    height:34px;
+    min-width:34px;
+    border-radius:10px;
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
     color:#fff;
-    animation:activeGlow 2.5s infinite;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:16px;
+
+}
+
+.topnav-wordmark{
+
+    color:#f1f5f9;
+    font-weight:700;
+    font-size:14px;
+    font-family:'Sora','Poppins',sans-serif;
+    white-space:nowrap;
+
+}
+
+.topnav-links{
+
+    list-style:none;
+    margin:0;
+    padding:0;
+    align-items:center;
+    gap:6px;
+    flex:1;
+    min-width:0;
+    overflow-x:auto;
+
+}
+
+.topnav-link{
+
+    display:block;
+    padding:8px 12px;
+    border-radius:8px;
+    color:#9c97be;
+    font-family:'Sora','Poppins',sans-serif;
+    font-size:12.5px;
+    font-weight:600;
+    white-space:nowrap;
+    text-decoration:none;
+    transition:background .15s ease, color .15s ease;
+
+}
+
+.topnav-link:hover{
+
+    color:#e9eaf5;
+    background:rgba(255,255,255,.06);
+
+}
+
+.topnav-link.active{
+
+    background:linear-gradient(120deg, var(--accent), var(--accent2));
+    color:#fff;
+    box-shadow:0 6px 16px -4px rgba(79,70,229,.45);
 
 }
 
 .nav-badge{
 
-    margin-left:auto;
-    min-width:22px;
-    height:20px;
-    padding:0 6px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:18px;
+    height:18px;
+    padding:0 5px;
+    margin-left:2px;
     border-radius:10px;
-    background:rgba(255,255,255,.12);
-    color:var(--sidebar-text-strong);
-    font-size:11px;
+    background:rgba(255,255,255,.16);
+    color:#fff;
+    font-size:10.5px;
     font-weight:700;
     line-height:1;
+    vertical-align:middle;
+
+}
+
+.topnav-link.active .nav-badge{
+
+    background:rgba(255,255,255,.3);
+
+}
+
+.topnav-right{
+
+    display:flex;
+    align-items:center;
+    gap:12px;
+    flex-shrink:0;
+    margin-left:auto;
+
+}
+
+.topnav-search .form-control{
+
+    background:rgba(255,255,255,.07);
+    border:none;
+    color:#e9eaf5;
+    width:190px;
+    box-shadow:none;
+
+}
+
+.topnav-search .form-control::placeholder{
+
+    color:#8890a6;
+
+}
+
+.topnav-search .form-control:focus{
+
+    background:rgba(255,255,255,.12);
+    color:#fff;
+    box-shadow:0 0 0 3px rgba(79,70,229,.35);
+
+}
+
+.topnav-search .input-group-text{
+
+    background:rgba(255,255,255,.07);
+    border:none;
+    color:#8890a6;
+    padding-right:0;
+
+}
+
+.topnav-icon-slot .btn{
+
+    width:34px;
+    height:34px;
+    padding:0;
+    border-radius:9px;
+    background:rgba(255,255,255,.07);
+    border:none;
+    color:#c7cbda;
     display:flex;
     align-items:center;
     justify-content:center;
-    flex-shrink:0;
 
 }
 
-.sidebar .nav-link:hover .nav-badge{
+.topnav-icon-slot .btn:hover{
 
-    background:rgba(255,255,255,.18);
-
-}
-
-.sidebar .nav-link.active .nav-badge{
-
-    background:rgba(255,255,255,.28);
+    background:rgba(255,255,255,.14);
     color:#fff;
 
 }
 
-.sidebar hr{
-
-    margin:14px 0;
-    border-color:var(--sidebar-border);
-    opacity:1;
-
-}
-
-
-/* Active Glow */
-
-@keyframes activeGlow{
-
-    0%{
-
-        box-shadow:0 0 0 var(--sidebar-active-glow);
-
-    }
-
-    50%{
-
-        box-shadow:0 0 18px var(--sidebar-active-glow);
-
-    }
-
-    100%{
-
-        box-shadow:0 0 0 var(--sidebar-active-glow);
-
-    }
-
-}
-
-
-/* Sidebar Footer / Profile */
-
-.sidebar-footer{
-
-    margin-top:auto;
-    padding-top:12px;
-    border-top:1px solid var(--sidebar-border);
-
-}
-
-.sidebar-profile{
+.topnav-user{
 
     display:flex;
     align-items:center;
-    gap:10px;
-    padding:8px 12px;
-    margin-bottom:10px;
-
-}
-
-.sidebar-profile .avatar-circle{
-
-    width:36px;
-    height:36px;
-    min-width:36px;
-    border-radius:50%;
-    background:var(--sidebar-bg-alt);
-    border:1px solid var(--sidebar-border);
-    color:var(--sidebar-text-strong);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:16px;
-    font-weight:600;
-
-}
-
-.sidebar-profile .profile-name{
-
-    color:var(--sidebar-text-strong);
-    font-weight:600;
-    font-size:14px;
-    line-height:1.2;
-
-}
-
-.sidebar-profile .profile-role{
-
-    color:var(--sidebar-text-muted);
-    font-size:12px;
-    line-height:1.2;
-
-}
-
-.sidebar .btn-logout{
-
-    color:var(--sidebar-danger);
+    gap:8px;
+    border:none;
     background:transparent;
-    border:1px solid rgba(239,68,68,.35);
+    padding:2px;
+    color:#8890a6;
+
+}
+
+.topnav-avatar{
+
+    width:32px;
+    height:32px;
+    border-radius:50%;
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    color:#fff;
     display:flex;
     align-items:center;
     justify-content:center;
+    font-size:12px;
+    font-weight:700;
+
+}
+
+.topnav-mobile-panel{
+
+    background:#141b2e;
+    border-top:1px solid rgba(255,255,255,.08);
+    padding:8px;
+
+}
+
+.topnav-mobile-links{
+
+    list-style:none;
+    margin:0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+
+}
+
+.topnav-mobile-links a{
+
+    display:flex;
+    align-items:center;
     gap:10px;
-    padding:9px 14px;
-    border-radius:10px;
+    padding:10px 12px;
+    border-radius:9px;
+    color:#c7cbda;
+    text-decoration:none;
+    font-size:13.5px;
     font-weight:500;
-    transition:all .25s ease;
 
 }
 
-.sidebar .btn-logout:hover{
+.topnav-mobile-links a.active{
 
-    background:var(--sidebar-danger-hover);
-    color:#fca5a5;
-    border-color:var(--sidebar-danger);
-
-}
-
-
-/* ==========================================================
-   NAVBAR
-========================================================== */
-
-.navbar{
-
-    height:70px;
-    background:#ffffff;
-    z-index:1030;
-    display:flex;
-    flex-wrap:nowrap;
-    justify-content:space-between;
-    align-items:center;
-
-}
-
-.navbar-left{
-
-    display:flex;
-    align-items:center;
-    min-width:0;
-    flex-shrink:1;
-
-}
-
-.navbar-left > div{
-
-    min-width:0;
-    overflow:hidden;
-
-}
-
-.navbar-left h5,
-.navbar-left small{
-
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-
-}
-
-.navbar-center{
-
-    flex:1;
-    max-width:500px;
-    margin:0 auto;
-
-}
-
-.navbar-right{
-
-    display:flex;
-    align-items:center;
-    flex-shrink:0;
-    gap:15px;
-
-}
-
-.navbar .form-control{
-
-    border-radius:12px;
-
-}
-
-.navbar .input-group-text{
-
-    border-radius:12px 0 0 12px;
-
-}
-
-.navbar .btn{
-
-    border-radius:12px;
+    background:linear-gradient(120deg, var(--accent), var(--accent2));
+    color:#fff;
 
 }
 
@@ -499,7 +464,83 @@
 
     border:none;
     border-radius:15px;
-    box-shadow:0 10px 30px rgba(0,0,0,.08);
+    box-shadow:var(--shadow-indigo-md);
+
+}
+
+
+/* ==========================================================
+   PAGE HEADER
+   White strip under the top nav - every page gets an eyebrow
+   + title via the page_eyebrow/page_title blocks in base.html.
+========================================================== */
+
+.page-header{
+
+    background:#fff;
+    border-bottom:1px solid #e5e2f1;
+    padding:16px 24px;
+
+}
+
+.page-header-eyebrow{
+
+    color:#a29fbd;
+    font-size:11.5px;
+    font-weight:600;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    min-height:14px;
+
+}
+
+.page-header-title{
+
+    color:#0f172a;
+    font-size:19px;
+    font-weight:600;
+    font-family:'Sora','Poppins',sans-serif;
+
+}
+
+
+/* ==========================================================
+   CONTENT LAYOUT
+========================================================== */
+
+.content-wrapper{
+
+    background:#f8fafc;
+    min-height:calc(100vh - 64px);
+
+}
+
+.content-inner{
+
+    padding:24px calc(24px + var(--panda-clearance-right, 100px)) calc(24px + var(--panda-clearance-bottom, 104px)) 24px;
+
+}
+
+
+/* ==========================================================
+   FORM FOCUS GLOW (global default)
+   Diffused indigo halo instead of a hard ring; page-scoped CSS
+   loaded after this in base.html's {% block styles %} can still
+   override for pages with their own accent (e.g. cashbook's blue).
+========================================================== */
+
+.form-control:focus,
+.form-select:focus{
+
+    border-color:var(--accent);
+    box-shadow:0 0 0 4px rgba(79,70,229,.10), 0 4px 14px -4px rgba(79,70,229,.18);
+
+}
+
+.form-check-input:focus{
+
+    border-color:var(--accent);
+    box-shadow:0 0 0 4px rgba(79,70,229,.10);
 
 }
 
@@ -517,7 +558,7 @@
 .quick-action:hover{
 
     transform:translateY(-6px);
-    box-shadow:0 18px 35px rgba(0,0,0,.12);
+    box-shadow:var(--shadow-indigo-md);
 
 }
 
@@ -544,13 +585,14 @@
 
     transition:.25s;
     border-radius: 16px;
+    box-shadow:var(--shadow-indigo-sm);
 
 }
 
 .dashboard-card:hover{
 
     transform:translateY(-3px);
-    box-shadow:0 12px 26px rgba(0,0,0,.07);
+    box-shadow:var(--shadow-indigo-md);
 
 }
 
@@ -588,6 +630,7 @@
     align-items:center;
     background:#fafcff;
     transition:.30s;
+    box-shadow:var(--shadow-indigo-sm);
 
 }
 
@@ -907,6 +950,7 @@
 .insight-item:hover{
 
     background:#f8fafc;
+    box-shadow:var(--shadow-indigo-sm);
 
 }
 
@@ -1032,7 +1076,7 @@
     text-align:center;
     height:100%;
     border:1px solid #eef2f7;
-    box-shadow:0 6px 16px rgba(0,0,0,.04);
+    box-shadow:var(--shadow-indigo-sm);
     transition:all .25s ease;
     cursor:pointer;
 
@@ -1041,8 +1085,8 @@
 .action-card:hover{
 
     transform:translateY(-4px);
-    box-shadow:0 14px 28px rgba(37,99,235,.12);
-    border-color:#2563eb;
+    box-shadow:var(--shadow-indigo-md);
+    border-color:var(--accent);
 
 }
 
@@ -1079,7 +1123,7 @@
 
 .action-card:hover h5{
 
-    color:#2563eb;
+    color:var(--accent);
 
 }
 
@@ -1169,7 +1213,7 @@
 
 .notification-item:hover{
     transform:translateX(3px);
-    box-shadow:0 8px 18px rgba(0,0,0,.06);
+    box-shadow:var(--shadow-indigo-sm);
 }
 
 .notification-item-details{
@@ -1189,65 +1233,28 @@
    RESPONSIVE LAYOUT
 ========================================================== */
 
-.sidebar-backdrop{
+@media (max-width:576px){
 
-    display:none;
-    position:fixed;
-    inset:0;
-    top:70px;
-    background:rgba(15,23,42,.45);
-    z-index:1035;
+    .content-inner{
 
-}
-
-@media (max-width:991.98px){
-
-    .sidebar-wrapper{
-
-        transform:translateX(-100%);
-        transition:transform .3s ease;
-        z-index:1040;
+        padding:16px calc(16px + var(--panda-clearance-right, 88px)) calc(16px + var(--panda-clearance-bottom, 96px)) 16px;
 
     }
 
-    .sidebar-wrapper.show{
+    .page-header{
 
-        transform:translateX(0);
-
-    }
-
-    .content-wrapper{
-
-        margin-left:0;
-        width:100%;
-        padding:16px 88px 96px 16px;
+        padding:14px 16px;
 
     }
 
-    body.sidebar-open .sidebar-backdrop{
+    .topnav-inner{
 
-        display:block;
-
-    }
-
-}
-
-@media (max-width:575.98px){
-
-    .navbar-center{
-
-        display:none;
+        padding:0 12px;
+        gap:12px;
 
     }
 
-    .navbar{
-
-        padding-left:1rem !important;
-        padding-right:1rem !important;
-
-    }
-
-    .navbar-right{
+    .topnav-right{
 
         gap:8px;
 

@@ -4,9 +4,17 @@
 Student Admission
 {% endblock %}
 
+{% block page_eyebrow %}STUDENTS{% endblock %}
+{% block page_title %}Student Admission{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/students.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container mt-4">
+<div class="container mt-4 students-page">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -211,7 +219,7 @@ Student Admission
 
                     <button
                         type="submit"
-                        class="btn btn-success">
+                        class="btn btn-gradient">
 
                         <i class="bi bi-person-check-fill"></i>
 

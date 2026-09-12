@@ -32,7 +32,7 @@ graph TD
 
     Panda --> PandaFiles["routes.py, services.py, prompts.py, intents.py, notifications.py, insights.py, forecasting.py — the 15th blueprint"]
 
-    Templates --> Layouts["layouts/ (base, auth_base, navbar, sidebar)"]
+    Templates --> Layouts["layouts/ (base, auth_base, navbar)"]
     Templates --> Components["components/ (~48 shared partials, incl. panda_widget.html)"]
     Templates --> FeatureDirs["auth/ dashboard/ enquiries/ students/ memberships/ payments/ cashbook/ business_intelligence/ ai_center/ notification/ settings/ reports/"]
 

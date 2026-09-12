@@ -9,8 +9,14 @@
 
 .bi-page{
 
-    --bi-primary:#2563eb;
-    --bi-primary-dark:#1d4ed8;
+    /* Retargeted to the app's global brand tokens (style.css :root) so this
+       page-scoped palette (deliberately isolated from other pages, see file
+       header) still reads as the same indigo/orange brand instead of the
+       older flat blue. */
+    --bi-primary:var(--accent, #4f46e5);
+    --bi-primary-dark:var(--accent-dark, #4338ca);
+    --bi-primary-soft-bg:var(--accent-soft, #eef0fe);
+    --bi-accent2:var(--accent2, #ea580c);
     --bi-success:#16a34a;
     --bi-success-soft-bg:#dcfce7;
     --bi-success-soft-text:#15803d;
@@ -28,8 +34,8 @@
     --bi-ink:#0f172a;
     --bi-muted:#64748b;
     --bi-faint:#94a3b8;
-    --bi-shadow:0 10px 30px rgba(15,23,42,.06);
-    --bi-shadow-hover:0 16px 34px rgba(15,23,42,.10);
+    --bi-shadow:0 10px 30px -10px rgba(79,70,229,.16), 0 3px 8px -3px rgba(79,70,229,.06);
+    --bi-shadow-hover:0 18px 38px -12px rgba(79,70,229,.24), 0 6px 14px -6px rgba(79,70,229,.10);
 
     background:var(--bi-bg);
 
@@ -42,6 +48,7 @@
 
 .bi-page .page-title{
 
+    font-family:'Sora','Poppins',sans-serif;
     font-size:26px;
     font-weight:700;
     color:var(--bi-ink);
@@ -70,6 +77,7 @@
 
 .bi-section-title{
 
+    font-family:'Sora','Poppins',sans-serif;
     font-size:16px;
     font-weight:700;
     color:var(--bi-ink);
@@ -97,6 +105,12 @@
     box-shadow:var(--bi-shadow);
     transition:box-shadow .25s ease, transform .25s ease;
     height:100%;
+
+}
+
+.bi-card:hover{
+
+    box-shadow:var(--bi-shadow-hover);
 
 }
 
@@ -144,6 +158,7 @@
 
 .bi-gauge-score{
 
+    font-family:'Sora','Poppins',sans-serif;
     font-size:40px;
     font-weight:800;
     color:var(--bi-ink);
@@ -179,7 +194,7 @@
 }
 
 .bi-status-excellent{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
-.bi-status-good{ background:#eff6ff; color:var(--bi-primary-dark); }
+.bi-status-good{ background:var(--bi-primary-soft-bg); color:var(--bi-primary-dark); }
 .bi-status-average{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
 .bi-status-attention{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
 
@@ -282,9 +297,9 @@
 
 }
 
-.bi-status-icon-healthy{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
-.bi-status-icon-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
-.bi-status-icon-critical{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
+.bi-status-icon-healthy{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); box-shadow:var(--shadow-green-sm); }
+.bi-status-icon-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); box-shadow:var(--shadow-amber-sm); }
+.bi-status-icon-critical{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); box-shadow:var(--shadow-red-sm); }
 
 .bi-status-text{
 
@@ -366,10 +381,10 @@
 
 }
 
-.bi-action-item-success .bi-action-icon{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
-.bi-action-item-warning .bi-action-icon{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
-.bi-action-item-danger .bi-action-icon{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
-.bi-action-item-info .bi-action-icon{ background:#ecfeff; color:var(--bi-info); }
+.bi-action-item-success .bi-action-icon{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); box-shadow:var(--shadow-green-sm); }
+.bi-action-item-warning .bi-action-icon{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); box-shadow:var(--shadow-amber-sm); }
+.bi-action-item-danger .bi-action-icon{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); box-shadow:var(--shadow-red-sm); }
+.bi-action-item-info .bi-action-icon{ background:#ecfeff; color:var(--bi-info); box-shadow:var(--shadow-cyan-sm); }
 
 .bi-action-title{
 
@@ -637,6 +652,7 @@
     justify-content:center;
     font-size:22px;
     margin-bottom:14px;
+    box-shadow:var(--shadow-violet-sm);
 
 }
 
@@ -811,8 +827,8 @@
 .bi-tab.active{
 
     color:#fff;
-    background:var(--bi-primary);
-    box-shadow:0 8px 18px rgba(37,99,235,.25);
+    background:linear-gradient(120deg, var(--bi-primary), var(--bi-accent2));
+    box-shadow:0 8px 18px rgba(79,70,229,.25);
 
 }
 
@@ -884,15 +900,16 @@
 
 }
 
-.bi-kpi-icon-primary{ background:#eff6ff; color:var(--bi-primary); }
-.bi-kpi-icon-success{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
-.bi-kpi-icon-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
-.bi-kpi-icon-danger{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
-.bi-kpi-icon-violet{ background:#eef2ff; color:var(--bi-violet); }
-.bi-kpi-icon-info{ background:#ecfeff; color:var(--bi-info); }
+.bi-kpi-icon-primary{ background:var(--bi-primary-soft-bg); color:var(--bi-primary); box-shadow:var(--shadow-indigo-sm); }
+.bi-kpi-icon-success{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); box-shadow:var(--shadow-green-sm); }
+.bi-kpi-icon-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); box-shadow:var(--shadow-amber-sm); }
+.bi-kpi-icon-danger{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); box-shadow:var(--shadow-red-sm); }
+.bi-kpi-icon-violet{ background:#eef2ff; color:var(--bi-violet); box-shadow:var(--shadow-violet-sm); }
+.bi-kpi-icon-info{ background:#ecfeff; color:var(--bi-info); box-shadow:var(--shadow-cyan-sm); }
 
 .bi-kpi-value{
 
+    font-family:'Sora','Poppins',sans-serif;
     font-size:22px;
     font-weight:800;
     color:var(--bi-ink);
@@ -993,11 +1010,11 @@
 
 }
 
-.bi-insight-icon-primary{ background:#eff6ff; color:var(--bi-primary); }
-.bi-insight-icon-success{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); }
-.bi-insight-icon-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); }
-.bi-insight-icon-danger{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); }
-.bi-insight-icon-violet{ background:#eef2ff; color:var(--bi-violet); }
+.bi-insight-icon-primary{ background:var(--bi-primary-soft-bg); color:var(--bi-primary); box-shadow:var(--shadow-indigo-sm); }
+.bi-insight-icon-success{ background:var(--bi-success-soft-bg); color:var(--bi-success-soft-text); box-shadow:var(--shadow-green-sm); }
+.bi-insight-icon-warning{ background:var(--bi-warning-soft-bg); color:var(--bi-warning-soft-text); box-shadow:var(--shadow-amber-sm); }
+.bi-insight-icon-danger{ background:var(--bi-danger-soft-bg); color:var(--bi-danger-soft-text); box-shadow:var(--shadow-red-sm); }
+.bi-insight-icon-violet{ background:#eef2ff; color:var(--bi-violet); box-shadow:var(--shadow-violet-sm); }
 
 .bi-insight-label{
 
@@ -1012,6 +1029,7 @@
 
 .bi-insight-value{
 
+    font-family:'Sora','Poppins',sans-serif;
     font-size:17px;
     font-weight:700;
     color:var(--bi-ink);
@@ -1148,6 +1166,7 @@
 
 .bi-shift-ring-value{
 
+    font-family:'Sora','Poppins',sans-serif;
     font-size:22px;
     font-weight:800;
     color:var(--bi-ink);

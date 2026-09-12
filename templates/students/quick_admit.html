@@ -4,9 +4,17 @@
 Quick Admit (Walk-in)
 {% endblock %}
 
+{% block page_eyebrow %}STUDENTS{% endblock %}
+{% block page_title %}Quick Admit &mdash; Walk-in{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/students.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container mt-4">
+<div class="container mt-4 students-page">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -144,7 +152,7 @@ Quick Admit (Walk-in)
 
                     </a>
 
-                    <button type="submit" class="btn btn-success">
+                    <button type="submit" class="btn btn-success btn-quick-admit">
 
                         Continue to Day Pass
 

@@ -4,17 +4,23 @@
 Enquiries
 {% endblock %}
 
+{% block page_eyebrow %}ENQUIRIES{% endblock %}
+{% block page_title %}All Enquiries{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/enquiries.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-4 enquiries-page">
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-
-        <h2>Enquiries</h2>
+    <div class="d-flex justify-content-end align-items-center mb-4">
 
         <a
             href="{{ url_for('enquiry.add') }}"
-            class="btn btn-primary">
+            class="btn btn-gradient">
 
             <i class="bi bi-plus-circle"></i>
 
@@ -79,9 +85,9 @@ Enquiries
                         <td>
 
                             <span class="badge
-                                {% if enquiry.status == 'Admitted' %}bg-primary
-                                {% elif enquiry.status == 'Interested' %}bg-warning text-dark
-                                {% else %}bg-secondary{% endif %}">
+                                {% if enquiry.status == 'Admitted' %}badge-soft-primary
+                                {% elif enquiry.status == 'Interested' %}badge-soft-warning
+                                {% else %}badge-soft-secondary{% endif %}">
 
                                 {{ enquiry.status }}
 
@@ -91,10 +97,22 @@ Enquiries
 
                         <td>
 
+                            <div class="d-flex align-items-center justify-content-start gap-2">
+
+                            {% if not (enquiry.status == 'Admitted' and enquiry.student_id) %}
+                            <a
+                                href="{{ url_for('student.admission', enquiry_id=enquiry.enquiry_id) }}"
+                                class="enquiry-convert-link">
+
+                                Convert
+
+                            </a>
+                            {% endif %}
+
                             <div class="dropdown">
 
                                 <button
-                                    class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                                    class="btn btn-outline-secondary btn-sm dropdown-toggle dropdown-toggle-kebab"
                                     type="button"
                                     data-bs-toggle="dropdown"
                                     aria-expanded="false">
@@ -177,6 +195,8 @@ Enquiries
                                     </li>
 
                                 </ul>
+
+                            </div>
 
                             </div>
 

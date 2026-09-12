@@ -66,10 +66,9 @@ Full route-by-route detail: [05_ROUTES_REFERENCE.md](05_ROUTES_REFERENCE.md).
 
 | Path | Purpose |
 |---|---|
-| `layouts/base.html` | Main authenticated-app shell (navbar + sidebar + content block) |
+| `layouts/base.html` | Main authenticated-app shell (top nav + page-header + content block) |
 | `layouts/auth_base.html` | Minimal shell for login/register/forgot-password pages |
-| `layouts/navbar.html` | Top navbar include |
-| `layouts/sidebar.html` | Left nav include, badge counts, active-link highlighting |
+| `layouts/navbar.html` | Single horizontal top nav — brand, all nine links + badge counts, active-link highlighting, search, account dropdown, mobile nav panel (no separate sidebar template as of 2026-09-11, ADR-73) |
 | `components/` (~45 files) | Shared/reusable partials — cards, charts, filters, modals, feature-specific widgets |
 | `auth/` | login, register, forgot_password |
 | `dashboard/index.html` | Main dashboard page |
@@ -89,7 +88,7 @@ Full breakdown: [06_TEMPLATES_REFERENCE.md](06_TEMPLATES_REFERENCE.md).
 
 | Path | Purpose |
 |---|---|
-| `css/style.css` | Main global stylesheet (sidebar theme vars, layout, base component styles) |
+| `css/style.css` | Main global stylesheet (global `:root` brand tokens, top-nav/page-header/content layout, base component styles) |
 | `css/business_intelligence.css`, `css/cashbook.css`, `css/membership_distribution.css`, `css/settings.css`, `css/login.css` | Page-specific stylesheets, each with their own `:root` design-token variables |
 | `js/*.js` | Per-page Chart.js wiring (incl. `dashboard-charts.js`, which renders the Dashboard/Distribution charts), skeleton loaders, login toggle, settings form + transaction modal logic |
 | `uploads/settings/` | **Legacy (ADR-57).** Branding images (logo/stamp/signature) now upload to a public Supabase Storage bucket (`library-branding`) via `database/branding_storage.py`; `library_settings.*_path` holds the full URL. Any files left here are pre-migration and still resolve via `utils/branding.py`'s `branding_src()` |

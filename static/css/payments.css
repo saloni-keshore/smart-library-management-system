@@ -1,0 +1,195 @@
+/* ==========================================================
+   PAYMENTS PAGES (Payment History, Collect Payment, Receipt)
+
+   Everything that touches a shared class (.card, .table, .btn,
+   .badge, .form-control, ...) is scoped under .payments-page so
+   this redesign never bleeds into other screens that reuse the
+   same Bootstrap components. Page-scoped tokens follow the same
+   pattern as static/css/membership_distribution.css.
+========================================================== */
+
+.payments-page{
+
+    --pay-cash:#16a34a;
+    --pay-cash-soft:rgba(22, 163, 74, .12);
+    --pay-upi:var(--accent);
+    --pay-upi-soft:var(--accent-soft);
+    --pay-card:#7c3aed;
+    --pay-card-soft:rgba(124, 58, 237, .12);
+    --pay-bank:var(--accent2);
+    --pay-bank-soft:rgba(234, 88, 12, .12);
+    --pay-other:#64748b;
+    --pay-other-soft:#f1f5f9;
+
+}
+
+
+/* ===================== Payment History (ledger) ===================== */
+
+.payments-ledger-card{
+
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:var(--shadow-indigo-sm);
+
+}
+
+.payments-page .payments-thead th{
+
+    background:#f8fafc;
+    color:#64748b;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    border-bottom:1px solid #e2e8f0;
+    padding:13px 18px;
+    white-space:nowrap;
+
+}
+
+.payments-page .table tbody td{
+
+    padding:13px 18px;
+    font-size:13.5px;
+    vertical-align:middle;
+
+}
+
+/* Payment-mode pill badges - color keyed off the existing payment_mode
+   value, purely presentational (no new calculation). */
+
+.payments-mode-badge{
+
+    font-size:11px;
+    font-weight:600;
+    padding:.35em .75em;
+
+}
+
+.payments-mode-cash{ background:var(--pay-cash-soft); color:var(--pay-cash); box-shadow:0 2px 8px -2px rgba(22,163,74,.24); }
+.payments-mode-upi{ background:var(--pay-upi-soft); color:var(--pay-upi); box-shadow:0 2px 8px -2px rgba(79,70,229,.22); }
+.payments-mode-card{ background:var(--pay-card-soft); color:var(--pay-card); box-shadow:0 2px 8px -2px rgba(124,58,237,.22); }
+.payments-mode-banktransfer{ background:var(--pay-bank-soft); color:var(--pay-bank); box-shadow:0 2px 8px -2px rgba(234,88,12,.22); }
+.payments-mode-other{ background:var(--pay-other-soft); color:var(--pay-other); }
+
+/* Per-row "View" receipt link */
+
+.payments-view-link{
+
+    color:var(--accent);
+    font-size:12.5px;
+    font-weight:600;
+    text-decoration:none;
+
+}
+
+.payments-view-link:hover{
+
+    color:var(--accent-dark);
+    text-decoration:underline;
+
+}
+
+
+/* ===================== Collect Payment ===================== */
+
+.payments-collect-card{
+
+    border-radius:16px;
+    box-shadow:var(--shadow-indigo-sm);
+
+}
+
+.payments-collect-card > .card-header{
+
+    border-bottom:1px solid #e5e2f1;
+    font-family:'Sora','Poppins',sans-serif;
+
+}
+
+.payments-summary-row{
+
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:9px 0;
+    border-bottom:1px solid #f1f5f9;
+    font-size:13.5px;
+
+}
+
+.payments-summary-row:last-of-type{
+
+    border-bottom:none;
+
+}
+
+.payments-summary-label{
+
+    color:#64748b;
+
+}
+
+.payments-summary-value{
+
+    color:#0f172a;
+    font-weight:600;
+
+}
+
+.payments-summary-value.is-pending{
+
+    color:#b45309;
+
+}
+
+.payments-page .form-label{
+
+    font-size:12.5px;
+    font-weight:600;
+    color:#334155;
+
+}
+
+.payments-page .form-control,
+.payments-page .form-select{
+
+    border-radius:10px;
+
+}
+
+
+/* ===================== Receipt ===================== */
+
+.payments-receipt-card{
+
+    border-radius:18px;
+    border-top:4px solid var(--pay-cash);
+    box-shadow:var(--shadow-green-sm);
+
+}
+
+.payments-receipt-icon{
+
+    width:72px;
+    height:72px;
+    border-radius:50%;
+    background:var(--pay-cash-soft);
+    color:var(--pay-cash);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0 auto;
+    font-size:2.1rem;
+    box-shadow:0 8px 20px -6px rgba(22,163,74,.30);
+
+}
+
+.payments-receipt-title{
+
+    font-family:'Sora','Poppins',sans-serif;
+    color:#0f172a;
+    font-weight:700;
+
+}

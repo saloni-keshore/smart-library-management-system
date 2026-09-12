@@ -238,9 +238,8 @@ Added 2026-08-28 (ADR-56), replacing the deleted `utils/charts.py` (matplotlib P
 
 ```
 layouts/base.html          ← extended by every authenticated page
-  includes layouts/navbar.html
+  includes layouts/navbar.html   (single top nav as of 2026-09-11, ADR-73 - no sidebar template)
     includes components/notification_dropdown.html
-  includes layouts/sidebar.html
 
 layouts/auth_base.html     ← extended by auth/login.html, auth/register.html, auth/forgot_password.html
 

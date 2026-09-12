@@ -22,8 +22,8 @@
     --md-violet:#7c3aed;
     --md-bg:#f8fafc;
     --md-card:#ffffff;
-    --md-shadow:0 10px 30px rgba(15,23,42,.06);
-    --md-shadow-hover:0 16px 34px rgba(15,23,42,.10);
+    --md-shadow:0 10px 30px -10px rgba(37,99,235,.16), 0 3px 8px -3px rgba(37,99,235,.06);
+    --md-shadow-hover:0 18px 38px -12px rgba(37,99,235,.24), 0 6px 14px -6px rgba(37,99,235,.10);
 
     background:var(--md-bg);
 
@@ -523,10 +523,10 @@
 
 }
 
-.insight-icon-primary{ background:#eff6ff; color:var(--md-primary); }
-.insight-icon-info{ background:#ecfeff; color:var(--md-info); }
-.insight-icon-success{ background:var(--md-success-soft-bg); color:var(--md-success-soft-text); }
-.insight-icon-warning{ background:#fef3c7; color:var(--md-warning); }
+.insight-icon-primary{ background:#eff6ff; color:var(--md-primary); box-shadow:0 4px 12px -3px rgba(37,99,235,.24); }
+.insight-icon-info{ background:#ecfeff; color:var(--md-info); box-shadow:var(--shadow-cyan-sm); }
+.insight-icon-success{ background:var(--md-success-soft-bg); color:var(--md-success-soft-text); box-shadow:var(--shadow-green-sm); }
+.insight-icon-warning{ background:#fef3c7; color:var(--md-warning); box-shadow:var(--shadow-amber-sm); }
 
 .insight-text{
 
@@ -595,7 +595,7 @@
     border-color:#2563eb;
     color:#2563eb;
     transform:translateY(-1px);
-    box-shadow:0 4px 10px rgba(37,99,235,.15);
+    box-shadow:0 6px 14px -4px rgba(37,99,235,.20);
 
 }
 
@@ -604,7 +604,7 @@
     background:linear-gradient(135deg,#2563eb,#3b82f6);
     border-color:transparent;
     color:#ffffff;
-    box-shadow:0 6px 16px rgba(37,99,235,.28);
+    box-shadow:0 8px 20px -6px rgba(37,99,235,.35);
 
 }
 
@@ -640,14 +640,14 @@
     padding-left:34px;
     border-radius:999px;
     border:1px solid #e2e8f0;
-    box-shadow:0 2px 8px rgba(15,23,42,.04);
+    box-shadow:0 3px 12px -4px rgba(37,99,235,.10);
 
 }
 
 .search-field-compact .form-control:focus{
 
     border-color:#93c5fd;
-    box-shadow:0 0 0 3px rgba(37,99,235,.12);
+    box-shadow:0 0 0 4px rgba(37,99,235,.10), 0 6px 16px -4px rgba(37,99,235,.16);
 
 }
 
@@ -788,7 +788,7 @@
 .action-btn:hover{
 
     transform:translateY(-2px);
-    box-shadow:0 6px 14px rgba(15,23,42,.12);
+    box-shadow:0 8px 18px -5px rgba(37,99,235,.24);
 
 }
 
@@ -834,6 +834,7 @@
     align-items:center;
     justify-content:center;
     margin:0 auto 12px;
+    box-shadow:0 4px 14px -3px rgba(37,99,235,.20);
 
 }
 

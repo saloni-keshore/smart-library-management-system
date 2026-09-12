@@ -4,9 +4,21 @@
 Student Profile
 {% endblock %}
 
+{% block page_eyebrow %}STUDENTS{% endblock %}
+{% block page_title %}{{ student.full_name }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/students.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container mt-4">
+{% set full_name = student.full_name or '' %}
+{% set name_parts = full_name.split() %}
+{% set initials = ((name_parts[0][0] if name_parts|length > 0 else '') ~ (name_parts[1][0] if name_parts|length > 1 else ''))|upper %}
+
+<div class="container mt-4 students-page">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -24,62 +36,63 @@ Student Profile
 
     <!-- Header -->
 
-    <div class="card shadow mb-4">
+    <div class="card shadow mb-4 profile-identity-card">
 
         <div class="card-body">
 
-            <div class="d-flex justify-content-between">
+            <div class="d-flex align-items-start gap-3">
 
-                <div>
+                <div class="profile-avatar">
 
-                    <h3>
-
-                        LIB{{ "%04d"|format(student.student_id) }}
-
-                    </h3>
-
-                    <h4>
-
-                        {{ student.full_name }}
-
-                    </h4>
-
-                    <p class="mb-1">
-
-                        <strong>Mobile:</strong>
-
-                        {{ student.mobile }}
-
-                    </p>
-
-                    <p class="mb-1">
-
-                        <strong>Purpose:</strong>
-
-                        {{ student.purpose }}
-
-                    </p>
-
-                    <p>
-
-                        <strong>Shift:</strong>
-
-                        {{ student.shift }}
-
-                    </p>
+                    {{ initials }}
 
                 </div>
 
-                <div>
+                <div class="flex-grow-1">
 
-                    <span class="badge fs-6
-                        {% if student.status == 'Active' %}bg-success
-                        {% elif student.status == 'Pending' %}bg-warning text-dark
-                        {% else %}bg-danger{% endif %}">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
 
-                        {{ student.status }}
+                        <h4 class="profile-name mb-0">
 
-                    </span>
+                            {{ student.full_name }}
+
+                        </h4>
+
+                        <span class="badge
+                            {% if student.status == 'Active' %}badge-soft-success
+                            {% elif student.status == 'Pending' %}badge-soft-warning
+                            {% else %}badge-soft-danger{% endif %}">
+
+                            {{ student.status }}
+
+                        </span>
+
+                    </div>
+
+                    <div class="text-muted small mt-1">
+
+                        Library ID LIB{{ "%04d"|format(student.student_id) }}
+
+                    </div>
+
+                    <div class="d-flex gap-4 flex-wrap mt-3">
+
+                        <div>
+                            <div class="profile-meta-label">Mobile</div>
+                            <div>{{ student.mobile }}</div>
+                        </div>
+
+                        <div>
+                            <div class="profile-meta-label">Purpose</div>
+                            <div>{{ student.purpose }}</div>
+                        </div>
+
+                        <div>
+                            <div class="profile-meta-label">Shift</div>
+                            <div>{{ student.shift }}</div>
+                        </div>
+
+                    </div>
 
                 </div>
 
@@ -97,7 +110,7 @@ Student Profile
 
             <div class="card shadow mb-4">
 
-                <div class="card-header">
+                <div class="card-header profile-section-title">
 
                     Membership
 
@@ -196,7 +209,7 @@ Student Profile
 
             <div class="card shadow mb-4">
 
-                <div class="card-header">
+                <div class="card-header profile-section-title">
 
                     Payment Summary
 
@@ -222,13 +235,22 @@ Student Profile
 
                     </p>
 
-                    <p>
+                    <p{% if not membership.pending_amount %} class="mb-2"{% endif %}>
 
                         <strong>Pending:</strong>
 
                         ₹{{ membership.pending_amount }}
 
                     </p>
+
+                    {% set total_fee = membership.total_fee or 0 %}
+                    {% set paid_amount = membership.paid_amount or 0 %}
+                    {% set paid_pct = (paid_amount / total_fee * 100) if total_fee else 0 %}
+                    {% set paid_pct = 100 if paid_pct > 100 else paid_pct %}
+
+                    <div class="payment-progress mt-2">
+                        <div class="payment-progress-bar" style="width: {{ paid_pct }}%;"></div>
+                    </div>
 
                     {% endif %}
 

@@ -4,7 +4,16 @@
 Dashboard
 {% endblock %}
 
+{% block page_eyebrow %}DASHBOARD{% endblock %}
+{% block page_title %}Welcome back, {{ session.get('username', 'Admin') }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+{% endblock %}
+
 {% block content %}
+
+<div class="dash-page">
 
 {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -24,6 +33,7 @@ Dashboard
 {% include "components/dashboard_header.html" %}
 
 <!-- Quick Actions -->
+<div class="dash-section-label">Quick Actions</div>
 {% include "components/quick_actions.html" %}
 
 <!-- =========================
@@ -128,6 +138,8 @@ Dashboard
 <div class="row g-3">
 
     {% include "components/library_insights.html" %}
+
+</div>
 
 </div>
 

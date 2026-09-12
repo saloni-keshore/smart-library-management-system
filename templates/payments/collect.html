@@ -4,15 +4,22 @@
 Collect Payment
 {% endblock %}
 
+{% block page_eyebrow %}PAYMENTS{% endblock %}
+{% block page_title %}Collect Payment{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/payments.css') }}">
+{% endblock %}
+
 {% block content %}
 
-<div class="container mt-4">
+<div class="container mt-4 payments-page">
 
 {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
         {% for category, message in messages %}
 
-            <div class="alert alert-{{ category }}">
+            <div class="alert alert-{{ category }} rounded-3">
 
                 {{ message }}
 
@@ -22,11 +29,11 @@ Collect Payment
     {% endif %}
 {% endwith %}
 
-<div class="card shadow">
+<div class="card border-0 shadow-sm payments-collect-card">
 
-<div class="card-header">
+<div class="card-header bg-white">
 
-<h3>
+<h3 class="fw-bold mb-0">
 
 Collect Pending Payment
 
@@ -36,41 +43,41 @@ Collect Pending Payment
 
 <div class="card-body">
 
-<h5>
+<h5 class="mb-3">
 
 {{ student.full_name }}
 
 </h5>
 
+<div class="payments-summary-row">
+
+<span class="payments-summary-label">Total Fee</span>
+<span class="payments-summary-value">₹{{ membership.total_fee }}</span>
+
+</div>
+
+<div class="payments-summary-row">
+
+<span class="payments-summary-label">Already Paid</span>
+<span class="payments-summary-value">₹{{ membership.paid_amount }}</span>
+
+</div>
+
+<div class="payments-summary-row">
+
+<span class="payments-summary-label">Pending</span>
+<span class="payments-summary-value is-pending">₹{{ membership.pending_amount }}</span>
+
+</div>
+
 <hr>
-
-<p>
-
-Total Fee :
-₹{{ membership.total_fee }}
-
-</p>
-
-<p>
-
-Already Paid :
-₹{{ membership.paid_amount }}
-
-</p>
-
-<p>
-
-Pending :
-₹{{ membership.pending_amount }}
-
-</p>
 
 <form method="POST">
 <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
 
 <div class="mb-3">
 
-<label>
+<label class="form-label">
 
 Amount Received
 
@@ -87,7 +94,7 @@ required>
 
 <div class="mb-3">
 
-<label>
+<label class="form-label">
 
 Payment Mode
 
@@ -111,7 +118,7 @@ name="payment_mode">
 
 <div class="mb-3">
 
-<label>
+<label class="form-label">
 
 Remarks
 
@@ -127,14 +134,14 @@ name="remarks"></textarea>
 
 <a
 href="{{ url_for('student.view', student_id=student.student_id) }}"
-class="btn btn-secondary">
+class="btn btn-secondary rounded-3">
 
 Back
 
 </a>
 
 <button
-class="btn btn-success">
+class="btn btn-success rounded-3">
 
 Collect Payment
 

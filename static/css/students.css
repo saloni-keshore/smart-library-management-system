@@ -1,0 +1,246 @@
+/* ==========================================================
+   STUDENTS PAGES
+   Page-scoped styles for templates/students/*.html - visual
+   restyle only (part of the shared UI redesign, see
+   docs/DECISIONS.md). Prefixed custom properties + a single
+   ".students-page" wrapper class so nothing here leaks onto
+   other pages (pattern mirrors static/css/cashbook.css).
+========================================================== */
+
+:root{
+
+    --stu-radius:16px;
+    --stu-radius-sm:10px;
+    --stu-border:#e2e8f0;
+    --stu-muted:#94a3b8;
+    --stu-soft:#f1f5f9;
+
+}
+
+.students-page{
+
+    animation:stuFadeIn .35s ease;
+
+}
+
+@keyframes stuFadeIn{
+
+    from{ opacity:0; transform:translateY(8px); }
+    to{ opacity:1; transform:translateY(0); }
+
+}
+
+/* Cards */
+
+.students-page .card{
+
+    border-radius:var(--stu-radius);
+    border:1px solid var(--stu-border);
+    box-shadow:var(--shadow-indigo-sm);
+
+}
+
+.students-page .card-header{
+
+    font-family:'Sora','Poppins',sans-serif;
+    background:#fff;
+    border-bottom:1px solid var(--stu-border);
+
+}
+
+/* Table */
+
+.students-page .students-thead th{
+
+    background:#f8fafc;
+    color:#64748b;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    border-bottom:1px solid var(--stu-border);
+    white-space:nowrap;
+
+}
+
+.students-page .table td{
+
+    vertical-align:middle;
+
+}
+
+/* Pill status/type badges */
+
+.students-page .badge{
+
+    border-radius:20px;
+    padding:.4em .85em;
+    font-size:11px;
+    font-weight:600;
+
+}
+
+.students-page .badge-soft-success{ background:rgba(22,163,74,.14); color:#15803d; box-shadow:0 2px 8px -2px rgba(22,163,74,.24); }
+.students-page .badge-soft-warning{ background:rgba(245,158,11,.16); color:#b45309; box-shadow:0 2px 8px -2px rgba(245,158,11,.26); }
+.students-page .badge-soft-danger{ background:rgba(239,68,68,.14); color:#dc2626; box-shadow:0 2px 8px -2px rgba(239,68,68,.22); }
+.students-page .badge-soft-secondary{ background:rgba(100,116,139,.14); color:#475569; }
+.students-page .badge-soft-info{ background:rgba(6,182,212,.14); color:#0369a1; box-shadow:0 2px 8px -2px rgba(6,182,212,.20); }
+
+/* Segmented All / Regular / Casual filter */
+
+.students-page #typeFilter{
+
+    background:var(--stu-soft);
+    border-radius:var(--stu-radius-sm);
+    padding:3px;
+    border:none;
+    gap:2px;
+
+}
+
+.students-page #typeFilter .btn{
+
+    border:none;
+    border-radius:8px;
+    font-weight:600;
+    color:#64748b;
+    background:transparent;
+
+}
+
+.students-page #typeFilter .btn.active{
+
+    background:#fff;
+    color:#0f172a;
+    box-shadow:0 2px 8px -2px rgba(79,70,229,.18);
+
+}
+
+.students-page #searchStudent{
+
+    border-radius:var(--stu-radius-sm);
+    border:1px solid var(--stu-border);
+
+}
+
+.students-page .btn-quick-admit{
+
+    border-radius:var(--stu-radius-sm);
+    font-weight:600;
+
+}
+
+/* Primary gradient CTA (matches the redesign's shared brand gradient) */
+
+.students-page .btn-gradient{
+
+    background:linear-gradient(120deg, var(--accent), var(--accent2));
+    border:none;
+    color:#fff;
+    font-weight:600;
+    border-radius:var(--stu-radius-sm);
+    font-family:'Sora','Poppins',sans-serif;
+    box-shadow:0 8px 18px -5px rgba(79,70,229,.35);
+    transition:filter .2s ease, box-shadow .2s ease;
+
+}
+
+.students-page .btn-gradient:hover,
+.students-page .btn-gradient:focus{
+
+    color:#fff;
+    filter:brightness(1.06);
+    box-shadow:0 10px 22px -5px rgba(79,70,229,.42);
+
+}
+
+/* Profile page - identity header card */
+
+.students-page .profile-identity-card{
+
+    border-radius:var(--stu-radius);
+
+}
+
+.students-page .profile-avatar{
+
+    width:64px;
+    height:64px;
+    border-radius:16px;
+    background:var(--accent-soft);
+    color:var(--accent);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:22px;
+    font-weight:700;
+    font-family:'Sora','Poppins',sans-serif;
+    flex-shrink:0;
+    box-shadow:0 6px 16px -4px rgba(79,70,229,.28);
+
+}
+
+.students-page .profile-name{
+
+    font-family:'Sora','Poppins',sans-serif;
+
+}
+
+.students-page .profile-meta-label{
+
+    color:var(--stu-muted);
+    font-size:11px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+
+}
+
+.students-page .profile-section-title{
+
+    font-family:'Sora','Poppins',sans-serif;
+    font-weight:600;
+    color:#0f172a;
+
+}
+
+/* Payment progress bar (derived purely for display from Paid / Total Fee,
+   already shown as numbers alongside it - no calculation is authoritative
+   here, the numbers still come straight from membership.*) */
+
+.students-page .payment-progress{
+
+    height:8px;
+    border-radius:6px;
+    background:var(--stu-soft);
+    overflow:hidden;
+
+}
+
+.students-page .payment-progress-bar{
+
+    height:100%;
+    background:#16a34a;
+
+}
+
+/* Elevated Renew Membership action */
+
+.students-page .btn-renew-elevated{
+
+    background:#f59e0b;
+    border:none;
+    color:#fff;
+    font-weight:600;
+    border-radius:var(--stu-radius-sm);
+    box-shadow:0 8px 18px rgba(245,158,11,.35);
+
+}
+
+.students-page .btn-renew-elevated:hover,
+.students-page .btn-renew-elevated:focus{
+
+    color:#fff;
+    box-shadow:0 10px 22px rgba(245,158,11,.45);
+
+}

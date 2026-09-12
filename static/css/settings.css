@@ -61,7 +61,7 @@
 
     border:5px solid #ffffff;
 
-    box-shadow:0 12px 30px rgba(0,0,0,.12);
+    box-shadow:0 14px 32px -8px rgba(79,70,229,.30);
 
 }
 
@@ -97,9 +97,15 @@
 
 }
 
+.settings-page .card{
+
+    box-shadow:var(--shadow-indigo-sm);
+
+}
+
 .settings-page .card:hover{
 
-    box-shadow:0 10px 24px rgba(0,0,0,.08);
+    box-shadow:var(--shadow-indigo-md);
 
 }
 
@@ -297,6 +303,179 @@
 
     font-size:24px;
 
-    color:#6366f1;
+    color:var(--accent);
+
+}
+
+/* ==========================================================
+   Brand retarget (redesign, TD-105 follow-up)
+   style.css defines the shared --accent/--accent2/--accent-soft/
+   --accent-dark tokens (indigo + orange) in its :root, but never
+   overrides Bootstrap's own --bs-primary - so plain .btn-primary/
+   .text-primary/.bg-primary/.border-primary/.form-check-input:checked
+   still render Bootstrap's stock blue everywhere they're used.
+   Settings pages lean on those utility classes constantly (every
+   card's section heading, every submit button, every toggle), so
+   rather than touching style.css globally (out of scope) or hand-
+   rolling a second parallel palette here, we retarget just those
+   utilities inside .settings-page toward the shared brand tokens.
+========================================================== */
+
+.settings-page h2,
+.settings-page h4,
+.settings-page h5,
+.settings-page .card h5{
+
+    font-family:'Sora','Poppins',sans-serif;
+
+}
+
+.settings-page .text-primary{
+
+    color:var(--accent) !important;
+
+}
+
+.settings-page .border-primary{
+
+    border-color:var(--accent) !important;
+
+}
+
+.settings-page a{
+
+    color:var(--accent);
+
+}
+
+.settings-page .card{
+
+    border-radius:16px;
+
+}
+
+.settings-page .btn{
+
+    border-radius:10px;
+
+}
+
+.settings-page .btn-primary{
+
+    background:linear-gradient(120deg,var(--accent),var(--accent2));
+    border-color:transparent;
+    color:#fff;
+    box-shadow:0 8px 18px -5px rgba(79,70,229,.35);
+    transition:filter .2s ease, box-shadow .2s ease;
+
+}
+
+.settings-page .btn-primary:hover,
+.settings-page .btn-primary:focus{
+
+    background:linear-gradient(120deg,var(--accent-dark),var(--accent2));
+    border-color:transparent;
+    color:#fff;
+    box-shadow:0 10px 22px -5px rgba(79,70,229,.42);
+
+}
+
+.settings-page .btn-outline-primary{
+
+    color:var(--accent);
+    border-color:var(--accent);
+
+}
+
+.settings-page .btn-outline-primary:hover{
+
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+
+}
+
+.settings-page .form-check-input:checked{
+
+    background-color:var(--accent);
+    border-color:var(--accent);
+
+}
+
+.settings-page .form-control:focus,
+.settings-page .form-select:focus{
+
+    border-color:var(--accent);
+    box-shadow:0 0 0 4px rgba(79,70,229,.10), 0 6px 16px -4px rgba(79,70,229,.16);
+
+}
+
+/* Settings hub tiles: soften the solid Bootstrap bg-* icon badges
+   (style.css .action-icon sets white icon glyphs on a solid fill)
+   into the tinted-circle badge look from the approved mockup,
+   still keyed off each tile's existing bg-* utility so no markup
+   change is needed beyond what index.html already has. */
+
+.settings-page .action-icon.bg-primary{
+
+    background:var(--accent-soft) !important;
+    color:var(--accent);
+    box-shadow:var(--shadow-indigo-sm);
+
+}
+
+.settings-page .action-icon.bg-success{
+
+    background:#dcfce7 !important;
+    color:#16a34a;
+    box-shadow:var(--shadow-green-sm);
+
+}
+
+.settings-page .action-icon.bg-warning{
+
+    background:#fef3c7 !important;
+    color:#b45309;
+    box-shadow:var(--shadow-amber-sm);
+
+}
+
+.settings-page .action-icon.bg-info{
+
+    background:#e0f2fe !important;
+    color:#0891b2;
+    box-shadow:var(--shadow-cyan-sm);
+
+}
+
+.settings-page .action-icon.bg-secondary{
+
+    background:#f1f5f9 !important;
+    color:#64748b;
+
+}
+
+.settings-page .action-icon.bg-dark{
+
+    background:#e2e8f0 !important;
+    color:#334155;
+
+}
+
+.settings-page .action-icon.bg-danger{
+
+    background:#fee2e2 !important;
+    color:#dc2626;
+    box-shadow:var(--shadow-red-sm);
+
+}
+
+/* Sub-page header row: the page title now lives in base.html's
+   page_title/page_eyebrow strip, so each settings page only needs
+   its one-line description + Back to Settings action here. */
+
+.settings-page .settings-subpage-header{
+
+    margin-bottom:1.5rem;
 
 }

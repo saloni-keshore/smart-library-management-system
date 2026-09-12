@@ -15,7 +15,7 @@
 
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Sora:wght@600;700;800&display=swap"
           rel="stylesheet">
 
     <!-- Bootstrap -->
@@ -45,28 +45,23 @@
     <!-- Top Navbar -->
     {% include 'layouts/navbar.html' %}
 
-    <!-- Main Layout -->
-    <div class="d-flex">
+    <!-- Main Content -->
+    <main class="content-wrapper">
 
-        <!-- Sidebar -->
-        <div class="sidebar-wrapper">
-
-            {% include 'layouts/sidebar.html' %}
-
+        <div class="page-header">
+            <div class="page-header-eyebrow">{% block page_eyebrow %}&nbsp;{% endblock %}</div>
+            <div class="page-header-title">{% block page_title %}Welcome back, {{ session.get('username', 'Admin') }}{% endblock %}</div>
         </div>
 
-        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
-
-        <!-- Main Content -->
-        <main class="content-wrapper">
+        <div class="content-inner">
 
             {% block content %}
 
             {% endblock %}
 
-        </main>
+        </div>
 
-    </div>
+    </main>
 
     {% if session.get('admin_id') %}
     {% include 'components/panda_widget.html' %}
@@ -111,22 +106,6 @@
                 }, 0);
             }
         }, true);
-
-        const sidebarToggle = document.getElementById("sidebarToggle");
-        const sidebarWrapper = document.querySelector(".sidebar-wrapper");
-        const sidebarBackdrop = document.getElementById("sidebarBackdrop");
-
-        function closeSidebar(){
-            sidebarWrapper.classList.remove("show");
-            document.body.classList.remove("sidebar-open");
-        }
-
-        sidebarToggle?.addEventListener("click", function(){
-            sidebarWrapper.classList.toggle("show");
-            document.body.classList.toggle("sidebar-open");
-        });
-
-        sidebarBackdrop?.addEventListener("click", closeSidebar);
 
     </script>
 

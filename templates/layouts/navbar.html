@@ -1,147 +1,179 @@
-<nav class="navbar navbar-expand-lg bg-white shadow-sm px-4 py-3 sticky-top">
+{% macro nav_badge(count) %}
+{% if count is defined and count and count > 0 %}
+<span class="nav-badge">{{ count if count <= 99 else "99+" }}</span>
+{% endif %}
+{% endmacro %}
 
-    <!-- Left Section -->
-    <div class="navbar-left">
+<nav class="topnav">
 
-        <button class="btn btn-light border me-3" id="sidebarToggle">
+    <div class="topnav-inner">
 
-            <i class="bi bi-list fs-5"></i>
+        <div class="topnav-brand">
 
-        </button>
+            <button class="topnav-toggle d-lg-none" id="mobileNavToggle" type="button"
+                    aria-expanded="false" aria-controls="mobileNavPanel" title="Menu">
+                <i class="bi bi-list"></i>
+            </button>
 
-        <div>
-
-            <h5 class="mb-0 fw-bold">
-                Smart Library Dashboard
-            </h5>
-
-            <small class="text-muted">
-                Welcome back, {{ session.get('username', 'Admin') }} 👋
-            </small>
+            <a class="topnav-brand-link" href="/dashboard">
+                <span class="topnav-logo"><i class="bi bi-book-half"></i></span>
+                <span class="topnav-wordmark">Smart Library</span>
+            </a>
 
         </div>
 
-    </div>
+        <ul class="topnav-links d-none d-lg-flex">
 
-    <!-- Center Section -->
-    <div class="navbar-center">
+            <li>
+                <a class="topnav-link {% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}" href="/dashboard">
+                    Dashboard
+                </a>
+            </li>
 
-        <div class="navbar-search" id="globalSearch" data-search-url="{{ url_for('search.suggestions') }}">
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('enquiry.') %}active{% endif %}" href="{{ url_for('enquiry.index') }}">
+                    Enquiries {{ nav_badge(enquiries_new_count) }}
+                </a>
+            </li>
 
-            <div class="input-group">
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('student.') %}active{% endif %}" href="{{ url_for('student.index') }}">
+                    Students {{ nav_badge(students_new_today_count) }}
+                </a>
+            </li>
 
-                <span class="input-group-text bg-white border-end-0">
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('membership.') %}active{% endif %}" href="{{ url_for('membership.index') }}">
+                    Memberships {{ nav_badge(memberships_expiring_soon_count) }}
+                </a>
+            </li>
 
-                    <i class="bi bi-search"></i>
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('payment.') %}active{% endif %}" href="{{ url_for('payment.index') }}">
+                    Payments {{ nav_badge(payments_pending_count) }}
+                </a>
+            </li>
 
-                </span>
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('cashbook.') %}active{% endif %}" href="{{ url_for('cashbook.index') }}">
+                    Cashbook
+                </a>
+            </li>
 
-                <input
-                    type="text"
-                    id="globalSearchInput"
-                    class="form-control border-start-0"
-                    autocomplete="off"
-                    placeholder="Search students, fees, payments..."
-                    role="combobox"
-                    aria-autocomplete="list"
-                    aria-expanded="false"
-                    aria-controls="globalSearchSuggestions">
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('business_intelligence.') %}active{% endif %}" href="{{ url_for('business_intelligence.index') }}">
+                    Business Intelligence
+                </a>
+            </li>
+
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('ai_center.') %}active{% endif %}" href="{{ url_for('ai_center.index') }}">
+                    AI Center
+                </a>
+            </li>
+
+            <li>
+                <a class="topnav-link {% if request.endpoint and request.endpoint.startswith('setting.') %}active{% endif %}" href="{{ url_for('setting.index') }}">
+                    Settings
+                </a>
+            </li>
+
+        </ul>
+
+        <div class="topnav-right">
+
+            <div class="topnav-search d-none d-sm-flex">
+
+                <div class="navbar-search" id="globalSearch" data-search-url="{{ url_for('search.suggestions') }}">
+
+                    <div class="input-group">
+
+                        <span class="input-group-text">
+                            <i class="bi bi-search"></i>
+                        </span>
+
+                        <input
+                            type="text"
+                            id="globalSearchInput"
+                            class="form-control"
+                            autocomplete="off"
+                            placeholder="Search students, fees, payments..."
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-expanded="false"
+                            aria-controls="globalSearchSuggestions">
+
+                    </div>
+
+                    <ul class="navbar-search-suggestions" id="globalSearchSuggestions" role="listbox" hidden></ul>
+
+                </div>
 
             </div>
 
-            <ul class="navbar-search-suggestions" id="globalSearchSuggestions" role="listbox" hidden></ul>
+            <div class="topnav-icon-slot">
+                {% include "components/notification_dropdown.html" %}
+            </div>
+
+            <div class="dropdown">
+
+                <button
+                    class="topnav-user"
+                    data-bs-toggle="dropdown">
+
+                    <span class="topnav-avatar">{{ session.get('username', 'A')[:2]|upper }}</span>
+                    <i class="bi bi-chevron-down"></i>
+
+                </button>
+
+                <ul class="dropdown-menu dropdown-menu-end">
+
+                    <li>
+                        <a class="dropdown-item" href="#">
+                            <i class="bi bi-person"></i>
+                            Profile
+                        </a>
+                    </li>
+
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('setting.index') }}">
+                            <i class="bi bi-gear"></i>
+                            Settings
+                        </a>
+                    </li>
+
+                    <li><hr class="dropdown-divider"></li>
+
+                    <li>
+                        <a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">
+                            <i class="bi bi-box-arrow-right"></i>
+                            Logout
+                        </a>
+                    </li>
+
+                </ul>
+
+            </div>
 
         </div>
 
     </div>
 
-    <!-- Right Section -->
-    <div class="navbar-right">
+    <div class="topnav-mobile-panel d-lg-none" id="mobileNavPanel" hidden>
 
-        <!-- Notification -->
-        <div class="me-3">
+        <ul class="topnav-mobile-links">
 
-            {% include "components/notification_dropdown.html" %}
+            <li><a href="/dashboard" class="{% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}"><i class="bi bi-grid-fill"></i> Dashboard</a></li>
+            <li><a href="{{ url_for('enquiry.index') }}" class="{% if request.endpoint and request.endpoint.startswith('enquiry.') %}active{% endif %}"><i class="bi bi-person-lines-fill"></i> Enquiries {{ nav_badge(enquiries_new_count) }}</a></li>
+            <li><a href="{{ url_for('student.index') }}" class="{% if request.endpoint and request.endpoint.startswith('student.') %}active{% endif %}"><i class="bi bi-people-fill"></i> Students {{ nav_badge(students_new_today_count) }}</a></li>
+            <li><a href="{{ url_for('membership.index') }}" class="{% if request.endpoint and request.endpoint.startswith('membership.') %}active{% endif %}"><i class="bi bi-person-vcard-fill"></i> Memberships {{ nav_badge(memberships_expiring_soon_count) }}</a></li>
+            <li><a href="{{ url_for('payment.index') }}" class="{% if request.endpoint and request.endpoint.startswith('payment.') %}active{% endif %}"><i class="bi bi-credit-card-2-front-fill"></i> Payments {{ nav_badge(payments_pending_count) }}</a></li>
+            <li><a href="{{ url_for('cashbook.index') }}" class="{% if request.endpoint and request.endpoint.startswith('cashbook.') %}active{% endif %}"><i class="bi bi-cash-stack"></i> Cashbook</a></li>
+            <li><a href="{{ url_for('business_intelligence.index') }}" class="{% if request.endpoint and request.endpoint.startswith('business_intelligence.') %}active{% endif %}"><i class="bi bi-graph-up-arrow"></i> Business Intelligence</a></li>
+            <li><a href="{{ url_for('ai_center.index') }}" class="{% if request.endpoint and request.endpoint.startswith('ai_center.') %}active{% endif %}"><i class="bi bi-stars"></i> AI Center</a></li>
+            <li><a href="{{ url_for('setting.index') }}" class="{% if request.endpoint and request.endpoint.startswith('setting.') %}active{% endif %}"><i class="bi bi-gear-fill"></i> Settings</a></li>
 
-        </div>
-
-        <!-- Date -->
-
-        <div class="text-end me-4 d-none d-sm-block">
-
-            <small class="text-muted d-block">
-                Today
-            </small>
-
-            <strong id="currentDate">
-                Loading...
-            </strong>
-
-        </div>
-
-        <!-- Admin -->
-
-        <div class="dropdown">
-
-            <button
-                class="btn btn-light border dropdown-toggle"
-                data-bs-toggle="dropdown">
-
-                <i class="bi bi-person-circle"></i>
-
-                <span class="d-none d-sm-inline">{{ session.get('username', 'Admin') }}</span>
-
-            </button>
-
-            <ul class="dropdown-menu dropdown-menu-end">
-
-                <li>
-
-                    <a class="dropdown-item" href="#">
-
-                        <i class="bi bi-person"></i>
-
-                        Profile
-
-                    </a>
-
-                </li>
-
-                <li>
-
-                    <a class="dropdown-item"
-                       href="{{ url_for('setting.index') }}">
-
-                        <i class="bi bi-gear"></i>
-
-                        Settings
-
-                    </a>
-
-                </li>
-
-                <li>
-
-                    <hr class="dropdown-divider">
-
-                </li>
-
-                <li>
-
-                    <a class="dropdown-item text-danger"
-                       href="{{ url_for('auth.logout') }}">
-
-                        <i class="bi bi-box-arrow-right"></i>
-
-                        Logout
-
-                    </a>
-
-                </li>
-
-            </ul>
-
-        </div>
+        </ul>
 
     </div>
 
@@ -149,13 +181,17 @@
 
 <script>
 
-const today = new Date();
+(function(){
+    var toggle = document.getElementById("mobileNavToggle");
+    var panel = document.getElementById("mobileNavPanel");
+    if(!toggle || !panel) return;
 
-const day = String(today.getDate()).padStart(2, "0");
-const month = String(today.getMonth() + 1).padStart(2, "0");
-const year = today.getFullYear();
+    toggle.addEventListener("click", function(){
+        var isOpen = !panel.hidden;
+        panel.hidden = isOpen;
+        toggle.setAttribute("aria-expanded", String(!isOpen));
+    });
 
-document.getElementById("currentDate").innerHTML =
-`${day}/${month}/${year}`;
+})();
 
 </script>
