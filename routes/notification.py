@@ -6,6 +6,7 @@ from flask import (
 )
 
 from database.membership_queries import get_memberships_for_admin, get_days_left
+from utils.security import login_required
 
 
 notification_bp = Blueprint(
@@ -92,10 +93,8 @@ def get_notification_summary(admin_id):
 
 @notification_bp.route("/")
 @notification_bp.route("/<filter_type>")
+@login_required
 def index(filter_type=None):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 

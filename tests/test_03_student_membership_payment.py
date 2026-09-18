@@ -1,7 +1,7 @@
 """Students/Admission -> Membership -> Payment: the core money workflow."""
 import pytest
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from tests.conftest import (
     make_enquiry,
     get_last_enquiry_id,
@@ -100,7 +100,7 @@ def test_admission_duplicate_mobile_blocked(logged_in_client):
     assert mobile.encode() in resp.data          # names the colliding number
     assert b"Test Enquirer" in resp.data         # names the existing student
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     count = (
         supabase.table("students")
         .select("student_id", count="exact", head=True)
@@ -356,7 +356,7 @@ def test_membership_create_success_with_payment(logged_in_client):
     assert m["pending_amount"] == 0
     assert m["total_fee"] == 1000
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     payment_rows = supabase.table("payments").select("*").eq("membership_id", mid).execute().data
     assert len(payment_rows) == 1
     payment_id = payment_rows[0]["payment_id"]
@@ -475,7 +475,7 @@ def test_membership_create_zero_pay_full_due_no_payment_row(logged_in_client):
     assert b"Membership created successfully" in resp.data
     assert b"Receipt No:" not in resp.data
     mid = get_last_membership_id(sid)
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     payment_rows = supabase.table("payments").select("payment_id").eq("membership_id", mid).execute().data
     assert len(payment_rows) == 0
 
@@ -580,7 +580,7 @@ def test_membership_create_second_time_blocked_use_renew(logged_in_client):
     resp = create_membership(client, sid, paid_amount="500", due_amount="0")
     assert b"already has an active membership" in resp.data
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     count = (
         supabase.table("memberships")
         .select("membership_id", count="exact", head=True)
@@ -987,7 +987,7 @@ def test_renew_success_expires_old_creates_new(logged_in_client):
     old_membership = get_membership_by_id(old_mid)
     assert old_membership["membership_status"] == "Expired"
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     active_count = (
         supabase.table("memberships")
         .select("membership_id", count="exact", head=True)
@@ -1184,7 +1184,7 @@ def test_receipt_numbers_are_unique_across_multiple_payments(logged_in_client):
     for amt in ("100", "100", "100"):
         client.post(f"/payments/collect/{mid}", data={"amount_paid": amt, "payment_mode": "Cash"}, follow_redirects=True)
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     rows = supabase.table("payments").select("receipt_number").eq("membership_id", mid).execute().data
     receipts = [r["receipt_number"] for r in rows]
     assert len(receipts) == len(set(receipts))
@@ -1257,7 +1257,7 @@ def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(l
     client, admin = logged_in_client
     _, sid = _new_enquiry_and_admit(client, admin["admin_id"])
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     key = f"test-key-{admin['admin_id']}-direct-insert"
 
     def _next_membership_id():
@@ -1335,7 +1335,7 @@ def test_double_submit_membership_renew_is_deduplicated(logged_in_client):
     # not-deduplicated double-submit would still show only 1 Active row, but
     # 3 total (original + two renewals) instead of the expected 2 (original
     # + one renewal).
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     rows = (
         supabase.table("memberships")
         .select("membership_id")
@@ -1373,7 +1373,7 @@ def test_double_submit_collect_payment_is_deduplicated(logged_in_client):
     # select("*") rather than naming idempotency_key explicitly - on a
     # project where that column doesn't exist yet, naming it in the SELECT
     # itself raises 42703 before we even get to check for its absence.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     payment_rows = (
         supabase.table("payments")
         .select("*")
@@ -1426,7 +1426,7 @@ def test_payment_survives_cashbook_sync_failure_and_is_flagged(logged_in_client,
 
     # select("*") rather than naming cashbook_synced explicitly - see the
     # collect-payment dedup test above for why.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     payment_rows = (
         supabase.table("payments")
         .select("*")

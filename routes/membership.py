@@ -41,6 +41,7 @@ from database.membership_charges_queries import (
 )
 from database.cashbook_queries import insert_transaction
 from utils.normalization import normalize_category, normalize_free_text
+from utils.security import login_required
 
 membership_bp = Blueprint(
     "membership",
@@ -175,10 +176,8 @@ def _resolve_applied_charges(charge_config, form, plan_name, recurring_only=Fals
 
 
 @membership_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
@@ -226,10 +225,8 @@ def index():
 
 
 @membership_bp.route("/create/<int:student_id>", methods=["GET", "POST"])
+@login_required
 def create(student_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
@@ -476,6 +473,7 @@ def create(student_id):
 
     membership_row = {
         "membership_id": new_membership_id,
+        "admin_id": admin_id,
         "student_id": student_id,
         "plan_name": plan_name,
         "joining_date": joining_date,
@@ -530,6 +528,7 @@ def create(student_id):
     try:
         insert_membership_charges(
             supabase,
+            admin_id,
             new_membership_id,
             [
                 {
@@ -628,10 +627,8 @@ def create(student_id):
 
 
 @membership_bp.route("/renew/<int:student_id>", methods=["GET", "POST"])
+@login_required
 def renew(student_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
@@ -843,6 +840,7 @@ def renew(student_id):
 
     membership_row = {
         "membership_id": new_membership_id,
+        "admin_id": admin_id,
         "student_id": student_id,
         "plan_name": plan_name,
         "joining_date": joining_date,
@@ -883,6 +881,7 @@ def renew(student_id):
     try:
         insert_membership_charges(
             supabase,
+            admin_id,
             new_membership_id,
             [
                 {
@@ -973,6 +972,7 @@ def renew(student_id):
 
 
 @membership_bp.route("/refund-charge/<int:membership_id>/<charge_key>", methods=["POST"])
+@login_required
 def refund_charge(membership_id, charge_key):
     """Refund a refundable membership charge (the security deposit): record
     one Cashbook Expense and stamp membership_charges.refunded_on. Does not
@@ -980,18 +980,18 @@ def refund_charge(membership_id, charge_key):
     collected as part of payables; giving it back is a separate cash
     outflow (ADR-66). Idempotent: a charge already refunded is a no-op."""
 
-    if "admin_id" not in session:
-        return redirect("/")
-
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
 
-    # Admin-ownership: the membership's student must belong to this admin.
+    # Filtered by admin_id in the query itself (not checked in Python after
+    # an unscoped fetch) - consistent with the rest of the codebase, and
+    # correct in its own right regardless of RLS (ADR-75).
     try:
         membership_response = (
             supabase.table("memberships")
             .select("membership_id, student_id")
             .eq("membership_id", membership_id)
+            .eq("admin_id", admin_id)
             .limit(1)
             .execute()
         )
@@ -1004,8 +1004,9 @@ def refund_charge(membership_id, charge_key):
         try:
             student_response = (
                 supabase.table("students")
-                .select("student_id, full_name, admin_id")
+                .select("student_id, full_name")
                 .eq("student_id", membership["student_id"])
+                .eq("admin_id", admin_id)
                 .limit(1)
                 .execute()
             )
@@ -1013,7 +1014,7 @@ def refund_charge(membership_id, charge_key):
         except APIError:
             student = None
 
-    if membership is None or student is None or student["admin_id"] != admin_id:
+    if membership is None or student is None:
         flash("Membership not found.", "danger")
         return redirect(url_for("student.index"))
 

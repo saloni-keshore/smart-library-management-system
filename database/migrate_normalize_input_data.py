@@ -59,7 +59,7 @@ import time
 
 from postgrest.exceptions import APIError
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from utils.normalization import (
     normalize_name,
     normalize_phone,
@@ -131,12 +131,15 @@ def _fresh_client():
     """A new Supabase client, not the process-wide cached singleton -
     long-running scripts that make thousands of sequential requests need a
     new underlying HTTP/2 connection periodically (see module docstring for
-    the live connection-termination this avoids); the app's own request
-    handlers should keep using the cached `get_supabase_client()` as normal,
-    this script is the only caller that clears it."""
+    the live connection-termination this avoids). This standalone script
+    intentionally touches every admin's rows across the whole project, so
+    it needs get_service_role_client() (bypasses RLS) - the app's own
+    per-request traffic uses the separate, tenant-scoped
+    get_supabase_client() as normal (ADR-75); this script is the only
+    caller that clears get_service_role_client()'s cache."""
 
-    get_supabase_client.cache_clear()
-    return get_supabase_client()
+    get_service_role_client.cache_clear()
+    return get_service_role_client()
 
 
 def _with_retry(call):

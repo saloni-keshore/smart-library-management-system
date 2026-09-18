@@ -3,10 +3,11 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from flask import Flask, abort, render_template, request, session
+from flask import Flask, abort, g, render_template, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import DevelopmentConfig, ProductionConfig
+from database.supabase_client import build_anon_client, build_tenant_client
 from utils.branding import branding_src
 from utils.security import csrf_token, validate_csrf
 
@@ -152,6 +153,15 @@ def create_app(test_config=None):
     app.register_blueprint(ai_center_bp)
     app.register_blueprint(search_bp)
     app.register_blueprint(panda_bp)
+
+    @app.before_request
+    def attach_tenant_supabase_client():
+        """Every request gets its own Supabase client, scoped to the
+        logged-in tenant (or anon, pre-login) via a freshly signed JWT -
+        never a shared/cached one (ADR-75). Must run before any route or
+        context processor calls get_supabase_client()."""
+        admin_id = session.get("admin_id")
+        g.supabase = build_tenant_client(admin_id) if admin_id else build_anon_client()
 
     @app.before_request
     def enforce_request_security():

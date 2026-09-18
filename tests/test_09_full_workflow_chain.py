@@ -1,7 +1,7 @@
 """End-to-end: Enquiry -> Admission -> Membership -> Payment -> Receipt ->
 Cashbook -> Dashboard -> BI -> Notifications -> Audit Log, verifying every
 downstream module updates exactly once and stays numerically consistent."""
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, get_enquiry_by_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id, get_membership_by_id,
@@ -30,7 +30,7 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     create_membership(client, sid, paid_amount="600", due_amount="400")
     mid = get_last_membership_id(sid)
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     payment_rows = supabase.table("payments").select("*").eq("membership_id", mid).execute().data
     assert len(payment_rows) == 1
     assert payment_rows[0]["amount_paid"] == 600
@@ -125,7 +125,7 @@ def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in
     old_membership = get_membership_by_id(old_mid)
     assert old_membership["membership_status"] == "Expired"
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     total_count = (
         supabase.table("memberships")
         .select("membership_id", count="exact", head=True)
@@ -174,7 +174,7 @@ def test_no_orphan_payments_or_cashbook_rows_after_full_run(logged_in_client):
     mid = get_last_membership_id(sid)
     client.post(f"/payments/collect/{mid}", data={"amount_paid": "200", "payment_mode": "Cash"}, follow_redirects=True)
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
 
     payment_rows = supabase.table("payments").select("payment_id, membership_id").eq("membership_id", mid).execute().data
     assert len(payment_rows) > 0
@@ -227,7 +227,7 @@ def test_receipt_numbers_globally_unique_across_two_fresh_admins(app):
         assert b"Membership created successfully" in resp.data
         assert b"Receipt No:" in resp.data
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     all_receipts = []
     start = 0
     page_size = 1000

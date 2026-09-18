@@ -21,6 +21,7 @@ from utils.normalization import (
     normalize_free_text,
     clean_mobile,
 )
+from utils.security import login_required
 
 enquiry_bp = Blueprint(
     "enquiry",
@@ -43,7 +44,7 @@ def _sanitize_date(value):
         date.fromisoformat(text)
     except ValueError:
         return None
-    return text
+    return text 
 
 
 def _find_person_by_mobile(supabase, admin_id, mobile):
@@ -100,10 +101,8 @@ def _find_person_by_mobile(supabase, admin_id, mobile):
 
 
 @enquiry_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -146,10 +145,8 @@ def index():
 
 
 @enquiry_bp.route("/add", methods=["GET", "POST"])
+@login_required
 def add():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -240,10 +237,8 @@ def add():
 
 
 @enquiry_bp.route("/edit/<int:enquiry_id>", methods=["GET", "POST"])
+@login_required
 def edit(enquiry_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -318,6 +313,7 @@ def edit(enquiry_id):
 
 
 @enquiry_bp.route("/re-enquire/<int:enquiry_id>", methods=["GET", "POST"])
+@login_required
 def re_enquire(enquiry_id):
     """Log a fresh enquiry for someone already on file. A phone number maps
     to exactly one enquiry record (ADR-58), so this updates that record in
@@ -325,9 +321,6 @@ def re_enquire(enquiry_id):
     rather than creating a second enquiry row. Reached from the "Log Another
     Enquiry" button on the enquiry and student detail pages. The person's
     mobile is fixed here - it's their identity."""
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
@@ -386,6 +379,7 @@ def re_enquire(enquiry_id):
 
 
 @enquiry_bp.route("/delete/<int:enquiry_id>", methods=["GET", "POST"])
+@login_required
 def delete(enquiry_id):
 
     # The legacy test suite calls this endpoint with GET. Production rejects
@@ -393,9 +387,6 @@ def delete(enquiry_id):
     # path without invalidating historical automated coverage.
     if request.method == "GET" and not current_app.testing:
         abort(405)
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -411,10 +402,8 @@ def delete(enquiry_id):
 
 
 @enquiry_bp.route("/view/<int:enquiry_id>")
+@login_required
 def view(enquiry_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 

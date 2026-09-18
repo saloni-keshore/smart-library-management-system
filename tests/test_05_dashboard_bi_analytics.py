@@ -117,7 +117,7 @@ def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
     last year, must land in their own year's bucket and nowhere else."""
     client, admin = logged_in_client
     from datetime import date
-    from database.supabase_client import get_supabase_client
+    from database.supabase_client import get_service_role_client
     from database.payment_queries import get_payments_for_admin
     from utils.chart_data import _monthly_revenue_for_year
 
@@ -137,7 +137,7 @@ def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
     # payment_id must be supplied explicitly - this table's identity
     # sequence is never advanced since every real insert path (see
     # database/payment_queries.py) computes its own next id the same way.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     next_id_row = (
         supabase.table("payments")
         .select("payment_id")
@@ -149,6 +149,7 @@ def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
 
     supabase.table("payments").insert({
         "payment_id": next_payment_id,
+        "admin_id": admin["admin_id"],
         "membership_id": mid,
         "student_id": sid,
         "amount_paid": 300,

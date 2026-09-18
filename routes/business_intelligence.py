@@ -2,6 +2,7 @@ import calendar
 
 from flask import Blueprint, render_template, session, redirect
 
+from utils.security import login_required
 from database.cashbook_queries import get_monthly_income, get_monthly_expense
 from database.bi_queries import (
     last_n_months,
@@ -113,10 +114,8 @@ def _build_membership_growth_chart(admin_id, months):
 
 
 @business_intelligence_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     months = last_n_months(TREND_MONTHS)
@@ -525,10 +524,8 @@ def _occupancy_analytics_data(admin_id):
 
 
 @business_intelligence_bp.route("/purpose-analytics")
+@login_required
 def purpose_analytics():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     return render_template(
         "business_intelligence/purpose_analytics.html",
@@ -537,10 +534,8 @@ def purpose_analytics():
 
 
 @business_intelligence_bp.route("/revenue-analytics")
+@login_required
 def revenue_analytics():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     return render_template(
         "business_intelligence/revenue_analytics.html",
@@ -549,10 +544,8 @@ def revenue_analytics():
 
 
 @business_intelligence_bp.route("/occupancy-analytics")
+@login_required
 def occupancy_analytics():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     return render_template(
         "business_intelligence/occupancy_analytics.html",

@@ -26,6 +26,7 @@ from database.notification_settings_queries import get_notification_settings_cac
 from database.membership_queries import (
     get_membership_counts, get_memberships_for_admin, get_admin_students, get_days_left
 )
+from utils.security import login_required
 
 
 dashboard_bp = Blueprint(
@@ -35,10 +36,8 @@ dashboard_bp = Blueprint(
 
 
 @dashboard_bp.route("/dashboard")
+@login_required
 def dashboard():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 

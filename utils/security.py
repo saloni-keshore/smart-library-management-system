@@ -54,3 +54,19 @@ def clear_rate_limit(action):
     """Clear prior failed attempts after a successful sensitive operation."""
     with _attempt_lock:
         _attempts.pop((action, request.remote_addr or "unknown"), None)
+
+
+def login_required(view):
+    """Replaces the `if "admin_id" not in session: return redirect("/")`
+    check duplicated inline across every route file. App-layer
+    defense-in-depth on top of Row-Level Security (ADR-75), not a
+    replacement for it - RLS is what actually makes cross-tenant data
+    inaccessible; this decorator's job is to keep an unauthenticated
+    visitor from ever seeing a broken/empty page instead of being sent to
+    login."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if "admin_id" not in session:
+            return redirect("/")
+        return view(*args, **kwargs)
+    return wrapped

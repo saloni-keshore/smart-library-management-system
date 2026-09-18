@@ -235,9 +235,13 @@ erDiagram
     ADMINS ||--|| MEMBERSHIP_SETTINGS : "admin_id (unique)"
     ADMINS ||--|| BACKUP_LOG : "admin_id (unique)"
     ADMINS ||--|| SECURITY_SETTINGS : "admin_id (unique)"
-    ADMINS ||--o{ CASHBOOK : "admin_id (no FK — added via ALTER)"
-    ADMINS ||--o{ EXPENSES : "admin_id (no FK, unused table)"
+    ADMINS ||--o{ CASHBOOK : "admin_id (FK added ADR-75, nullable)"
+    ADMINS ||--o{ EXPENSES : "admin_id (FK added ADR-75)"
     ADMINS ||--o{ PANDA_CONVERSATIONS : "admin_id"
+    ADMINS ||--o{ MEMBERSHIPS : "admin_id (ADR-75)"
+    ADMINS ||--o{ PAYMENTS : "admin_id (ADR-75)"
+    ADMINS ||--o{ MEMBERSHIP_CHARGES : "admin_id (ADR-75)"
+    ADMINS ||--o{ PANDA_MESSAGES : "admin_id (ADR-75)"
     PANDA_CONVERSATIONS ||--o{ PANDA_MESSAGES : "conversation_id"
     ENQUIRIES |o--o| STUDENTS : "enquiry_id (nullable)"
     STUDENTS ||--o{ MEMBERSHIPS : "student_id"
@@ -255,6 +259,8 @@ erDiagram
         text mobile UK
         text password
         text role
+        text status "ADR-75/76 - active/archived"
+        timestamp archived_at "ADR-75/76 - nullable"
     }
     ENQUIRIES {
         int enquiry_id PK
@@ -272,6 +278,7 @@ erDiagram
     MEMBERSHIPS {
         int membership_id PK
         int student_id FK
+        int admin_id FK "ADR-75"
         text plan_name
         date end_date
         real total_fee
@@ -296,6 +303,7 @@ erDiagram
     MEMBERSHIP_CHARGES {
         int charge_id PK
         int membership_id FK
+        int admin_id FK "ADR-75"
         text charge_key "security_deposit / seat_reservation / locker"
         real amount "term total, folded into memberships.total_fee"
         int recurring
@@ -306,6 +314,7 @@ erDiagram
         int payment_id PK
         int membership_id FK
         int student_id FK
+        int admin_id FK "ADR-75"
         text receipt_number UK
         real amount_paid
         text idempotency_key UK "ADR-53, TD-30 fix"
@@ -316,7 +325,7 @@ erDiagram
         text type
         text category
         real amount
-        int admin_id "no FK"
+        int admin_id FK "nullable, FK added ADR-75"
         text source
         text reference_id
     }
@@ -363,7 +372,7 @@ erDiagram
     }
     EXPENSES {
         int expense_id PK
-        int admin_id "no FK, unused"
+        int admin_id FK "unused table, FK added ADR-75"
     }
     PANDA_CONVERSATIONS {
         int conversation_id PK
@@ -373,6 +382,7 @@ erDiagram
     PANDA_MESSAGES {
         int message_id PK
         int conversation_id FK
+        int admin_id FK "ADR-75"
         text role "'user' or 'assistant', CHECK-constrained"
         text content
     }

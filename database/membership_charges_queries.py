@@ -129,7 +129,7 @@ def get_membership_charges(membership_id):
     return response.data or []
 
 
-def insert_membership_charges(supabase, membership_id, charges):
+def insert_membership_charges(supabase, admin_id, membership_id, charges):
     """Bulk-insert charge rows for a membership. `charges` is a list of
     dicts {charge_key, label, amount, recurring, refundable}. A no-op for an
     empty list. Raises ChargeTableUnavailable if the table is missing and
@@ -139,6 +139,7 @@ def insert_membership_charges(supabase, membership_id, charges):
     rows = [
         {
             "membership_id": membership_id,
+            "admin_id": admin_id,
             "charge_key": c["charge_key"],
             "label": c["label"],
             "amount": c["amount"],

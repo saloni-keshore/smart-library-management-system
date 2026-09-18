@@ -44,27 +44,24 @@ def login():
 
     supabase = get_supabase_client()
 
-    admin_count = (
-        supabase.table("admins")
-        .select("admin_id", count="exact", head=True)
-        .execute()
-        .count
-    )
-
-    show_signup = (admin_count == 0)
-
     if request.method == "POST":
 
         login_id = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
         try:
-            response = supabase.table("admins").select("*").eq("username", login_id).execute()
-            if not response.data:
-                response = supabase.table("admins").select("*").eq("mobile", login_id).execute()
+            response = supabase.rpc("rpc_login_lookup", {"p_identifier": login_id}).execute()
             admin = response.data[0] if response.data else None
         except APIError:
             admin = None
+
+        if admin and admin.get("status") == "archived":
+            flash(
+                "This account has been archived and can no longer be accessed. "
+                "Contact support if you need it reactivated.",
+                "danger"
+            )
+            return render_template("auth/login.html", show_signup=True)
 
         if admin and check_password_hash(admin["password"], password):
             session.clear()
@@ -81,7 +78,10 @@ def login():
 
             flash("Invalid username/mobile number or password.", "danger")
 
-    return render_template("auth/login.html", show_signup=show_signup)
+    # Every library can self-register at any time (ADR-75) - tenants are
+    # isolated by Row-Level Security, not by only ever allowing one admin
+    # to exist in the database.
+    return render_template("auth/login.html", show_signup=True)
 
 
 @auth_bp.route("/logout")
@@ -98,15 +98,6 @@ def logout():
 def register():
 
     supabase = get_supabase_client()
-    admin_count = (
-        supabase.table("admins")
-        .select("admin_id", count="exact", head=True)
-        .execute()
-        .count
-    )
-    if admin_count and not current_app.testing:
-        flash("Administrator registration is available only during initial setup.", "danger")
-        return redirect(url_for("auth.login"))
 
     if request.method == "POST":
 
@@ -133,31 +124,28 @@ def register():
             flash(error, "danger")
             return redirect("/register")
 
+        hashed_password = generate_password_hash(password)
+
+        # Username/mobile uniqueness is checked and the row inserted inside
+        # one SECURITY DEFINER Postgres function (rpc_register_admin) so
+        # the anon-role pre-login client never needs direct admins table
+        # access, and so two concurrent registrations with the same
+        # username can't both pass a check-then-insert race.
         try:
-            # Username exists check
-            response = supabase.table("admins").select("admin_id").eq("username", username).execute()
-            if response.data:
-                flash("Username already exists.", "danger")
-                return redirect("/register")
-
-            # Mobile exists check
-            response = supabase.table("admins").select("admin_id").eq("mobile", mobile).execute()
-            if response.data:
-                flash("Mobile number is already registered.", "danger")
-                return redirect("/register")
-
-            hashed_password = generate_password_hash(password)
-
-            supabase.table("admins").insert({
-                "full_name": full_name,
-                "username": username,
-                "mobile": mobile,
-                "email": email,
-                "password": hashed_password,
-                "role": "Admin",
+            supabase.rpc("rpc_register_admin", {
+                "p_full_name": full_name,
+                "p_username": username,
+                "p_mobile": mobile,
+                "p_email": email,
+                "p_password_hash": hashed_password,
             }).execute()
-        except APIError:
-            flash("Something went wrong. Please try again.", "danger")
+        except APIError as e:
+            if e.message == "username_taken":
+                flash("Username already exists.", "danger")
+            elif e.message == "mobile_taken":
+                flash("Mobile number is already registered.", "danger")
+            else:
+                flash("Something went wrong. Please try again.", "danger")
             return redirect("/register")
 
         flash("Account created successfully. Please login.", "success")
@@ -203,9 +191,11 @@ def forgot_password():
         # mobile is UNIQUE, so this returns at most one row; full name is
         # then compared case-insensitively in Python. Require BOTH full
         # name AND mobile to match — prevents reset with just a known
-        # phone number.
+        # phone number. Goes through a SECURITY DEFINER RPC, not a direct
+        # table read, since the anon-role pre-login client has no admins
+        # SELECT policy (ADR-75).
         try:
-            response = supabase.table("admins").select("*").eq("mobile", mobile).execute()
+            response = supabase.rpc("rpc_forgot_password_lookup", {"p_mobile": mobile}).execute()
             admin = response.data[0] if response.data else None
         except APIError:
             admin = None
@@ -222,9 +212,10 @@ def forgot_password():
         hashed_password = generate_password_hash(new_password)
 
         try:
-            supabase.table("admins").update(
-                {"password": hashed_password}
-            ).eq("admin_id", admin["admin_id"]).execute()
+            supabase.rpc("rpc_reset_password", {
+                "p_admin_id": admin["admin_id"],
+                "p_new_password_hash": hashed_password,
+            }).execute()
         except APIError:
             flash("Something went wrong. Please try again.", "danger")
             return redirect("/forgot-password")

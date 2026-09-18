@@ -1,214 +1,248 @@
-"""Post-provisioning data-isolation check for one Supabase project (ADR-53).
+"""Row-Level Security proof for a shared multi-tenant Supabase project (ADR-75).
 
-Under the one-deployment-per-library pilot model, isolation between
-libraries is a deployment/configuration problem, not an application-layer
-one: each library has its own Supabase project, so "no other library's data
-in this database" should be true by construction. This script exists to
-*verify* that construction actually held for a freshly provisioned project -
-catching exactly the failure mode the rest of this fix doesn't touch: an
-operator who pasted the wrong SUPABASE_URL/SUPABASE_SECRET_KEY into this
-deployment's .env and is unknowingly looking at a different project (a
-stale local one, or - worst case - another library's).
+This app moved from "one admin per Supabase project" (ADR-53) to a shared
+database where many libraries self-register and are isolated from each
+other by Postgres Row-Level Security, not merely by every query
+remembering an `.eq("admin_id", ...)` filter. This script proves the RLS
+policies themselves are doing the work - the one thing application-level
+tests can't show, because they always go through routes/database query
+functions that already filter correctly.
 
-`tests/conftest.py` has no mocking and no teardown, so the real pytest
-suite is unsafe to run against a freshly provisioned, production-intended
-project - it would permanently seed random test data into it. This script
-is read-only and safe to run against a real project at any time.
+`tests/test_08_cross_tenant_isolation.py` is this script's complement: it
+drives the real Flask app as two logged-in tenants and checks that neither
+can view/edit/delete the other's records through the UI/routes - i.e. it
+catches an application-code bug (a route or query helper that forgot to
+scope by admin_id). This script instead builds a tenant-scoped Supabase
+client directly (database.supabase_client.build_tenant_client()) and
+queries a table with NO admin_id filter at all - if any row belonging to
+the *other* seeded tenant comes back, RLS itself has failed, independent
+of whether the application code above it is written correctly. Both checks
+matter; neither replaces the other.
 
-Usage (from the repository root, with this deployment's own .env already in
-place - see docs/PROVISIONING.md):
+This script MUTATES data: it creates two throwaway admin accounts, seeds a
+representative row in several tenant-owned tables for each, then deletes
+both accounts and everything they own via rpc_delete_tenant_data() at the
+end. Never point it at a project already holding real library data - only
+a disposable dev/test Supabase project (same convention as
+tests/conftest.py's warning about the pytest suite).
 
-    # Before any admin has registered - every table must be empty.
+Usage (from the repository root, with a disposable dev project's .env or
+.env.test already in place):
+
     python scripts/verify_tenant_isolation.py
 
-    # After Step E's first-admin registration - every row must belong to
-    # that one admin (or, for FK-only tables, transitively belong to them).
-    python scripts/verify_tenant_isolation.py --expected-admin-id 1
-
-Exits 0 if the project contains only what's expected, 1 otherwise.
+Exits 0 if every check passes, 1 otherwise.
 """
 
-import argparse
+import secrets
 import sys
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from database.supabase_client import get_supabase_client  # noqa: E402
+from werkzeug.security import generate_password_hash  # noqa: E402
+
+from database.supabase_client import (  # noqa: E402
+    build_tenant_client,
+    get_service_role_client,
+)
+
+# Tables checked directly for RLS denial - a representative spread across
+# both "always had a direct admin_id column" (enquiries, students,
+# cashbook, library_settings) and "only got one via the ADR-75 backfill"
+# (memberships, payments), since those two groups have different FK shapes.
+CHECKED_TABLES = ["enquiries", "students", "memberships", "payments", "cashbook", "library_settings"]
 
 
-# Tables with their own admin_id column - checked directly.
-DIRECT_ADMIN_TABLES = [
-    "enquiries",
-    "students",
-    "cashbook",
-    "expenses",
-    "audit_log",
-    "library_settings",
-    "membership_settings",
-    "backup_log",
-    "security_settings",
-    "ai_center_settings",
-    "panda_conversations",
-]
-
-# Tables with no admin_id column of their own - ownership is checked
-# transitively through a parent table's admin_id, the same "no
-# server-side JOIN, fetch-and-filter-in-Python" shape
-# database/payment_queries.py's get_payments_for_admin() already uses.
-FK_SCOPED_TABLES = {
-    # table_name: (fk_column, parent_table, parent_id_column)
-    "memberships": ("student_id", "students", "student_id"),
-    "payments": ("student_id", "students", "student_id"),
-    "panda_messages": ("conversation_id", "panda_conversations", "conversation_id"),
-}
-
-# Legacy/unused tables (confirmed by the pre-deployment audit: no live code
-# path reads or writes them) - reported for visibility only, never asserted
-# against, since they carry no per-admin ownership concept in the schema.
-UNSCOPED_LEGACY_TABLES = ["settings", "transactions"]
+def _rand_suffix():
+    return secrets.token_hex(4)
 
 
-_PAGE_SIZE = 1000
+_ID_RETRIES = 6
 
 
-def _fetch_all(supabase, table_name, columns="*"):
-    """Every row in table_name, paginated with .range() - PostgREST caps a
-    single request at a server-configured max page size (commonly 1000
-    rows), so a plain .select(columns).execute() silently truncates on any
-    table larger than that instead of raising. This matters here even
-    though the intended target (a freshly provisioned, near-empty pilot
-    project) is unlikely to ever hit that cap - a leak-detection script
-    that silently under-reports on a larger project is worse than one that
-    is merely slower."""
+def _insert_with_next_id(service_client, table, id_column, row):
+    """Local copy of database/id_sequence.py's insert_with_next_id(), for use
+    outside a Flask request context (this script has none, so it can't call
+    get_supabase_client()). enquiries.enquiry_id and students.student_id have
+    identity sequences that trail ordinary usage (ADR-15/TD-78) - every real
+    route already assigns MAX(id)+1 itself instead of trusting the sequence;
+    this script must do the same rather than relying on the table's default,
+    or it collides with existing rows on any project that already has data."""
+    from postgrest.exceptions import APIError
 
-    rows = []
-    start = 0
-    while True:
-        resp = (
-            supabase.table(table_name)
-            .select(columns)
-            .range(start, start + _PAGE_SIZE - 1)
+    last_error = None
+    for _ in range(_ID_RETRIES):
+        top = (
+            service_client.table(table)
+            .select(id_column)
+            .order(id_column, desc=True)
+            .limit(1)
             .execute()
         )
-        page = resp.data or []
-        rows.extend(page)
-        if len(page) < _PAGE_SIZE:
-            break
-        start += _PAGE_SIZE
-    return rows
+        next_id = (top.data[0][id_column] + 1) if top.data else 1
+        try:
+            return service_client.table(table).insert({**row, id_column: next_id}).execute().data[0]
+        except APIError as error:
+            details = error.args[0] if error.args else ""
+            code = details.get("code") if isinstance(details, dict) else str(details)
+            if "23505" not in (code or ""):
+                raise
+            last_error = error
+    raise last_error
 
 
-def _check_admins_table(supabase, expected_admin_id):
-    rows = _fetch_all(supabase, "admins", "admin_id")
-    ids = {r["admin_id"] for r in rows}
+def _seed_tenant(service_client, label):
+    """Creates one throwaway admin plus one row in each of CHECKED_TABLES,
+    using the service-role client (bypasses RLS - this is setup, not the
+    thing being tested). Returns the new admin_id."""
 
-    if expected_admin_id is None:
-        if not ids:
-            return "OK", "empty, as expected before first admin registration"
-        return "FAIL", f"expected no admins yet, found admin_id(s) {sorted(ids)}"
+    suffix = _rand_suffix()
+    admin_row = service_client.table("admins").insert({
+        "full_name": f"RLS Check {label}",
+        "username": f"rls_check_{label}_{suffix}",
+        "mobile": "9" + suffix.ljust(9, "0")[:9],
+        "email": f"rls_check_{label}_{suffix}@example.com",
+        "password": generate_password_hash("RlsCheck123"),
+        "role": "Admin",
+    }).execute().data[0]
+    admin_id = admin_row["admin_id"]
 
-    if ids == {expected_admin_id}:
-        return "OK", f"exactly the expected admin_id {expected_admin_id}"
-    unexpected = ids - {expected_admin_id}
-    if unexpected:
-        return "FAIL", f"found unexpected admin_id(s) {sorted(unexpected)}"
-    return "OK", "no rows"
+    enquiry = _insert_with_next_id(service_client, "enquiries", "enquiry_id", {
+        "admin_id": admin_id,
+        "full_name": f"Secret Enquiry {label}",
+        "mobile": "8" + suffix.ljust(9, "0")[:9],
+        "purpose": "Study",
+        "preferred_shift": "Morning",
+    })
+
+    student = _insert_with_next_id(service_client, "students", "student_id", {
+        "admin_id": admin_id,
+        "enquiry_id": enquiry["enquiry_id"],
+        "full_name": f"Secret Student {label}",
+        "mobile": "7" + suffix.ljust(9, "0")[:9],
+        "join_date": date.today().isoformat(),
+        "status": "Active",
+    })
+
+    membership = _insert_with_next_id(service_client, "memberships", "membership_id", {
+        "admin_id": admin_id,
+        "student_id": student["student_id"],
+        "plan_name": "Custom",
+        "joining_date": date.today().isoformat(),
+        "end_date": date.today().isoformat(),
+        "total_fee": 500,
+        "paid_amount": 500,
+    })
+
+    _insert_with_next_id(service_client, "payments", "payment_id", {
+        "admin_id": admin_id,
+        "membership_id": membership["membership_id"],
+        "student_id": student["student_id"],
+        "payment_mode": "Cash",
+        "amount_paid": 500,
+    })
+
+    _insert_with_next_id(service_client, "cashbook", "entry_id", {
+        "admin_id": admin_id,
+        "type": "Income",
+        "description": f"Secret Cashbook {label}",
+        "amount": 500,
+        "entry_date": date.today().isoformat(),
+        "category": "Membership Fee",
+    })
+
+    _insert_with_next_id(service_client, "library_settings", "setting_id", {
+        "admin_id": admin_id,
+        "library_name": f"Secret Library {label}",
+        "phone": "9" + suffix.ljust(9, "0")[:9],
+    })
+
+    return admin_id
 
 
-def _check_direct_table(supabase, table_name, expected_admin_id):
-    rows = _fetch_all(supabase, table_name, "admin_id")
-    if not rows:
-        return "OK", "empty"
+def _assert_rls_denies_wrong_tenant(admin_id_a, admin_id_b):
+    """The core proof: query every checked table as tenant A, with NO
+    admin_id filter in the query at all, and confirm not one of tenant B's
+    seeded rows comes back. If this ever fails, RLS is not enforcing
+    isolation - only application code is, which is exactly the gap ADR-75
+    closes."""
 
-    if expected_admin_id is None:
-        return "FAIL", f"expected empty (no admin registered yet), found {len(rows)} row(s)"
+    client_a = build_tenant_client(admin_id_a)
+    failures = []
+    own_row_missing = []
 
-    ids = {r["admin_id"] for r in rows}
-    unexpected = ids - {expected_admin_id}
-    if unexpected:
-        return "FAIL", f"found admin_id(s) {sorted(unexpected)} - not the expected {expected_admin_id}"
-    return "OK", f"{len(rows)} row(s), all admin_id={expected_admin_id}"
+    for table in CHECKED_TABLES:
+        rows = client_a.table(table).select("admin_id").execute().data or []
+        seen_admin_ids = {r["admin_id"] for r in rows}
+
+        if admin_id_b in seen_admin_ids:
+            failures.append(f"{table}: tenant B's row was visible to tenant A's client")
+        if admin_id_a not in seen_admin_ids:
+            # Not itself a leak, but means this check proved nothing for
+            # this table - the client might be misconfigured rather than
+            # RLS actually working.
+            own_row_missing.append(table)
+
+    return failures, own_row_missing
 
 
-def _check_fk_scoped_table(supabase, table_name, fk_column, parent_table, parent_id_column, expected_admin_id):
-    rows = _fetch_all(supabase, table_name, fk_column)
-    if not rows:
-        return "OK", "empty"
+def _cleanup(admin_id_a, admin_id_b):
+    """Deletes both seeded tenants via their own rpc_delete_tenant_data()
+    RPC - exercising the real deletion path (ADR-76) as a side effect,
+    rather than hand-rolling a second delete-order implementation here."""
 
-    if expected_admin_id is None:
-        return "FAIL", f"expected empty (no admin registered yet), found {len(rows)} row(s)"
-
-    parent_rows = supabase.table(parent_table).select(parent_id_column).eq(
-        "admin_id", expected_admin_id
-    ).execute().data or []
-    allowed_ids = {r[parent_id_column] for r in parent_rows}
-
-    fk_values = {r[fk_column] for r in rows if r.get(fk_column) is not None}
-    unexpected = fk_values - allowed_ids
-    if unexpected:
-        return (
-            "FAIL",
-            f"found {fk_column} value(s) {sorted(unexpected)} not owned by "
-            f"admin_id={expected_admin_id} via {parent_table}",
-        )
-    return "OK", f"{len(rows)} row(s), all traced back to admin_id={expected_admin_id}"
+    for admin_id in (admin_id_a, admin_id_b):
+        try:
+            build_tenant_client(admin_id).rpc("rpc_delete_tenant_data", {}).execute()
+        except Exception as exc:  # noqa: BLE001 - best-effort cleanup, report and continue
+            print(f"WARNING: cleanup failed for admin_id={admin_id}: {exc}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--expected-admin-id",
-        type=int,
-        default=None,
-        help=(
-            "The one admin_id this project should contain data for "
-            "(Step E of docs/PROVISIONING.md). Omit to assert the project "
-            "is still completely empty (Step D, before first registration)."
-        ),
-    )
-    args = parser.parse_args()
+    service_client = get_service_role_client()
 
-    supabase = get_supabase_client()
-    expected_admin_id = args.expected_admin_id
+    print("Seeding two throwaway tenants...")
+    admin_id_a = _seed_tenant(service_client, "a")
+    admin_id_b = _seed_tenant(service_client, "b")
+    print(f"  tenant A admin_id={admin_id_a}, tenant B admin_id={admin_id_b}")
 
-    results = []
-    status, detail = _check_admins_table(supabase, expected_admin_id)
-    results.append(("admins", status, detail))
+    try:
+        failures, own_row_missing = _assert_rls_denies_wrong_tenant(admin_id_a, admin_id_b)
+    finally:
+        print("Cleaning up seeded tenants...")
+        _cleanup(admin_id_a, admin_id_b)
 
-    for table_name in DIRECT_ADMIN_TABLES:
-        status, detail = _check_direct_table(supabase, table_name, expected_admin_id)
-        results.append((table_name, status, detail))
+    print()
+    print(f"{'TABLE':<24}RESULT")
+    print("-" * 60)
+    any_failure = bool(failures)
+    for table in CHECKED_TABLES:
+        if any(table in f for f in failures):
+            print(f"{table:<24}FAIL - tenant B's row was visible")
+        elif table in own_row_missing:
+            print(f"{table:<24}INCONCLUSIVE - tenant A's own row wasn't returned either")
+        else:
+            print(f"{table:<24}OK - RLS correctly hid tenant B's row")
+    print("-" * 60)
 
-    for table_name, (fk_column, parent_table, parent_id_column) in FK_SCOPED_TABLES.items():
-        status, detail = _check_fk_scoped_table(
-            supabase, table_name, fk_column, parent_table, parent_id_column, expected_admin_id
-        )
-        results.append((table_name, status, detail))
+    if failures:
+        print("FAIL - Row-Level Security did not isolate tenants. Details:")
+        for f in failures:
+            print(f"  - {f}")
+        return 1
 
-    for table_name in UNSCOPED_LEGACY_TABLES:
-        rows = _fetch_all(supabase, table_name)
-        results.append((table_name, "INFO", f"{len(rows)} row(s) - legacy table, not asserted"))
-
-    print(f"{'TABLE':<24}{'STATUS':<8}DETAIL")
-    print("-" * 70)
-    any_failure = False
-    for table_name, status, detail in results:
-        if status == "FAIL":
-            any_failure = True
-        print(f"{table_name:<24}{status:<8}{detail}")
-
-    print("-" * 70)
-    if any_failure:
+    if own_row_missing:
         print(
-            "FAIL - this project contains data that doesn't match the "
-            "expected single library. Double-check SUPABASE_URL/"
-            "SUPABASE_SECRET_KEY in this deployment's .env before going "
-            "live - see docs/PROVISIONING.md."
+            "INCONCLUSIVE - some tables never returned even the querying "
+            "tenant's own row, so this run didn't actually prove RLS works "
+            "for them. Check database/supabase_client.py's build_tenant_client() "
+            "and that database/supabase_rls_migration.sql has been applied."
         )
         return 1
 
-    print("PASS - this project's data is consistent with one clean library.")
+    print("PASS - Row-Level Security correctly isolated both tenants on every checked table.")
     return 0
 
 

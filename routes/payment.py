@@ -26,6 +26,7 @@ from database.membership_queries import (
 from database.membership_charges_queries import get_membership_charges, CHARGE_BY_KEY
 from database.receipt_settings_queries import get_receipt_settings
 from utils.normalization import normalize_free_text
+from utils.security import login_required
 
 
 payment_bp = Blueprint(
@@ -80,10 +81,8 @@ def _plan_label(membership):
 
 
 @payment_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -98,10 +97,8 @@ def index():
 
 
 @payment_bp.route("/collect/<int:membership_id>", methods=["GET", "POST"])
+@login_required
 def collect(membership_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
@@ -313,10 +310,8 @@ def collect(membership_id):
 
 
 @payment_bp.route("/receipt/<int:payment_id>")
+@login_required
 def receipt(payment_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()

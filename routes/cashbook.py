@@ -30,6 +30,7 @@ from database.cashbook_categories import (
     PAYMENT_METHODS
 )
 from utils.normalization import normalize_name, normalize_free_text
+from utils.security import login_required
 
 cashbook_bp = Blueprint(
     "cashbook",
@@ -168,10 +169,8 @@ def _build_payment_method_chart(admin_id):
 
 
 @cashbook_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -290,10 +289,8 @@ def income_expense_chart():
 
 
 @cashbook_bp.route("/add", methods=["POST"])
+@login_required
 def add_transaction():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -346,10 +343,8 @@ def add_transaction():
 
 
 @cashbook_bp.route("/edit/<int:entry_id>", methods=["POST"])
+@login_required
 def edit_transaction(entry_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 

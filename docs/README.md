@@ -35,7 +35,8 @@ This `docs/` folder documents the **actual, current implementation** of the Smar
 | [WHERE_TO_MODIFY.md](WHERE_TO_MODIFY.md) | "I want to change X" → every file that touches it, in one table |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues specific to this codebase, their root cause, and the fix |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment steps for one app instance |
-| [PROVISIONING.md](PROVISIONING.md) | *(added 2026-08-21, ADR-53)* Step-by-step runbook for provisioning a new pilot library — one deployment + one Supabase project each |
+| [PROVISIONING_SHARED_INSTANCE.md](PROVISIONING_SHARED_INSTANCE.md) | *(added 2026-09-16, ADR-75)* Current model — runbook for the shared, self-service multi-tenant instance (apply the base + RLS migrations once, then libraries self-register; no per-library deployment) |
+| [PROVISIONING.md](PROVISIONING.md) | *(added 2026-08-21, ADR-53 — legacy)* Step-by-step runbook for the older one-deployment-per-library pilot model; still valid only for pilot libraries already running under it |
 
 **Living project history**
 | File | Contents |

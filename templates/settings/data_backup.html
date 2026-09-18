@@ -69,5 +69,82 @@
             </div>
         </div>
     </div>
+
+    <div class="card shadow-sm border-danger mt-4">
+        <div class="card-body">
+            <h5 class="text-danger mb-3"><i class="bi bi-exclamation-triangle"></i> Danger Zone</h5>
+            <p class="text-muted small">
+                Archiving deactivates your library's account - your data is kept, but no one can log
+                in again until it's reactivated. Deleting permanently removes every record your
+                library owns (students, memberships, payments, cashbook, settings - everything) and
+                cannot be undone.
+            </p>
+
+            {% if not danger_zone_ready %}
+                <div class="alert alert-warning small mb-0">
+                    Export and download a fresh backup above (within the last
+                    {{ danger_zone_window_hours }} hours) before Archive or Delete become available.
+                </div>
+            {% else %}
+                <form method="POST" id="danger-zone-form" class="border rounded-3 p-3">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="confirm_downloaded"
+                               name="confirm_downloaded" required>
+                        <label class="form-check-label small" for="confirm_downloaded">
+                            I have downloaded and verified my data export.
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="confirm_username">
+                            Type your username (<strong>{{ username }}</strong>) to confirm
+                        </label>
+                        <input type="text" class="form-control" id="confirm_username"
+                               name="confirm_username" autocomplete="off" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="current_password">Current password</label>
+                        <input type="password" class="form-control" id="current_password"
+                               name="current_password" autocomplete="current-password" required>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="submit" id="archive-btn" formaction="{{ url_for('setting.backup_archive') }}"
+                                class="btn btn-outline-danger" disabled
+                                onclick="return confirm('Archive your library account? No one will be able to log in until it is reactivated.');">
+                            <i class="bi bi-archive"></i> Archive My Library
+                        </button>
+                        <button type="submit" id="delete-btn" formaction="{{ url_for('setting.backup_delete') }}"
+                                class="btn btn-danger" disabled
+                                onclick="return confirm('Permanently delete your library and ALL of its data? This cannot be undone.');">
+                            <i class="bi bi-trash"></i> Permanently Delete My Library
+                        </button>
+                    </div>
+                </form>
+                <script>
+                (function () {
+                    var form = document.getElementById("danger-zone-form");
+                    var checkbox = document.getElementById("confirm_downloaded");
+                    var usernameInput = document.getElementById("confirm_username");
+                    var passwordInput = document.getElementById("current_password");
+                    var archiveBtn = document.getElementById("archive-btn");
+                    var deleteBtn = document.getElementById("delete-btn");
+                    var expectedUsername = {{ username|tojson }};
+
+                    function refresh() {
+                        var ready = checkbox.checked
+                            && usernameInput.value === expectedUsername
+                            && passwordInput.value.length > 0;
+                        archiveBtn.disabled = !ready;
+                        deleteBtn.disabled = !ready;
+                    }
+
+                    [checkbox, usernameInput, passwordInput].forEach(function (el) {
+                        el.addEventListener("input", refresh);
+                        el.addEventListener("change", refresh);
+                    });
+                })();
+                </script>
+            {% endif %}
+        </div>
+    </div>
 </div>
 {% endblock %}

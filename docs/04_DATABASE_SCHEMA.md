@@ -15,8 +15,12 @@
 | `email` | TEXT | |
 | `role` | TEXT DEFAULT `'admin'` | `routes/auth.py` inserts `"Admin"` (capitalized) — inconsistent casing vs. schema default |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
+| `status` | TEXT NOT NULL DEFAULT `'active'` | Added 2026-09-16 (ADR-75/ADR-76) — `'active'` or `'archived'`. Set by `rpc_archive_tenant()` (Settings → Data & Backup's Danger Zone); checked by `rpc_login_lookup()`/`routes/auth.py`'s `login()`, which refuses login and shows a distinct "This account has been archived" message when `'archived'`. No route flips it back — reactivating an archived account is unbuilt (PF-9) |
+| `archived_at` | TIMESTAMP | Added 2026-09-16 (ADR-75/ADR-76) — stamped by `rpc_archive_tenant()`, `NULL` otherwise |
 
 The tenant root — every other admin-scoped table references `admin_id` back to this table.
+
+**As of 2026-09-16 (ADR-75), `admins` is a shared table across every tenant, not one row per Supabase project.** RLS on `admins` itself grants only `admins_self_select`/`admins_self_update` (own row only, no INSERT/DELETE policy for any role) — signup, login lookup, forgot-password, archive, and permanent delete all go through `SECURITY DEFINER` RPCs (`rpc_register_admin`, `rpc_login_lookup`, `rpc_forgot_password_lookup`, `rpc_reset_password`, `rpc_archive_tenant`, `rpc_delete_tenant_data`, all defined in `database/supabase_rls_migration.sql`) instead of direct table reads/writes from the anon/authenticated client, since "look up a row across every tenant by username/mobile" can't be expressed as an `admin_id`-scoped RLS policy. `routes/auth.py`'s old "registration available only during initial setup" gate (`admin_count`/`current_app.testing`) is gone — registration is always open, and `login()`'s `show_signup` is unconditionally `True`. Username/mobile uniqueness stays global across every tenant (deliberate — `admins` is the tenant root, checked inside `rpc_register_admin()` to close a check-then-insert race the old two-`SELECT`s-plus-`INSERT` sequence had).
 
 **As of 2026-07-23 (ADR-16/ADR-17), `admins` became the first table in the incremental Supabase cutover:** `routes/auth.py` (login/register/forgot-password) reads/writes the copy in **Supabase** (PostgreSQL, schema defined by `database/supabase_migration.sql` — column shapes are identical to the SQLite table above per ADR-14) via `database/supabase_client.py`. As of the same day (ADR-17), `routes/setting.py`'s `security_settings()` (Settings → Security Settings → Change Password) reads/writes `admins.password` in **Supabase too**, via the same client — `admins.password` now has a single writer again (TD-35, `Resolved`).
 
@@ -67,7 +71,8 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | Column | Type | Notes |
 |---|---|---|
 | `membership_id` | INTEGER PK | |
-| `student_id` | INTEGER NOT NULL FK → `students` | **No direct `admin_id` column** — tenant isolation is via `student_id → students.admin_id` join |
+| `student_id` | INTEGER NOT NULL FK → `students` | |
+| `admin_id` | INTEGER NOT NULL FK → `admins` | Added 2026-09-16 (ADR-75) — backfilled from `students.admin_id` via the join this table used to rely on exclusively; direct column + FK is what makes a real RLS policy possible on this table (see the Multi-tenant summary below) |
 | `plan_name` | TEXT NOT NULL | `"Monthly"`, `"Quarterly"`, `"Half-Yearly"`, `"Yearly"`, `"CUSTOM"`. Since ADR-65 this is the *term multiplier* (`PLAN_MONTHS = {1,3,6,12}`) for a `shift_slot_id`, not necessarily the price source |
 | `joining_date` | DATE NOT NULL | |
 | `duration_days` | INTEGER | |
@@ -103,9 +108,8 @@ No `admin_id` — a single global row. **Not used by any current route** (`route
 | `remarks` | TEXT | |
 | `idempotency_key` | TEXT UNIQUE | Added 2026-08-21 (TD-30 fix, ADR-53) — same shape/purpose as `memberships.idempotency_key` above; the Collect Payment form's hidden token. |
 | `cashbook_synced` | BOOLEAN DEFAULT TRUE | Added 2026-08-21 (TD-43 fix, ADR-53) — flipped to `FALSE` by `record_payment()` when the automatic Cashbook Income entry fails even after its own retry, so `routes/cashbook.py` can surface a reconciliation banner instead of the gap staying silent. The payment row itself is never rolled back for this. |
+| `admin_id` | INTEGER NOT NULL FK → `admins` | Added 2026-09-16 (ADR-75) — backfilled from `students.admin_id` via the join this table used to rely on exclusively; direct column + FK is what makes a real RLS policy possible on this table (see the Multi-tenant summary below) |
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
-
-No `admin_id` column — isolation via `student_id`/`membership_id` join.
 
 **As of 2026-07-24 (ADR-25), Supabase became the source of truth for every read** (`routes/payment.py`'s `index()`, `routes/student.py`'s `view()`, the revenue-chart data builder — `utils/charts.py`'s `generate_revenue_chart()` then, `utils/chart_data.py`'s `build_revenue_chart_data()` since ADR-56 — `database/cashbook_queries.py`'s fee-revenue getters, `routes/membership_distribution.py`'s per-row receipt columns) via `database/payment_queries.py`. **As of 2026-07-24 (ADR-28), Supabase is also this table's only write target** — `record_payment()`'s SQLite `INSERT` was deleted outright (the third mirror-write fully removed in Phase 10), `payment_id` is now computed from Supabase's own `MAX(payment_id) + 1`, and the Supabase insert is **strict**: a failure raises `postgrest.exceptions.APIError`, caught by `routes/membership.py`'s `create()`/`renew()` and `routes/payment.py`'s `collect()` (their `except sqlite3.Error:` blocks were widened to `except (sqlite3.Error, APIError):`) so a payment failure still rolls back exactly as before. See ADR-28 in [DECISIONS.md](DECISIONS.md) and [MIRROR_TRACKER.md](MIRROR_TRACKER.md).
 
@@ -244,7 +248,8 @@ Brand-new table, no DDL path (ADR-14) — `database/shift_slots_queries.py` read
 | Column | Type | Notes |
 |---|---|---|
 | `charge_id` | INTEGER PK (identity) | |
-| `membership_id` | INTEGER NOT NULL FK → `memberships` | Tenant isolation via the membership's student |
+| `membership_id` | INTEGER NOT NULL FK → `memberships` | |
+| `admin_id` | INTEGER NOT NULL FK → `admins` | Added 2026-09-16 (ADR-75) — backfilled from `memberships.admin_id`; previously this table was only reachable via a join through `memberships`/`students` |
 | `charge_key` | TEXT NOT NULL, UNIQUE per membership | `security_deposit` / `seat_reservation` / `locker` (never `registration` — that stays on `memberships.admission_fee_amount`) |
 | `label`, `recurring`, `refundable` | TEXT / INTEGER CHECK(0/1) | Snapshots of `CHARGE_CATALOG` at creation |
 | `amount` | DOUBLE PRECISION NOT NULL DEFAULT 0 | Term total already folded into `memberships.total_fee` (a recurring charge is monthly amount × plan months) |
@@ -277,13 +282,14 @@ Created by `database/migrate_security_settings.py`. Deliberately separate from `
 
 ## Multi-tenant (`admin_id`) summary
 
+**As of 2026-09-16 (ADR-75), every row in every table below is also enforced by Postgres Row-Level Security, not just the direct `admin_id` column/FK.** `database/supabase_rls_migration.sql` enables RLS with one `tenant_isolation` policy (`USING`/`WITH CHECK` both `admin_id = current_admin_id()`) on all 16 tenant-owned tables listed here, where `current_admin_id()` is a SQL helper reading the `admin_id` claim out of the per-request JWT `database/supabase_client.py`'s `build_tenant_client()` mints (see ADR-75 in [DECISIONS.md](DECISIONS.md)). A query that omits its own `admin_id` filter now gets an empty result for another tenant's rows, not a leak — RLS is the actual enforcement mechanism; the column/FK below is what makes a policy possible in the first place, and the application-level filter each route still applies is defense-in-depth on top of it. `admins` itself has a narrower pair of self-row-only policies (`admins_self_select`/`admins_self_update`) plus six `SECURITY DEFINER` RPCs for cross-tenant-lookup and account-lifecycle operations that can't be expressed as an RLS policy — `rpc_login_lookup`, `rpc_register_admin`, `rpc_forgot_password_lookup`, `rpc_reset_password` (granted to `anon`), and `rpc_archive_tenant`/`rpc_delete_tenant_data` (granted to `authenticated`, ADR-76, Settings → Data & Backup's Danger Zone).
+
 | Table | Isolation mechanism |
 |---|---|
-| `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings` | Direct `admin_id` column with FK (except `expenses`/`cashbook`, see below) |
-| `expenses` | Direct `admin_id` column, **no FK declared** |
-| `cashbook` | Direct `admin_id` column, added via `ALTER TABLE` — **no FK possible** in SQLite for altered columns |
-| `memberships`, `payments` | No `admin_id` column — isolated indirectly via `student_id → students.admin_id` |
-| `settings`, `transactions` | Not admin-scoped at all (unused/legacy tables) |
+| `enquiries`, `students`, `audit_log`, `library_settings`, `membership_settings`, `backup_log`, `security_settings`, `ai_center_settings`, `panda_conversations`, `shift_slots` | Direct `admin_id` column with FK, plus RLS `tenant_isolation` policy (ADR-75) |
+| `memberships`, `payments`, `membership_charges`, `panda_messages` | **As of 2026-09-16 (ADR-75):** direct `admin_id` column with FK, backfilled from the join each previously relied on (`student_id → students.admin_id` for `memberships`/`payments`; `membership_id → memberships.admin_id` for `membership_charges`; `conversation_id → panda_conversations.admin_id` for `panda_messages`), plus RLS `tenant_isolation` policy. Before ADR-75 these had no `admin_id` column at all and were isolated only indirectly via that join — the specific gap ADR-2 named as a consequence of the original retrofit |
+| `expenses`, `cashbook` | Direct `admin_id` column; **FK added 2026-09-16 (ADR-75)** (previously declared with no FK — `expenses` had none at all, `cashbook`'s was added via `ALTER TABLE` under SQLite, which couldn't attach one to an altered column; Postgres has no such limitation), plus RLS `tenant_isolation` policy. `cashbook.admin_id` is nullable — a `NULL` row simply matches no tenant's policy rather than blocking the migration (see TD-108) |
+| `settings`, `transactions` | Not admin-scoped — dead/legacy, unused by any route. RLS is enabled on both with **zero policies**, i.e. deny-all for every role (ADR-75) — costs nothing, closes a theoretical future misuse |
 
 ## Migration scripts (historical — all deleted 2026-07-25, ADR-32)
 

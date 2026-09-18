@@ -21,7 +21,7 @@ passes those straight through and still resolves any legacy relative path.
 import os
 from functools import lru_cache
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 
 BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "library-branding")
 _MAX_BYTES = 5 * 1024 * 1024  # keep in step with config.Config.MAX_CONTENT_LENGTH
@@ -35,7 +35,7 @@ def _ensure_bucket():
     process on first success; an exception is not cached, so a transient
     failure is retried on the next call."""
 
-    storage = get_supabase_client().storage
+    storage = get_service_role_client().storage
 
     try:
         storage.get_bucket(BUCKET)
@@ -65,7 +65,7 @@ def upload_branding_image(object_path, data, content_type):
     return its full public URL (to store in `library_settings`)."""
 
     _ensure_bucket()
-    storage = get_supabase_client().storage.from_(BUCKET)
+    storage = get_service_role_client().storage.from_(BUCKET)
     storage.upload(
         object_path,
         data,
@@ -108,6 +108,6 @@ def delete_branding_image(url_or_path):
         return
 
     try:
-        get_supabase_client().storage.from_(BUCKET).remove([object_path])
+        get_service_role_client().storage.from_(BUCKET).remove([object_path])
     except Exception:
         pass

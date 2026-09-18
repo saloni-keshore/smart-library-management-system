@@ -23,7 +23,7 @@ sys.path.insert(0, _REPO_ROOT)
 load_dotenv(os.path.join(_REPO_ROOT, ".env.test"), override=True)
 
 from app import create_app  # noqa: E402
-from database.supabase_client import get_supabase_client  # noqa: E402
+from database.supabase_client import get_service_role_client  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -50,7 +50,7 @@ def _rand_mobile():
 
 def get_admin_by_username(username):
     """admins now lives in Supabase (routes/auth.py) — replaces a SQLite lookup."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = supabase.table("admins").select("*").eq("username", username).execute()
     return response.data[0] if response.data else None
 
@@ -105,7 +105,7 @@ def make_enquiry(client, **overrides):
 def get_last_enquiry_id(admin_id):
     """enquiries now lives in Supabase only (routes/enquiries.py, ADR-30) -
     no SQLite mirror left to read."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = (
         supabase.table("enquiries")
         .select("enquiry_id")
@@ -120,7 +120,7 @@ def get_last_enquiry_id(admin_id):
 def get_enquiry_by_id(enquiry_id):
     """enquiries now lives in Supabase (routes/enquiries.py) — replaces a
     SQLite lookup for asserting the result of an add/edit/delete."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = supabase.table("enquiries").select("*").eq("enquiry_id", enquiry_id).execute()
     return response.data[0] if response.data else None
 
@@ -139,7 +139,7 @@ def admit_student(client, enquiry_id, **overrides):
 def get_last_student_id(admin_id):
     """students now lives in Supabase only (routes/student.py, ADR-29) - no
     SQLite mirror left to read."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = (
         supabase.table("students")
         .select("student_id")
@@ -154,7 +154,7 @@ def get_last_student_id(admin_id):
 def get_student_by_id(student_id):
     """students now lives in Supabase (routes/student.py) — replaces a
     SQLite lookup for asserting the result of an admission/edit."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = supabase.table("students").select("*").eq("student_id", student_id).execute()
     return response.data[0] if response.data else None
 
@@ -220,7 +220,7 @@ def save_membership_settings(client, **overrides):
 def get_last_membership_id(student_id):
     """memberships now lives in Supabase only (routes/membership.py,
     ADR-29) - no SQLite mirror left to read."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = (
         supabase.table("memberships")
         .select("membership_id")
@@ -235,7 +235,7 @@ def get_last_membership_id(student_id):
 def get_membership_by_id(membership_id):
     """memberships now lives in Supabase (routes/membership.py) — replaces a
     SQLite lookup for asserting the result of a create/renew."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = supabase.table("memberships").select("*").eq("membership_id", membership_id).execute()
     return response.data[0] if response.data else None
 
@@ -244,7 +244,7 @@ def get_cashbook_entries(admin_id, **filters):
     """cashbook now lives in Supabase (routes/cashbook.py, ADR-22) — replaces
     a SQLite lookup for asserting ledger state after an add/edit. `filters`
     are applied as equality filters (e.g. category="Admission Fee")."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     query = supabase.table("cashbook").select("*").eq("admin_id", admin_id)
     for key, value in filters.items():
         query = query.eq(key, value)
@@ -257,7 +257,7 @@ def get_last_cashbook_entry(admin_id):
 
 
 def get_cashbook_entry_by_id(entry_id):
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     response = supabase.table("cashbook").select("*").eq("entry_id", entry_id).execute()
     return response.data[0] if response.data else None
 
@@ -265,7 +265,7 @@ def get_cashbook_entry_by_id(entry_id):
 def get_audit_log_entries(admin_id, **filters):
     """audit_log now lives in Supabase (database/audit_queries.py, ADR-22)
     — replaces a SQLite lookup for asserting an audit trail row was made."""
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     query = supabase.table("audit_log").select("*").eq("admin_id", admin_id)
     for key, value in filters.items():
         query = query.eq(key, value)

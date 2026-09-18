@@ -663,8 +663,8 @@ def test_forecast_revenue_projects_real_trend_from_backdated_cashbook_history(lo
     admin_id = admin["admin_id"]
 
     from database.bi_queries import last_n_months
-    from database.supabase_client import get_supabase_client
-    supabase = get_supabase_client()
+    from database.supabase_client import get_service_role_client
+    supabase = get_service_role_client()
 
     months = last_n_months(6)
 

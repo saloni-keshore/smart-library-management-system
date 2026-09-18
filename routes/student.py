@@ -25,6 +25,7 @@ from utils.normalization import (
     normalize_free_text,
     clean_mobile,
 )
+from utils.security import login_required
 
 
 student_bp = Blueprint(
@@ -53,10 +54,8 @@ def _sanitize_date(value):
 
 
 @student_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -140,15 +139,13 @@ def _insert_student_row(row):
 
 
 @student_bp.route("/quick-admit", methods=["GET", "POST"])
+@login_required
 def quick_admit():
     """Register a walk-in / short-visit person fast (ADR-71): no enquiry,
     address / ID proof optional. Creates a 'Casual', 'Pending' student and
     sends staff to membership.create(), where the Day Pass plan pre-fills the
     flat per-visit fee. If the mobile is already on file that's a returning
     visitor - jump to their profile, where Renew lives (ADR-58)."""
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
@@ -218,10 +215,8 @@ def quick_admit():
 
 
 @student_bp.route("/admission/<int:enquiry_id>", methods=["GET", "POST"])
+@login_required
 def admission(enquiry_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()
@@ -382,10 +377,8 @@ def admission(enquiry_id):
 
 
 @student_bp.route("/view/<int:student_id>")
+@login_required
 def view(student_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -449,10 +442,8 @@ def view(student_id):
 
 
 @student_bp.route("/edit/<int:student_id>", methods=["GET", "POST"])
+@login_required
 def edit(student_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     supabase = get_supabase_client()

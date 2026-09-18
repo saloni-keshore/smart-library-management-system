@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime
 
 from flask import (
-    Blueprint, render_template, request, redirect, url_for, flash, session,
+    Blueprint, current_app, render_template, request, redirect, url_for, flash, session,
     jsonify, send_file, Response
 )
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -45,6 +45,7 @@ from database.security_settings_queries import (
 )
 from routes.auth import validate_password
 from utils.branding import branding_src
+from utils.security import login_required, rate_limited
 from utils.normalization import (
     normalize_name,
     normalize_phone,
@@ -324,10 +325,8 @@ SESSION_TIMEOUT_OPTIONS = {15: "15 minutes", 30: "30 minutes", 60: "60 minutes",
 # ==========================================================
 
 @setting_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     return render_template("settings/index.html")
 
@@ -335,10 +334,8 @@ def index():
 # Membership Settings
 
 @setting_bp.route("/membership", methods=["GET", "POST"])
+@login_required
 def membership_settings():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -494,10 +491,8 @@ def _parse_shift_slot_form(form):
 
 
 @setting_bp.route("/shift-slots", methods=["GET", "POST"])
+@login_required
 def shift_slots():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -530,10 +525,8 @@ def shift_slots():
 
 
 @setting_bp.route("/shift-slots/<int:slot_id>/edit", methods=["POST"])
+@login_required
 def shift_slot_edit(slot_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -558,10 +551,8 @@ def shift_slot_edit(slot_id):
 
 
 @setting_bp.route("/shift-slots/<int:slot_id>/toggle", methods=["POST"])
+@login_required
 def shift_slot_toggle(slot_id):
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -585,9 +576,8 @@ def shift_slot_toggle(slot_id):
 
 
 @setting_bp.route("/library", methods=["GET", "POST"])
+@login_required
 def library_profile():
-    if "admin_id" not in session:
-        return redirect("/")
     admin_id = session["admin_id"]
 
     existing = get_library_settings(admin_id)
@@ -773,10 +763,8 @@ def remove_library_logo():
     return jsonify(success=True, message="Logo removed successfully.")
 
 @setting_bp.route("/receipt", methods=["GET", "POST"])
+@login_required
 def receipt_settings():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     existing = get_receipt_settings(admin_id)
@@ -870,10 +858,8 @@ def receipt_settings():
     )
 
 @setting_bp.route("/notification", methods=["GET", "POST"])
+@login_required
 def notification_settings():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     existing = get_notification_settings(admin_id)
@@ -955,10 +941,8 @@ def notification_settings():
 # ==========================================================
 
 @setting_bp.route("/staff")
+@login_required
 def staff_access():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     return render_template("settings/staff_access.html")
 
@@ -967,13 +951,18 @@ def staff_access():
 # Data & Backup
 # ==========================================================
 
-# Tables with a direct admin_id column - queried with .eq("admin_id", ...).
-# memberships/payments have no admin_id column (isolated indirectly via
-# student_id -> students.admin_id, see docs/04_DATABASE_SCHEMA.md), so
-# they're collected separately below.
+# Every table with a direct admin_id column (ADR-75 gave memberships/
+# payments/membership_charges/panda_messages one too, closing the previous
+# gap where they could only be reached via a join) - each queried with
+# .eq("admin_id", ...). This list is also what Settings > Data & Backup's
+# Danger Zone (rpc_delete_tenant_data) permanently removes, so it must stay
+# a complete inventory of this admin's data - see ADR-76.
 _BACKUP_DIRECT_TABLES = (
     "enquiries", "students", "cashbook", "audit_log",
     "library_settings", "membership_settings", "security_settings",
+    "ai_center_settings", "backup_log", "shift_slots",
+    "memberships", "payments", "membership_charges",
+    "panda_conversations", "panda_messages", "expenses",
 )
 
 
@@ -995,28 +984,21 @@ def _collect_admin_backup_data(admin_id):
     data["admin_profile"] = admin_response.data[0] if admin_response.data else None
 
     for table in _BACKUP_DIRECT_TABLES:
-        data[table] = supabase.table(table).select("*").eq("admin_id", admin_id).execute().data
-
-    student_ids = [row["student_id"] for row in data["students"]]
-    if student_ids:
-        data["memberships"] = (
-            supabase.table("memberships").select("*").in_("student_id", student_ids).execute().data
-        )
-        data["payments"] = (
-            supabase.table("payments").select("*").in_("student_id", student_ids).execute().data
-        )
-    else:
-        data["memberships"] = []
-        data["payments"] = []
+        try:
+            data[table] = supabase.table(table).select("*").eq("admin_id", admin_id).execute().data
+        except APIError:
+            # A brand-new table (ai_center_settings/panda_*/shift_slots/
+            # membership_charges) not yet created on an older, un-migrated
+            # project (PGRST205) - degrade to an empty list rather than
+            # failing the whole export.
+            data[table] = []
 
     return data
 
 
 @setting_bp.route("/backup")
+@login_required
 def data_backup():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -1026,14 +1008,15 @@ def data_backup():
         "settings/data_backup.html",
         last_backup_at=backup_info["last_backup_at"] if backup_info else None,
         backup_location="Downloaded to your device",
+        danger_zone_ready=_backup_is_fresh(backup_info),
+        danger_zone_window_hours=_DANGER_ZONE_BACKUP_WINDOW_HOURS,
+        username=session.get("username"),
     )
 
 
 @setting_bp.route("/backup/export-csv")
+@login_required
 def backup_export_csv():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -1075,10 +1058,8 @@ def backup_export_csv():
 
 
 @setting_bp.route("/backup/create", methods=["POST"])
+@login_required
 def backup_create():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 
@@ -1104,15 +1085,136 @@ def backup_create():
     )
 
 
+# Danger Zone (ADR-76): Export -> Confirm -> Archive/Delete. A recent backup
+# (taken via backup_create() above) is required before either action is
+# allowed, so an admin can't wipe/deactivate their account without ever
+# having downloaded a copy of it first.
+_DANGER_ZONE_BACKUP_WINDOW_HOURS = 24
+
+
+def _backup_is_fresh(backup_info):
+    """True if backup_info's last_backup_at is within the Danger Zone's
+    required window - the one thing that must be true before Archive/
+    Delete can be attempted at all (ADR-76)."""
+
+    if not backup_info or not backup_info.get("last_backup_at"):
+        return False
+    try:
+        backed_up_at = datetime.fromisoformat(backup_info["last_backup_at"])
+        now = datetime.now(backed_up_at.tzinfo) if backed_up_at.tzinfo else datetime.now()
+        age_hours = (now - backed_up_at).total_seconds() / 3600
+    except (TypeError, ValueError):
+        return False
+    return age_hours <= _DANGER_ZONE_BACKUP_WINDOW_HOURS
+
+
+def _danger_zone_confirmation_error(admin_id, form):
+    """Returns an error message string if the Danger Zone's required
+    confirmations aren't all satisfied, else None. Re-checked server-side
+    on every submit - the template's disabled-button gating is a UX
+    convenience only, never the actual guard."""
+
+    backup_info = get_backup_info(admin_id)
+    if not _backup_is_fresh(backup_info):
+        return (
+            f"Please export and download a data export from the last "
+            f"{_DANGER_ZONE_BACKUP_WINDOW_HOURS} hours first."
+        )
+
+    if not form.get("confirm_downloaded"):
+        return "Please confirm you have downloaded and verified your data export."
+
+    typed_username = form.get("confirm_username", "").strip()
+    if typed_username != session.get("username"):
+        return "The username you typed doesn't match your account. Please try again."
+
+    supabase = get_supabase_client()
+    try:
+        response = supabase.table("admins").select("password").eq("admin_id", admin_id).execute()
+        admin = response.data[0] if response.data else None
+    except APIError:
+        admin = None
+
+    current_password = form.get("current_password", "")
+    if not admin or not check_password_hash(admin["password"], current_password):
+        return "Incorrect password."
+
+    return None
+
+
+@setting_bp.route("/backup/archive", methods=["POST"])
+@login_required
+@rate_limited(limit=2, window_seconds=3600)
+def backup_archive():
+    """Deactivates this library's account (Settings > Data & Backup's
+    Danger Zone). Data is left completely untouched - only admins.status
+    changes, via rpc_archive_tenant() (ADR-76) - login is refused
+    afterward (routes/auth.py's login()), but nothing is deleted."""
+
+    admin_id = session["admin_id"]
+
+    error = _danger_zone_confirmation_error(admin_id, request.form)
+    if error:
+        flash(error, "danger")
+        return redirect(url_for("setting.data_backup"))
+
+    supabase = get_supabase_client()
+    try:
+        supabase.rpc("rpc_archive_tenant", {}).execute()
+    except APIError:
+        flash("Something went wrong. Please try again.", "danger")
+        return redirect(url_for("setting.data_backup"))
+
+    current_app.logger.info("Tenant archived: admin_id=%s", admin_id)
+
+    session.clear()
+    flash(
+        "Your library account has been archived. Contact support if you "
+        "need it reactivated.",
+        "success",
+    )
+    return redirect("/")
+
+
+@setting_bp.route("/backup/delete", methods=["POST"])
+@login_required
+@rate_limited(limit=2, window_seconds=3600)
+def backup_delete():
+    """Permanently deletes every row this library owns, across every
+    table, in one atomic transaction (rpc_delete_tenant_data(), ADR-76) -
+    including the admins row itself. Irreversible; the confirmation gate
+    in _danger_zone_confirmation_error() is the only thing standing between
+    a stray click and a full account wipe, so it is re-checked here even
+    though the template also disables the button client-side."""
+
+    admin_id = session["admin_id"]
+
+    error = _danger_zone_confirmation_error(admin_id, request.form)
+    if error:
+        flash(error, "danger")
+        return redirect(url_for("setting.data_backup"))
+
+    supabase = get_supabase_client()
+    try:
+        supabase.rpc("rpc_delete_tenant_data", {}).execute()
+    except APIError:
+        flash("Something went wrong. Please try again.", "danger")
+        return redirect(url_for("setting.data_backup"))
+
+    current_app.logger.info("Tenant data permanently deleted: admin_id=%s", admin_id)
+
+    session.clear()
+    flash("Your library account and all its data have been permanently deleted.", "success")
+    return redirect("/")
+
+
 # ==========================================================
 # Security Settings
 # ==========================================================
 
 @setting_bp.route("/security", methods=["GET", "POST"])
+@login_required
 def security_settings():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 

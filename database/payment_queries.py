@@ -402,6 +402,7 @@ def record_payment(
     # column's values by capitalization instead of fixing it.
     payment_row = {
         "payment_id": payment_id,
+        "admin_id": admin_id,
         "membership_id": membership_id,
         "student_id": student_id,
         "receipt_number": receipt_number,

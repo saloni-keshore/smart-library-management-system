@@ -3,15 +3,14 @@ from postgrest.exceptions import APIError
 
 from database.ai_center_queries import compute_student_risk, search_students
 from database.ai_center_settings_queries import get_effective_settings, save_ai_center_settings
+from utils.security import login_required
 
 ai_center_bp = Blueprint("ai_center", __name__, url_prefix="/ai-center")
 
 
 @ai_center_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
     student_id = request.args.get("student_id", type=int)
@@ -75,10 +74,8 @@ def _parse_settings_form(form):
 
 
 @ai_center_bp.route("/settings", methods=["GET", "POST"])
+@login_required
 def settings():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 

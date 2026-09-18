@@ -1,4 +1,6 @@
-# Provisioning a new library
+# Provisioning a new library (legacy: one-deployment-per-library model)
+
+> **As of 2026-09-16 (ADR-75), this runbook describes the legacy pilot model, not how a new library is provisioned today.** New libraries self-register into a shared Supabase project, isolated by Postgres Row-Level Security — see [PROVISIONING_SHARED_INSTANCE.md](PROVISIONING_SHARED_INSTANCE.md) for that runbook. This file remains accurate and valid for the existing pilot libraries already running under the model described below — ADR-75 does not automatically migrate them, and nothing here stops working. Use this file only when standing up (or maintaining) one of those pre-existing standalone deployments; an existing pilot library that wants to move to the shared instance decommissions its old deployment via Settings → Data & Backup's Danger Zone (ADR-76) and self-registers fresh instead of following Step E below.
 
 ## Overview
 
@@ -60,25 +62,15 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
 ## Step D — Verify isolation before go-live
 
 1. Check this deployment's log file (`instance/smart-library.log`, or console output on first run) for the line `Connected Supabase project: ...<last-24-chars-of-URL>` and visually confirm it matches the project you created in Step A, not any other library's.
-2. Run:
+2. Confirm the project is otherwise empty (Table Editor: `admins` and every other table have zero rows) — this is the "one project = one library" model's real isolation guarantee, a deployment/configuration check, not something a script proves for you here.
 
-   ```
-   python scripts/verify_tenant_isolation.py
-   ```
-
-   Before any admin has registered, every table should report `OK`/empty. If anything reports `FAIL`, stop — this project is not clean (most likely: the wrong `SUPABASE_URL`/`SUPABASE_SECRET_KEY` was configured in Step B.2, pointing at a project that already has another library's data in it).
+   > **`scripts/verify_tenant_isolation.py` no longer supports the check this step used to run.** As of 2026-09-16 (ADR-75) it was rewritten for the *shared-instance* RLS model (see [PROVISIONING_SHARED_INSTANCE.md](PROVISIONING_SHARED_INSTANCE.md)) — it now takes no arguments, seeds two disposable throwaway tenants via `rpc_delete_tenant_data()`/the service-role client, and proves Row-Level Security itself blocks a cross-tenant read. Running it against a legacy one-project-per-library deployment that has **not** also had `database/supabase_rls_migration.sql` applied will fail outright (the RPCs/policies it depends on don't exist there). Don't run it against a legacy project unless you've deliberately also applied the RLS migration to that project for some other reason.
 
 ## Step E — Register the first real admin
 
-1. Open the running app in a browser and use the on-screen registration form to create this library's one admin account (registration is only available while `admins` is empty, or in test mode — see `routes/auth.py`).
+1. Open the running app in a browser and use the on-screen registration form to create this library's one admin account. **Note:** as of 2026-09-16 (ADR-75), `routes/auth.py`'s `register()` no longer gates on `admins` being empty — registration is always open (that gate was removed for the shared-instance model). Under this legacy one-project-per-library model, "one admin per project" is still the intended shape; it's now a discipline you (the operator) maintain by only ever registering one admin against this project, not something the app enforces for you.
 2. Log in and confirm the Dashboard loads.
-3. Re-run the isolation check, now scoped to the one admin that should exist:
-
-   ```
-   python scripts/verify_tenant_isolation.py --expected-admin-id <the new admin_id>
-   ```
-
-   Confirm `PASS`.
+3. Confirm no other admin exists in this project (Table Editor: `admins` has exactly one row) — see the Step D note above for why `scripts/verify_tenant_isolation.py` is no longer the tool for this check.
 
 ## Sign-off checklist
 
@@ -91,7 +83,7 @@ Before handing a new library environment over for real use, confirm every box:
 - [ ] Step B: no other `.env` exists anywhere above this deployment's directory.
 - [ ] Step C: `pip install -r requirements.txt` succeeded; the app boots via `waitress-serve --call wsgi:create_app`.
 - [ ] Step D: the startup log's `Connected Supabase project: ...` line matches the intended project.
-- [ ] Step D: `scripts/verify_tenant_isolation.py` reports `PASS` before first admin registration.
+- [ ] Step D: the project was confirmed empty (every table, via the Supabase Table Editor) before first admin registration.
 - [ ] Step E: the first (and only) admin account for this library was created through the running app's registration form, not seeded directly into the database.
-- [ ] Step E: `scripts/verify_tenant_isolation.py --expected-admin-id <id>` reports `PASS` after registration.
+- [ ] Step E: the project was confirmed to still hold exactly one `admins` row after registration.
 - [ ] A quick manual pass through Dashboard, Students, Memberships, Payments, Cashbook, Business Intelligence, AI Center, and Panda, confirming each loads without error for the new admin.

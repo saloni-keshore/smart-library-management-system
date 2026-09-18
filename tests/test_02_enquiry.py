@@ -1,5 +1,5 @@
 """Enquiries: CRUD, validation, edge cases."""
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from tests.conftest import make_enquiry, get_last_enquiry_id, get_enquiry_by_id
 
 
@@ -85,7 +85,7 @@ def _enquiry_count_for_mobile(admin_id, mobile):
     """How many enquiry rows this admin has for a phone number. A phone
     number maps to exactly one person (ADR-58), so this should never be > 1."""
     rows = (
-        get_supabase_client()
+        get_service_role_client()
         .table("enquiries")
         .select("enquiry_id")
         .eq("admin_id", admin_id)
@@ -221,7 +221,7 @@ def test_add_enquiry_sql_injection_remarks(logged_in_client):
     client, admin = logged_in_client
     resp, data = make_enquiry(client, remarks="'; DROP TABLE enquiries;--")
     assert resp.status_code == 200
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     count = supabase.table("enquiries").select("enquiry_id", count="exact", head=True).execute().count
     assert count > 0
 

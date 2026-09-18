@@ -24,7 +24,7 @@ Shared input-normalization helpers (Category → UPPERCASE, Name/Location → Ti
 
 ### `utils/security.py`
 
-CSRF token generation/validation and the in-process login/forgot-password rate limiter — see [FILE_REFERENCE.md](FILE_REFERENCE.md).
+CSRF token generation/validation, the in-process login/forgot-password rate limiter, and (added 2026-09-16, ADR-75) a `login_required` decorator centralizing the previously-copy-pasted `if "admin_id" not in session` check — adopted across every route file that had the inline check (46 routes total; TD-19 Resolved) — see [FILE_REFERENCE.md](FILE_REFERENCE.md).
 
 ## Empty / near-empty placeholder folders
 

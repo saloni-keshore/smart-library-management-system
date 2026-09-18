@@ -3,7 +3,7 @@ records by guessing/incrementing IDs, across every admin-scoped resource."""
 import random
 import string
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id,
@@ -69,7 +69,7 @@ def test_admin_b_cannot_edit_admin_a_enquiry(app):
     )
     # enquiries now lives in Supabase only (ADR-30) - no SQLite mirror left
     # to check.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     row = supabase.table("enquiries").select("full_name").eq("enquiry_id", eid_a).execute().data[0]
     assert row["full_name"] == "Original Name A"
 
@@ -86,7 +86,7 @@ def test_admin_b_cannot_delete_admin_a_enquiry(app):
     client_b.get(f"/enquiries/delete/{eid_a}", follow_redirects=True)
     # enquiries now lives in Supabase only (ADR-30) - no SQLite mirror left
     # to check.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     row = supabase.table("enquiries").select("enquiry_id").eq("enquiry_id", eid_a).execute().data
     assert row  # NOT deleted by B
 
@@ -119,7 +119,7 @@ def test_admin_b_cannot_edit_admin_a_student(app):
     )
     # students now lives in Supabase only (ADR-29) - no SQLite mirror left
     # to check.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     row = supabase.table("students").select("full_name").eq("student_id", sid_a).execute().data[0]
     assert row["full_name"] != "HACKED"
 
@@ -179,7 +179,7 @@ def test_admin_b_cannot_create_membership_for_admin_a_student(app):
     assert b"Student not found" in resp.data
     # memberships now lives in Supabase only (ADR-29) - no SQLite mirror
     # left to check.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     count = (
         supabase.table("memberships")
         .select("membership_id", count="exact", head=True)
@@ -219,7 +219,7 @@ def test_admin_b_cannot_collect_payment_on_admin_a_membership(app):
 
     # memberships now lives in Supabase only (ADR-29) - no SQLite mirror
     # left to check.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     row = supabase.table("memberships").select("paid_amount").eq("membership_id", mid_a).execute().data[0]
     assert row["paid_amount"] == 500  # unchanged by B's attempt
 
@@ -275,7 +275,7 @@ def test_admin_b_notifications_dont_include_admin_a_memberships(app):
     _full_pipeline(client_a, a["admin_id"], "111000006")
     # memberships/students now live in Supabase only (ADR-29) - seed and
     # read the data the notifications route actually reads.
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     a_student_ids = [
         row["student_id"]
         for row in supabase.table("students").select("student_id").eq("admin_id", a["admin_id"]).execute().data

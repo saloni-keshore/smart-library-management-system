@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from database.branding_storage import upload_branding_image  # noqa: E402
-from database.supabase_client import get_supabase_client  # noqa: E402
+from database.supabase_client import get_service_role_client  # noqa: E402
 
 _FIELDS = ("logo_path", "stamp_path", "signature_path")
 _STATIC_ROOT = Path(__file__).resolve().parent.parent / "static"
@@ -47,7 +47,7 @@ def main():
     )
     args = parser.parse_args()
 
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     rows = supabase.table("library_settings").select("admin_id", *_FIELDS).execute().data
 
     migrated = skipped = missing = 0

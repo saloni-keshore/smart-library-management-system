@@ -28,10 +28,14 @@ python app.py                  # runs with debug=True on the Flask default port 
 
 ## Multi-tenancy model
 
-- One `admins` row = one tenant/owner of a library.
-- Session holds `admin_id` and `username` after login (`routes/auth.py`).
-- Every feature route checks `if "admin_id" not in session: return redirect("/")` before doing anything.
-- Data isolation is enforced at the query level (`WHERE admin_id = ?` or a join back to a table that has `admin_id`), **not** by any framework-level tenancy mechanism. There is no row-level security — a query that forgets the `admin_id` filter would leak cross-tenant data. This is a manual convention, not something the framework guarantees.
+**As of 2026-09-16 (ADR-75), this is a shared-database, self-service multi-tenant SaaS** — many libraries (tenants) coexist in one Supabase project, isolated from each other by Postgres **Row-Level Security (RLS)**, not by application code alone. This reverses ADR-53's "one deployment + one Supabase project per library" pilot model for any *new* deployment; an existing pilot library provisioned under that older model keeps working exactly as documented in [PROVISIONING.md](PROVISIONING.md) until it's deliberately decommissioned (see below).
+
+- One `admins` row = one tenant/owner of a library. Registration (`routes/auth.py`'s `register()`) is **always open** — there is no "first admin only" gate any more.
+- Session holds `admin_id` and `username` after login. Every request gets its own Supabase client (`app.py`'s `attach_tenant_supabase_client` before_request hook, `database/supabase_client.py`'s `build_tenant_client(admin_id)`), carrying a freshly signed, short-lived JWT with a custom `admin_id` claim — never a shared/cached client, never the service-role key (which would bypass RLS entirely).
+- Every feature route checks the caller is logged in before doing anything, via a shared `@login_required` decorator (`utils/security.py`, new — see [11_FUTURE_WORK.md](11_FUTURE_WORK.md) TD-19, now Resolved) instead of the old copy-pasted inline check. This check is app-layer defense-in-depth on top of RLS, not the thing that actually makes another tenant's data inaccessible.
+- Data isolation is enforced **twice, in depth**: application code still filters most queries by `admin_id` (unchanged convention, see ADR-2), and — new as of ADR-75 — Postgres itself refuses to return or write a row whose `admin_id` doesn't match the requesting JWT's claim, via a `tenant_isolation` RLS policy on every one of the app's 16 tenant-owned tables (`database/supabase_rls_migration.sql`). A query that forgets its `admin_id` filter today fails closed (an empty result, not a cross-tenant leak) rather than actually exposing another library's data — RLS is the real enforcement mechanism, the application-level filter is defense-in-depth on top of it, not the other way around.
+- An admin account can be **archived** (deactivated, login refused, data untouched) or **permanently deleted** (every row across every table, one atomic transaction) by its own owner via Settings → Data & Backup's Danger Zone — see ADR-76 and [11_FUTURE_WORK.md](11_FUTURE_WORK.md) PF-9/PF-10 for what's deliberately not built yet (reactivating an archived account; importing an exported backup into a new tenant).
+- See ADR-75/ADR-76 in [DECISIONS.md](DECISIONS.md), the "Multi-tenant (`admin_id`) summary" table in [04_DATABASE_SCHEMA.md](04_DATABASE_SCHEMA.md), and [PROVISIONING_SHARED_INSTANCE.md](PROVISIONING_SHARED_INSTANCE.md) for the new deployment runbook.
 
 ## Feature areas (see [10_FEATURE_MODULES.md](10_FEATURE_MODULES.md) for full walkthroughs)
 

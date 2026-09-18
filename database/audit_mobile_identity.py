@@ -44,7 +44,7 @@ from collections import defaultdict
 
 from postgrest.exceptions import APIError
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from utils.normalization import clean_mobile
 
 _PAGE_SIZE = 1000
@@ -55,9 +55,13 @@ def _fresh_client():
     """A new client, not the process-wide cached singleton - a long scan of
     several tables benefits from a fresh HTTP/2 connection (see
     `database/migrate_normalize_input_data.py` for the live connection drop
-    this avoids)."""
-    get_supabase_client.cache_clear()
-    return get_supabase_client()
+    this avoids). This is a standalone maintenance script (not web-
+    reachable) that intentionally iterates every admin's rows across the
+    whole project - it needs get_service_role_client() (bypasses RLS), not
+    get_supabase_client() (request-scoped, unavailable outside a Flask
+    request as of ADR-75)."""
+    get_service_role_client.cache_clear()
+    return get_service_role_client()
 
 
 def _with_retry(call):

@@ -148,6 +148,7 @@ def add_message(admin_id, conversation_id, role, content):
     try:
         response = _table("panda_messages").insert({
             "conversation_id": conversation_id,
+            "admin_id": admin_id,
             "role": role,
             "content": content,
         }).execute()

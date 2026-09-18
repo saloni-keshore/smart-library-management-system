@@ -6,7 +6,7 @@ import io
 
 import httpx
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from database.branding_storage import BUCKET, delete_branding_image
 from utils.branding import branding_src
 
@@ -62,7 +62,7 @@ def test_library_profile_logo_upload_goes_to_supabase_storage(logged_in_client):
         assert b"saved successfully" in resp.data  # not the "uploads unavailable" warning
 
         row = (
-            get_supabase_client()
+            get_service_role_client()
             .table("library_settings")
             .select("logo_path")
             .eq("admin_id", admin["admin_id"])

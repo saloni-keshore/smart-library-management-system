@@ -8,6 +8,7 @@ from database.membership_queries import (
 from database.payment_queries import get_payments_for_admin
 from utils.chart_data import build_plan_distribution_chart_data
 from utils.normalization import normalize_category
+from utils.security import login_required
 
 membership_distribution_bp = Blueprint(
     "membership_distribution",
@@ -27,10 +28,8 @@ _PLAN_LOOKUP = {normalize_category(plan): plan for plan in PLAN_ORDER}
 
 
 @membership_distribution_bp.route("/")
+@login_required
 def index():
-
-    if "admin_id" not in session:
-        return redirect("/")
 
     admin_id = session["admin_id"]
 

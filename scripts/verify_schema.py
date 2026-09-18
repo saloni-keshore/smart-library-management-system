@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from postgrest.exceptions import APIError  # noqa: E402
 
-from database.supabase_client import get_supabase_client  # noqa: E402
+from database.supabase_client import get_service_role_client  # noqa: E402
 
 
 # Every table database/supabase_migration.sql creates, in the order it
@@ -86,7 +86,7 @@ def _probe_table(supabase, table_name):
 
 
 def main():
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
 
     results = []
     for table_name in ALL_TABLES:

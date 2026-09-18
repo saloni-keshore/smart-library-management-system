@@ -1,7 +1,7 @@
 """Auth: login, logout, register, forgot-password."""
 import re
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import get_service_role_client
 from tests.conftest import get_admin_by_username
 
 
@@ -331,7 +331,7 @@ def test_register_sql_injection_username(client):
         },
         follow_redirects=True,
     )
-    supabase = get_supabase_client()
+    supabase = get_service_role_client()
     count = supabase.table("admins").select("admin_id", count="exact", head=True).execute().count
     assert count > 0
 
