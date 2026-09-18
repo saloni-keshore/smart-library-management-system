@@ -8,7 +8,8 @@ This is the **actual** current tree (as opposed to an aspirational one). Every f
 |---|---|---|
 | `app.py` | Flask app factory, blueprint registration, entry point | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
 | `config.py` | Env-driven config classes used by `app.py`; also the app's `load_dotenv()` call site | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
-| `requirements.txt` | Pinned Python deps (`==` versions) — Flask/Werkzeug/Jinja, `supabase` + its stack, `waitress`, `python-dotenv`, `cryptography`, `pytest`. Must be UTF-8. No `matplotlib`/`numpy` since 2026-08-28 (ADR-56 — charts are client-side now) | |
+| `requirements.txt` | Pinned Python deps (`==` versions) — Flask/Werkzeug/Jinja, `supabase` + its stack, `waitress`, `python-dotenv`, `cryptography`. Must be UTF-8. No `matplotlib`/`numpy` since 2026-08-28 (ADR-56 — charts are client-side now); no `pytest` since 2026-09-18 (ADR-78 — see `requirements-dev.txt`) | |
+| `requirements-dev.txt` | Dev/test-only deps layered on `requirements.txt` (currently just `pytest`) — added 2026-09-18 (ADR-78) so test tooling never ships in the deployed Vercel bundle | |
 | `vercel.json` / `api/index.py` / `.vercelignore` | Vercel serverless deploy config (secondary/testing host alongside Render) — see [DEPLOYMENT.md](DEPLOYMENT.md) | |
 | `README.md` | **Empty (0 bytes)** — no project-level README exists | [11_FUTURE_WORK.md](11_FUTURE_WORK.md) |
 | `.claude/` | Claude Code local settings (`settings.local.json`) | |

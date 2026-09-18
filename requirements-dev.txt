@@ -1,0 +1,4 @@
+# Test-only tooling, kept out of requirements.txt so it never ships in the
+# deployed Vercel function bundle (see docs/DECISIONS.md ADR-78).
+-r requirements.txt
+pytest==9.1.1

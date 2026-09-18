@@ -17,6 +17,17 @@ Entries before 2026-07-20 are reconstructed from `git log` since no changelog ex
 
 ---
 
+## 2026-09-18 — `pytest` removed from `requirements.txt` after discovering `ddaa4be` had never actually reached production (ADR-78)
+
+- **Feature:** Deployment fix, not an app feature. While manually verifying that `ddaa4be` (the ADR-77 security-fix commit, below) was actually live, its Vercel deployment turned out to have never succeeded: the build failed with `Total bundle size (252.73 MB) exceeds the maximum function size (225 MB) even after optimizing dependencies`, and production was silently still serving an older build.
+- **Files changed:** `requirements.txt` (removed `pytest==9.1.1` and the now-unneeded `Pygments==2.20.0`, which was only ever pulled in by `pytest`'s own unconditional dependency on it); `requirements-dev.txt` (new — `-r requirements.txt` plus `pytest==9.1.1`, for local/CI test runs); `docs/DECISIONS.md` (ADR-78), `docs/FILE_REFERENCE.md`, `docs/11_FUTURE_WORK.md` (TD-111), `docs/TROUBLESHOOTING.md` — documentation for this entry.
+- **Why:** nothing outside `tests/` imports `pytest` (`tests/` is already excluded from the deployed bundle via `.vercelignore`), so shipping it in the production dependency set was pure dead weight with zero runtime purpose. Removing it (and the `Pygments` it drags in) was the safest available cut: no app behavior depends on either package.
+- **Database changes:** None.
+- **UI changes:** None — this only affects what gets installed into the deployed function, not anything a user sees.
+- **Future impact:** Unknown yet whether this alone closes the ~28 MB gap to Vercel's 225 MB cap — `cryptography` (pulled in transitively via `supabase`/`supabase-auth`'s `pyjwt[crypto]` requirement, unused directly since this app's own JWTs are HS256-only) remains the single largest dependency and was deliberately left in place (see ADR-78's rationale). Opens **TD-111**: no automated check catches a bundle-size regression before a broken deploy ships; if this fix isn't sufficient on redeploy, the next lever is splitting the app into multiple Vercel functions, not further dependency surgery.
+
+---
+
 ## 2026-09-18 — Security fixes: RPC-level identity check on password reset, password hashes no longer leave Postgres, archived sessions lose access immediately (ADR-77)
 
 - **Feature:** Closes three vulnerabilities found in code review of ADR-75/76's shared-instance conversion, all in the pre-login/account-lifecycle surface RLS itself can't cover.
