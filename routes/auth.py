@@ -14,7 +14,7 @@ from werkzeug.security import (
 )
 from postgrest.exceptions import APIError
 
-from database.supabase_client import get_supabase_client
+from database.supabase_client import build_tenant_client, get_supabase_client
 from utils.security import clear_rate_limit, rate_limited
 from utils.normalization import normalize_name, normalize_phone
 
@@ -50,10 +50,35 @@ def login():
         password = request.form.get("password", "")
 
         try:
-            response = supabase.rpc("rpc_login_lookup", {"p_identifier": login_id}).execute()
-            admin = response.data[0] if response.data else None
+            response = supabase.rpc(
+                "rpc_login_lookup", {"p_identifier": login_id, "p_password": password}
+            ).execute()
+            row = response.data[0] if response.data else None
         except APIError:
-            admin = None
+            row = None
+
+        # rpc_login_lookup only returns a row for a wrong password when the
+        # stored hash is still in the old werkzeug format (legacy_hash set)
+        # - Postgres can't verify that format itself, so Python does, same
+        # as before this fix. A bcrypt-format hash is verified entirely
+        # inside the RPC (legacy_hash NULL): a row coming back at all means
+        # the password already matched, and the raw hash was never returned.
+        admin = None
+        if row and row.get("legacy_hash"):
+            if check_password_hash(row["legacy_hash"], password):
+                admin = row
+                # One-time upgrade to a Postgres-verifiable bcrypt hash, so
+                # this admin's hash never needs to leave Postgres again.
+                # Non-fatal on failure - login still proceeds and this is
+                # simply retried on the next login.
+                try:
+                    build_tenant_client(admin["admin_id"]).rpc(
+                        "rpc_migrate_password_hash", {"p_plain_password": password}
+                    ).execute()
+                except APIError:
+                    pass
+        elif row:
+            admin = row
 
         if admin and admin.get("status") == "archived":
             flash(
@@ -63,7 +88,7 @@ def login():
             )
             return render_template("auth/login.html", show_signup=True)
 
-        if admin and check_password_hash(admin["password"], password):
+        if admin:
             session.clear()
             session["admin_id"] = admin["admin_id"]
             session["username"] = admin["username"]
@@ -211,9 +236,16 @@ def forgot_password():
 
         hashed_password = generate_password_hash(new_password)
 
+        # full_name/mobile are passed through again here and re-verified
+        # INSIDE rpc_reset_password itself (not just by the lookup+compare
+        # above) - the RPC no longer trusts admin_id alone, so this call
+        # can't be replayed against a different admin_id by anyone who
+        # only has one admin's identity details.
         try:
             supabase.rpc("rpc_reset_password", {
                 "p_admin_id": admin["admin_id"],
+                "p_full_name": admin["full_name"],
+                "p_mobile": mobile,
                 "p_new_password_hash": hashed_password,
             }).execute()
         except APIError:
