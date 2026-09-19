@@ -114,50 +114,31 @@ def get_unsynced_payment_count(admin_id):
     return sum(1 for p in payments if p.get("cashbook_synced") is False)
 
 
-def _receipt_number_taken(supabase, receipt_number):
-    resp = (
-        supabase.table("payments")
-        .select("payment_id")
-        .eq("receipt_number", receipt_number)
-        .limit(1)
-        .execute()
-    )
-    return bool(resp.data)
+def _next_available_receipt_sequence(supabase, prefix, floor):
+    """Next `{prefix}-NNNNN` sequence number >= floor that isn't already
+    claimed by *any* admin (ADR-82/TD-113).
 
-
-def _max_claimed_sequence(supabase, prefix):
-    """Highest `{prefix}-NNNNN` sequence number already claimed by *any*
-    admin, or None if none exist yet.
-
-    As of 2026-07-24 (ADR-28), `_receipt_number_taken()`'s uniqueness loops
-    below query Supabase (a real network round trip per check) instead of
-    local SQLite - a linear scan starting from a fixed floor (1001) is no
-    longer safe once thousands of receipts share the same default "LIB"
-    prefix, since the loop would need one round trip per already-claimed
-    number before reaching a free one (confirmed live: 1281 sequential
-    checks, 161 seconds, for a single fresh admin's first receipt). Both
-    call sites below seed their starting point from this function's result
-    instead, so the uniqueness loop only ever runs for the rare *actual*
-    collision, not to walk past everything already claimed. Sequence
-    numbers are zero-padded to a fixed width (%05d), so an ORDER BY on the
-    text column itself sorts identically to numeric order - no need to
-    fetch and parse every row to find the max.
+    `payments.receipt_number` is UNIQUE *globally*, not per admin (see
+    generate_receipt_number()'s docstring) - so this must see every
+    tenant's claimed numbers, not just the caller's own. As of 2026-07-24
+    (ADR-28) this queried Supabase directly instead of local SQLite; as of
+    ADR-75's shared-database multi-tenant conversion, querying through the
+    app's normal tenant-scoped, Row-Level-Security-filtered client would
+    only ever see the CALLING tenant's own receipts, silently
+    reintroducing the exact cross-tenant collision this function exists to
+    prevent (confirmed live, 2026-09-19: a brand-new admin's first payment
+    failed on `payments_receipt_number_key`). `rpc_next_receipt_number` is
+    a SECURITY DEFINER RPC that computes this - the global MAX-claimed
+    lookup plus the uniqueness-skip-forward loop the old
+    `_max_claimed_sequence()`/`_receipt_number_taken()` pair did in
+    Python - entirely in Postgres, bypassing RLS for this one read, the
+    same mechanism ADR-80's `rpc_verify_current_password` uses.
     """
 
-    resp = (
-        supabase.table("payments")
-        .select("receipt_number")
-        .like("receipt_number", f"{prefix}-%")
-        .order("receipt_number", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if not resp.data:
-        return None
-    try:
-        return int(resp.data[0]["receipt_number"].split("-")[1])
-    except (IndexError, ValueError):
-        return None
+    response = supabase.rpc(
+        "rpc_next_receipt_number", {"p_prefix": prefix, "p_floor": floor}
+    ).execute()
+    return response.data
 
 
 def generate_receipt_number(admin_id):
@@ -169,31 +150,17 @@ def generate_receipt_number(admin_id):
     Library Profile yet, since there's no settings row to persist a counter
     on.
 
-    `payments.receipt_number` is UNIQUE *globally*, not per admin, but both
-    paths above compute `number`/`sequence` from this admin's own counter or
-    this admin's own payment count alone. Two different admins who share the
-    same prefix (every admin defaults to "LIB" until they customize it in
-    Settings > Receipt Settings) reach the same sequence position - most
-    obviously both admins' very first receipt, "LIB-01001" - and collide,
-    which previously surfaced as an unhandled UNIQUE constraint failure that
-    silently discarded the payment. Skipping forward past any number already
-    claimed (by any admin) keeps every allocated receipt number actually
-    unique while leaving the common, non-colliding case unchanged.
-
-    As of 2026-07-24 (ADR-28), the uniqueness check (`_receipt_number_taken`)
-    queries Supabase directly (was SQLite before, deliberately, back when
-    Supabase was only a best-effort mirror that could lag - now that
-    Supabase is the only copy of `payments`, checking anywhere else would be
-    checking stale data). Both branches first call `_max_claimed_sequence()`
-    to seed their starting point from the true global max for this prefix,
-    rather than blindly starting from `next_receipt_number`/1001 and walking
-    the uniqueness-check loop forward one network round trip at a time past
-    every already-claimed number - see that function's docstring for the
-    161-second live reproduction that made this necessary. The counter
-    advance is still a separate Supabase write, not wrapped in the same
-    transaction as the `payments` insert it's issued for - see TD-40 in
-    docs/11_FUTURE_WORK.md for the narrow non-atomicity this leaves
-    (unchanged by ADR-28).
+    `payments.receipt_number` is UNIQUE *globally*, not per admin. Two
+    different admins who share the same prefix (every admin defaults to
+    "LIB" until they customize it in Settings > Receipt Settings) can reach
+    the same sequence position - most obviously both admins' very first
+    receipt, "LIB-01001". `_next_available_receipt_sequence()` (ADR-82/
+    TD-113) resolves this via a SECURITY DEFINER RPC that sees every
+    tenant's claimed numbers, not just this admin's own - see that
+    function's docstring. The counter advance below is still a separate
+    Supabase write, not wrapped in the same transaction as the `payments`
+    insert it's issued for - see TD-40 in docs/11_FUTURE_WORK.md for the
+    narrow non-atomicity this leaves (unchanged by ADR-28/82).
     """
 
     supabase = get_supabase_client()
@@ -207,13 +174,8 @@ def generate_receipt_number(admin_id):
 
     if settings is not None:
         prefix = settings["receipt_prefix"] or "LIB"
-        number = settings["next_receipt_number"] or 1001
-        max_claimed = _max_claimed_sequence(supabase, prefix)
-        if max_claimed is not None and max_claimed + 1 > number:
-            number = max_claimed + 1
-
-        while _receipt_number_taken(supabase, f"{prefix}-{number:05d}"):
-            number += 1
+        floor = settings["next_receipt_number"] or 1001
+        number = _next_available_receipt_sequence(supabase, prefix, floor)
 
         supabase.table("library_settings").update(
             {"next_receipt_number": number + 1}
@@ -221,12 +183,7 @@ def generate_receipt_number(admin_id):
         return f"{prefix}-{number:05d}"
 
     prefix = "LIB"
-    max_claimed = _max_claimed_sequence(supabase, prefix)
-    sequence = (max_claimed + 1) if max_claimed is not None else 1001
-
-    while _receipt_number_taken(supabase, f"{prefix}-{sequence:05d}"):
-        sequence += 1
-
+    sequence = _next_available_receipt_sequence(supabase, prefix, 1001)
     return f"{prefix}-{sequence:05d}"
 
 
@@ -337,14 +294,17 @@ def record_payment(
     synced cleanly. Every Supabase call in this function is deliberately
     sequential.
 
-    As of 2026-07-24 (ADR-28), Supabase is the only store - `payment_id` is
-    computed explicitly (Supabase `MAX(payment_id) + 1`, the same pattern
-    ADR-18/19/20/22/27 use for `enquiry_id`/`student_id`/`membership_id`/
-    `entry_id`) rather than left to an auto-increment sequence, and the
-    `payments` insert is strict: a failure raises `postgrest.exceptions.
-    APIError` past this function, for the caller to catch and roll back -
-    unlike the old SQLite-primary/Supabase-best-effort shape, there is no
-    fallback store left to silently keep the payment in.
+    As of 2026-09-19 (ADR-81, closing the `payment_id` half of TD-108),
+    `payment_id` is assigned by Postgres's own identity default - insert
+    with no explicit id and read the DB-assigned value back from the
+    response - instead of a tenant-scoped `MAX(payment_id) + 1` read, which
+    a brand-new tenant could deterministically collide on (the same
+    RLS-visibility bug `database/id_sequence.py` fixed for
+    `enquiry_id`/`student_id`/`slot_id`, ADR-79). The `payments` insert is
+    strict: a failure raises `postgrest.exceptions.APIError` past this
+    function, for the caller to catch and roll back - unlike the old
+    SQLite-primary/Supabase-best-effort shape, there is no fallback store
+    left to silently keep the payment in.
 
     As of 2026-08-21 (TD-30, ADR-53), `idempotency_key` is optional - when
     given, a payment already recorded for that exact key is detected (both
@@ -380,15 +340,6 @@ def record_payment(
             return existing["receipt_number"], existing["payment_id"]
 
     receipt_number = generate_receipt_number(admin_id)
-
-    next_id_row = (
-        supabase.table("payments")
-        .select("payment_id")
-        .order("payment_id", desc=True)
-        .limit(1)
-        .execute()
-    )
-    payment_id = (next_id_row.data[0]["payment_id"] + 1) if next_id_row.data else 1
     payment_date = date.today().isoformat()
 
     # payments.payment_mode is a Category field (Payment Mode) per the
@@ -401,7 +352,6 @@ def record_payment(
     # for - normalizing only the payments-table copy avoids splitting that
     # column's values by capitalization instead of fixing it.
     payment_row = {
-        "payment_id": payment_id,
         "admin_id": admin_id,
         "membership_id": membership_id,
         "student_id": student_id,
@@ -414,7 +364,8 @@ def record_payment(
     }
 
     try:
-        supabase.table("payments").insert(payment_row).execute()
+        response = supabase.table("payments").insert(payment_row).execute()
+        payment_id = response.data[0]["payment_id"]
     except APIError as error:
         if idempotency_key and _is_unique_violation(error):
             # Lost a race to an earlier, identical submission that already
@@ -429,7 +380,8 @@ def record_payment(
         # retry without it, same silent-degrade shape as
         # database/membership_queries.py's insert_membership().
         without_key = {k: v for k, v in payment_row.items() if k != "idempotency_key"}
-        supabase.table("payments").insert(without_key).execute()
+        response = supabase.table("payments").insert(without_key).execute()
+        payment_id = response.data[0]["payment_id"]
 
     components = (
         [(category, amount)] if isinstance(category, str)
@@ -437,16 +389,17 @@ def record_payment(
     )
 
     # Deliberately sequential (see this function's docstring, TD-99): each
-    # insert_income_entry() call derives its own reference_id/entry_id from
-    # a live count/MAX query, so running multiple at once against the same
-    # admin's cashbook measurably raises the odds of two calls colliding on
-    # the same values in the same instant - confirmed live (2026-09-09) when
-    # a concurrent version of this loop caused one component's
-    # insert_income_entry() to exhaust both its own retry attempts and fall
-    # back to _flag_cashbook_unsynced() for a payment that should have
-    # synced cleanly. That retry exists for a different concurrent *request*
-    # racing this one, not for this function's own components racing each
-    # other.
+    # insert_income_entry() call derives its own reference_id from a live
+    # COUNT query (entry_id itself is now identity-assigned, ADR-81, so it
+    # can no longer collide this way), so running multiple at once against
+    # the same admin's cashbook measurably raises the odds of two calls
+    # picking the same reference_id in the same instant - confirmed live
+    # (2026-09-09) when a concurrent version of this loop caused one
+    # component's insert_income_entry() to exhaust both its own retry
+    # attempts and fall back to _flag_cashbook_unsynced() for a payment
+    # that should have synced cleanly. That retry exists for a different
+    # concurrent *request* racing this one, not for this function's own
+    # components racing each other.
     for component_category, component_amount in components:
         cashbook_reference = insert_income_entry(
             admin_id,

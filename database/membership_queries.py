@@ -607,24 +607,32 @@ def insert_membership(supabase, payload):
     degrading to "no double-submit protection on this un-migrated project"
     is the right default rather than failing membership creation outright.
 
-    Returns None on a normal insert. If payload carries an idempotency_key
-    that was already used by an earlier, distinct request (a genuine
-    double-submit that raced past this function's own pre-check in
-    routes/membership.py), returns that earlier membership row instead of
-    raising - the caller should treat this as "already done", not as an
-    error.
+    `payload` must NOT include `membership_id` (ADR-81/TD-108) - Postgres's
+    own identity default assigns it, atomically and globally, avoiding the
+    tenant-scoped-RLS MAX(id)+1 collision the caller (routes/membership.py)
+    used to compute itself. See database/id_sequence.py's module docstring
+    for the same fix applied to enquiries/students/shift_slots.
+
+    Returns (membership_id, existing_row): on a normal insert,
+    membership_id is the id Postgres just assigned and existing_row is
+    None. If payload carries an idempotency_key that was already used by an
+    earlier, distinct request (a genuine double-submit that raced past this
+    function's own pre-check in routes/membership.py), returns
+    (existing_row["membership_id"], existing_row) instead of inserting a
+    second row - the caller should treat this as "already done", not as an
+    error, and use existing_row instead of anything it computed itself.
     """
 
     idempotency_key = payload.get("idempotency_key")
 
     try:
-        supabase.table("memberships").insert(payload).execute()
-        return None
+        response = supabase.table("memberships").insert(payload).execute()
+        return response.data[0]["membership_id"], None
     except APIError as error:
         if _is_unique_violation(error) and idempotency_key:
             existing = find_membership_by_idempotency_key(idempotency_key)
             if existing is not None:
-                return existing
+                return existing["membership_id"], existing
             raise
         if not _is_undefined_column_error(error):
             raise
@@ -636,8 +644,8 @@ def insert_membership(supabase, payload):
     # (differently-handled) financial columns.
     without_key = {k: v for k, v in payload.items() if k != "idempotency_key"}
     try:
-        supabase.table("memberships").insert(without_key).execute()
-        return None
+        response = supabase.table("memberships").insert(without_key).execute()
+        return response.data[0]["membership_id"], None
     except APIError as error:
         if not _is_undefined_column_error(error):
             raise
@@ -652,7 +660,9 @@ def _insert_membership_without_idempotency_key(supabase, payload, without_key, e
     with an undefined-column error. Split out from insert_membership()
     itself only so each `except APIError as error` block's `error` stays in
     scope for the `raise ... from error` it needs - Python unbinds an
-    `except ... as name` variable as soon as that block ends."""
+    `except ... as name` variable as soon as that block ends. Returns
+    (membership_id, None) on each successful fallback insert - see
+    insert_membership()'s docstring for the return shape."""
 
     # Shift-slot snapshot columns (ADR-65) are next: always optional, so if
     # the payload carries any and the retry above still failed, drop them
@@ -662,8 +672,8 @@ def _insert_membership_without_idempotency_key(supabase, payload, without_key, e
     }
     if without_slots != without_key:
         try:
-            supabase.table("memberships").insert(without_slots).execute()
-            return None
+            response = supabase.table("memberships").insert(without_slots).execute()
+            return response.data[0]["membership_id"], None
         except APIError as slot_error:
             if not _is_undefined_column_error(slot_error):
                 raise
@@ -678,8 +688,8 @@ def _insert_membership_without_idempotency_key(supabase, payload, without_key, e
         k: v for k, v in without_key.items() if k not in _ADMISSION_FEE_FIELDS
     }
     try:
-        supabase.table("memberships").insert(without_admission_fee).execute()
-        return None
+        response = supabase.table("memberships").insert(without_admission_fee).execute()
+        return response.data[0]["membership_id"], None
     except APIError as error:
         if not _is_undefined_column_error(error):
             raise
@@ -688,5 +698,5 @@ def _insert_membership_without_idempotency_key(supabase, payload, without_key, e
         fallback = {
             k: v for k, v in without_admission_fee.items() if k not in _DISCOUNT_FIELDS
         }
-        supabase.table("memberships").insert(fallback).execute()
-        return None
+        response = supabase.table("memberships").insert(fallback).execute()
+        return response.data[0]["membership_id"], None

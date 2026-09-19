@@ -596,6 +596,163 @@ def test_backup_create_scoped_to_own_admin_only(app):
 
 
 # ---------------------------------------------------------------------------
+# Data & Backup - Danger Zone (Archive / Delete) - Bug 2 regression
+# (ADR-80, TD-112): _danger_zone_confirmation_error() used to call
+# Werkzeug's check_password_hash() directly on admins.password, which
+# crashes with an unhandled ValueError (-> HTTP 500) once that hash has
+# been migrated to bcrypt (ADR-77's lazy migration, which fires on an
+# admin's next login after ADR-77 shipped) - exactly what every test below
+# that logs in first now exercises.
+# ---------------------------------------------------------------------------
+
+def _danger_zone_confirm_data(admin, current_password=None):
+    return {
+        "confirm_downloaded": "on",
+        "confirm_username": admin["username"],
+        "current_password": current_password if current_password is not None else admin["password"],
+    }
+
+
+def test_backup_archive_correct_confirmation_succeeds(logged_in_client):
+    client, admin = logged_in_client
+    create_resp = client.post("/settings/backup/create")
+    assert create_resp.status_code == 200
+
+    resp = client.post(
+        "/settings/backup/archive",
+        data=_danger_zone_confirm_data(admin),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"archived" in resp.data.lower()
+
+    login_resp = client.post(
+        "/",
+        data={"username": admin["username"], "password": admin["password"]},
+        follow_redirects=True,
+    )
+    assert b"archived" in login_resp.data.lower()
+    assert b"Login Successful" not in login_resp.data
+
+
+def test_backup_archive_wrong_password_rejected(logged_in_client):
+    client, admin = logged_in_client
+    client.post("/settings/backup/create")
+
+    resp = client.post(
+        "/settings/backup/archive",
+        data=_danger_zone_confirm_data(admin, current_password="totallywrongpass1"),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Incorrect password" in resp.data
+
+    # Not archived - a fresh login still succeeds.
+    login_resp = client.post(
+        "/",
+        data={"username": admin["username"], "password": admin["password"]},
+        follow_redirects=True,
+    )
+    assert b"Login Successful" in login_resp.data
+
+
+def test_backup_archive_after_login_migrates_hash_then_archive_succeeds(app):
+    """The core Bug 2 regression case: register a brand-new admin, log in
+    once (ADR-77's lazy bcrypt migration fires on that login, rewriting
+    admins.password to a $2b$... hash), then confirm Archive with the
+    correct current password - the exact path that 500'd pre-fix, with no
+    existing test coverage before this one."""
+    client, admin = _register_danger_zone_admin(app.test_client(), "archbcrypt")
+
+    supabase = get_service_role_client()
+    row = supabase.table("admins").select("password").eq("admin_id", admin["admin_id"]).execute().data[0]
+    assert row["password"].startswith("$2"), "precondition: login should have migrated the hash to bcrypt"
+
+    create_resp = client.post("/settings/backup/create")
+    assert create_resp.status_code == 200
+
+    resp = client.post(
+        "/settings/backup/archive",
+        data=_danger_zone_confirm_data(admin),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"archived" in resp.data.lower()
+    assert b"Something went wrong" not in resp.data
+
+
+def test_backup_delete_correct_confirmation_removes_only_own_data(app):
+    client_a, admin_a = _register_danger_zone_admin(app.test_client(), "delkeepa")
+    client_b, admin_b = _register_danger_zone_admin(app.test_client(), "delkeepb")
+
+    from tests.conftest import make_enquiry, get_last_enquiry_id, admit_student
+    make_enquiry(client_b, full_name="Survives Tenant A Delete", mobile="9188888888")
+    eid_b = get_last_enquiry_id(admin_b["admin_id"])
+    admit_student(client_b, eid_b)
+
+    make_enquiry(client_a, full_name="Deleted With Tenant A", mobile="9177777777")
+
+    create_resp = client_a.post("/settings/backup/create")
+    assert create_resp.status_code == 200
+
+    resp = client_a.post(
+        "/settings/backup/delete",
+        data=_danger_zone_confirm_data(admin_a),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"permanently deleted" in resp.data.lower()
+
+    supabase = get_service_role_client()
+    assert supabase.table("admins").select("admin_id").eq("admin_id", admin_a["admin_id"]).execute().data == []
+    assert supabase.table("enquiries").select("enquiry_id").eq("admin_id", admin_a["admin_id"]).execute().data == []
+
+    assert supabase.table("admins").select("admin_id").eq("admin_id", admin_b["admin_id"]).execute().data != []
+    b_enquiries = supabase.table("enquiries").select("full_name").eq("admin_id", admin_b["admin_id"]).execute().data
+    assert {row["full_name"] for row in b_enquiries} == {"Survives Tenant A Delete"}
+
+
+def test_backup_delete_wrong_confirmation_rejected_no_data_removed(logged_in_client):
+    client, admin = logged_in_client
+    client.post("/settings/backup/create")
+
+    resp = client.post(
+        "/settings/backup/delete",
+        data=_danger_zone_confirm_data(admin, current_password="totallywrongpass1"),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Incorrect password" in resp.data
+
+    supabase = get_service_role_client()
+    assert supabase.table("admins").select("admin_id").eq("admin_id", admin["admin_id"]).execute().data != []
+
+
+def _register_danger_zone_admin(client, suffix):
+    """Same shape as test_backup_create_scoped_to_own_admin_only's local
+    helper above - registers and logs in a fresh throwaway admin, returning
+    (client, admin-dict-with-plaintext-password). The login is deliberate:
+    it's what triggers ADR-77's lazy bcrypt migration these tests exercise."""
+    import random
+    import string
+
+    suffix = f"{suffix}{''.join(random.choices(string.ascii_lowercase + string.digits, k=6))}"
+    creds = {
+        "full_name": f"QA {suffix}",
+        "username": f"qa_{suffix}",
+        "mobile": "9" + "".join(random.choices(string.digits, k=9)),
+        "email": f"qa_{suffix}@example.com",
+        "password": "DangerZone1",
+        "confirm_password": "DangerZone1",
+    }
+    client.post("/register", data=creds, follow_redirects=True)
+    client.post("/", data={"username": creds["username"], "password": creds["password"]}, follow_redirects=True)
+    admin = get_admin_by_username(creds["username"])
+    creds["admin_id"] = admin["admin_id"]
+    return client, creds
+
+
+# ---------------------------------------------------------------------------
 # Security Settings
 # ---------------------------------------------------------------------------
 
@@ -659,6 +816,35 @@ def test_security_settings_change_password_success(logged_in_client):
         follow_redirects=True,
     )
     assert b"Login Successful" in login_resp.data
+
+
+def test_security_settings_change_password_after_relogin_migrates_hash_succeeds(app):
+    """Bug 2 regression (ADR-80, TD-112), Security Settings twin of the
+    Danger Zone case: security_settings()'s password branch had the same
+    unguarded check_password_hash(admin["password"], ...) call, crashing
+    the same way once admins.password is bcrypt-format. logged_in_client's
+    single login already migrates the hash (see
+    test_security_settings_change_password_success, which exercises this
+    same precondition implicitly) - this test asserts it explicitly and
+    names the regression."""
+    client, admin = _register_danger_zone_admin(app.test_client(), "secbcrypt")
+
+    supabase = get_service_role_client()
+    row = supabase.table("admins").select("password").eq("admin_id", admin["admin_id"]).execute().data[0]
+    assert row["password"].startswith("$2"), "precondition: login should have migrated the hash to bcrypt"
+
+    resp = client.post(
+        "/settings/security",
+        data={
+            "form_type": "password",
+            "current_password": admin["password"],
+            "new_password": "BrandNewPass1",
+            "confirm_password": "BrandNewPass1",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Password changed successfully" in resp.data
 
 
 def test_security_settings_change_password_wrong_current(logged_in_client):

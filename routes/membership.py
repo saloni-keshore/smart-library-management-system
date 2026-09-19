@@ -424,31 +424,6 @@ def create(student_id):
 
     pending_amount = total_fee - paid_amount
 
-    # membership_id assigned explicitly from Supabase's own MAX (ADR-29).
-    # Catches httpx.TransportError alongside APIError (TD-70/TD-99): a
-    # transient dropped connection here is not an APIError, and this call
-    # previously had no try/except at all - an unhandled crash, not a
-    # friendly "please try again" flash.
-    try:
-        next_id_response = (
-            supabase.table("memberships")
-            .select("membership_id")
-            .order("membership_id", desc=True)
-            .limit(1)
-            .execute()
-        )
-    except (APIError, httpx.TransportError):
-        flash(
-            "Could not create this membership due to a database error. "
-            "Nothing was saved - please try again.",
-            "danger",
-        )
-        return _render()
-    new_membership_id = (
-        next_id_response.data[0]["membership_id"] + 1
-        if next_id_response.data else 1
-    )
-
     # Shift snapshot on the row: a real slot carries its id/name/bucket; a
     # Custom-hours shift has no slot row, so record a descriptive name only
     # (it flows onto the receipt via routes/payment.py's _plan_label()).
@@ -472,7 +447,6 @@ def create(student_id):
         }
 
     membership_row = {
-        "membership_id": new_membership_id,
         "admin_id": admin_id,
         "student_id": student_id,
         "plan_name": plan_name,
@@ -491,8 +465,13 @@ def create(student_id):
         **shift_snapshot,
     }
 
+    # membership_id assigned by Postgres's own identity default (ADR-81) -
+    # insert_membership() inserts with no explicit id and returns the
+    # DB-assigned value. Catches httpx.TransportError alongside APIError
+    # (TD-70/TD-99): a transient dropped connection here is not an
+    # APIError.
     try:
-        existing_membership = insert_membership(supabase, membership_row)
+        new_membership_id, existing_membership = insert_membership(supabase, membership_row)
     except DiscountColumnsUnavailable:
         flash(
             "Discounts aren't available yet on this system - the database "
@@ -772,29 +751,6 @@ def renew(student_id):
 
     pending_amount = total_fee - paid_amount
 
-    # Same explicit-id bridging as create() (ADR-29). Catches
-    # httpx.TransportError alongside APIError (TD-70/TD-99) - see create()'s
-    # equivalent block for why.
-    try:
-        next_id_response = (
-            supabase.table("memberships")
-            .select("membership_id")
-            .order("membership_id", desc=True)
-            .limit(1)
-            .execute()
-        )
-    except (APIError, httpx.TransportError):
-        flash(
-            "Could not renew this membership due to a database error. "
-            "Nothing was saved - please try again.",
-            "danger",
-        )
-        return _render()
-    new_membership_id = (
-        next_id_response.data[0]["membership_id"] + 1
-        if next_id_response.data else 1
-    )
-
     # Capture which rows this expires so a failure partway through can be
     # rolled back without guessing which rows were live beforehand.
     try:
@@ -839,7 +795,6 @@ def renew(student_id):
         }
 
     membership_row = {
-        "membership_id": new_membership_id,
         "admin_id": admin_id,
         "student_id": student_id,
         "plan_name": plan_name,
@@ -857,13 +812,13 @@ def renew(student_id):
         **shift_snapshot,
     }
 
-    existing_membership = None
+    new_membership_id, existing_membership = None, None
     try:
         if previously_active_ids:
             supabase.table("memberships").update(
                 {"membership_status": "Expired"}
             ).eq("student_id", student_id).eq("membership_status", "Active").execute()
-        existing_membership = insert_membership(supabase, membership_row)
+        new_membership_id, existing_membership = insert_membership(supabase, membership_row)
     except (APIError, httpx.TransportError):
         _reactivate_previous()
         flash(

@@ -7,11 +7,15 @@ another admin's transactions.
 
 As of 2026-07-24 (ADR-27, Phase 10 - the second mirror-write fully
 removed), Supabase's `cashbook` table is this module's only store, for
-both reads and writes - there is no SQLite mirror left. Reference-id and
-entry_id generation (`_generate_reference_id`/`_next_entry_id`) query
-Supabase's own `MAX`/`COUNT` now, the same explicit-id pattern
-ADR-18/19/20/22 established (IDs computed explicitly rather than left to
-an auto-increment sequence), just against Supabase instead of SQLite.
+both reads and writes - there is no SQLite mirror left. Reference-id
+generation (`_generate_reference_id`) still queries Supabase's own `COUNT`.
+`entry_id` itself is assigned by Postgres's own identity default as of
+2026-09-19 (ADR-81, closing the `entry_id` half of TD-108) - insert with no
+explicit id and read the DB-assigned value back, instead of the
+tenant-scoped `MAX(entry_id) + 1` read this module used until then, which a
+brand-new tenant could deterministically collide on (the same
+RLS-visibility bug `database/id_sequence.py` fixed for
+`enquiry_id`/`student_id`/`slot_id`, ADR-79).
 
 Two different write shapes coexist here, deliberately:
 
@@ -77,22 +81,6 @@ def _generate_reference_id(supabase, prefix):
     return f"{prefix}-{date.today().strftime('%Y%m%d')}-{sequence:05d}"
 
 
-def _next_entry_id(supabase):
-    """Next explicit entry_id, from Supabase `cashbook`'s own MAX (see
-    module docstring) - as of ADR-27, Supabase replaces SQLite as the MAX
-    source now that this table's SQLite mirror-write is gone.
-    """
-
-    resp = (
-        supabase.table("cashbook")
-        .select("entry_id")
-        .order("entry_id", desc=True)
-        .limit(1)
-        .execute()
-    )
-    return (resp.data[0]["entry_id"] + 1) if resp.data else 1
-
-
 def _admin_full_name(supabase, admin_id):
     resp = (
         supabase.table("admins")
@@ -149,12 +137,10 @@ def insert_transaction(
 
     prefix = "EXP" if transaction_type == "Expense" else "INC"
     reference_id = _generate_reference_id(supabase, prefix)
-    entry_id = _next_entry_id(supabase)
 
     details = f"Manual {transaction_type} of ₹{amount} added under '{category}' ({reference_id})"
 
-    supabase.table("cashbook").insert({
-        "entry_id": entry_id,
+    insert_response = supabase.table("cashbook").insert({
         "admin_id": admin_id,
         "type": transaction_type,
         "category": category,
@@ -166,6 +152,7 @@ def insert_transaction(
         "reference_id": reference_id,
         "source": "Cashbook Manual Entry",
     }).execute()
+    entry_id = insert_response.data[0]["entry_id"]
 
     try:
         supabase.table("audit_log").insert({
@@ -238,15 +225,13 @@ def insert_income_entry(
     for _attempt in range(2):
         try:
             reference_id = _generate_reference_id(supabase, reference_prefix)
-            entry_id = _next_entry_id(supabase)
 
             details = (
                 f"Automatic Income of ₹{amount} recorded under '{category}' for "
                 f"{person or 'N/A'} via {source} ({reference_id})"
             )
 
-            supabase.table("cashbook").insert({
-                "entry_id": entry_id,
+            insert_response = supabase.table("cashbook").insert({
                 "admin_id": admin_id,
                 "type": "Income",
                 "category": category,
@@ -259,6 +244,7 @@ def insert_income_entry(
                 "source": source,
                 "payment_id": payment_id,
             }).execute()
+            entry_id = insert_response.data[0]["entry_id"]
             supabase.table("audit_log").insert({
                 "admin_id": admin_id,
                 "entry_id": entry_id,

@@ -1108,6 +1108,34 @@ def _backup_is_fresh(backup_info):
     return age_hours <= _DANGER_ZONE_BACKUP_WINDOW_HOURS
 
 
+def _verify_current_password(current_password):
+    """True if current_password matches the logged-in admin's stored hash.
+
+    Verifies via rpc_verify_current_password (ADR-80/TD-112): a bcrypt hash
+    is checked entirely in Postgres via pgcrypto's crypt() and never leaves
+    the database; a still-legacy werkzeug hash is returned once (mirroring
+    rpc_login_lookup's one-time round-trip, ADR-77) and checked here with
+    check_password_hash() exactly as before. Werkzeug's check_password_hash()
+    cannot parse a bcrypt hash at all - calling it directly on
+    admins.password (the pre-fix behavior here and in security_settings())
+    raised an unhandled ValueError, surfacing as an HTTP 500 for any admin
+    already migrated to bcrypt by a prior login. Returns False (not a raise)
+    for any lookup/RPC failure, matching "wrong password"'s existing UX."""
+    supabase = get_supabase_client()
+    try:
+        response = supabase.rpc(
+            "rpc_verify_current_password", {"p_password": current_password}
+        ).execute()
+    except APIError:
+        return False
+    if not response.data:
+        return False
+    row = response.data[0]
+    if row.get("legacy_hash") is not None:
+        return check_password_hash(row["legacy_hash"], current_password)
+    return bool(row.get("is_valid"))
+
+
 def _danger_zone_confirmation_error(admin_id, form):
     """Returns an error message string if the Danger Zone's required
     confirmations aren't all satisfied, else None. Re-checked server-side
@@ -1128,15 +1156,8 @@ def _danger_zone_confirmation_error(admin_id, form):
     if typed_username != session.get("username"):
         return "The username you typed doesn't match your account. Please try again."
 
-    supabase = get_supabase_client()
-    try:
-        response = supabase.table("admins").select("password").eq("admin_id", admin_id).execute()
-        admin = response.data[0] if response.data else None
-    except APIError:
-        admin = None
-
     current_password = form.get("current_password", "")
-    if not admin or not check_password_hash(admin["password"], current_password):
+    if not _verify_current_password(current_password):
         return "Incorrect password."
 
     return None
@@ -1227,16 +1248,11 @@ def security_settings():
             new_password = request.form.get("new_password", "")
             confirm_password = request.form.get("confirm_password", "")
 
-            supabase = get_supabase_client()
-            try:
-                response = supabase.table("admins").select("*").eq("admin_id", admin_id).execute()
-                admin = response.data[0] if response.data else None
-            except APIError:
-                admin = None
-
-            if not admin or not check_password_hash(admin["password"], current_password):
+            if not _verify_current_password(current_password):
                 flash("Current password is incorrect.", "danger")
                 return redirect(url_for("setting.security_settings"))
+
+            supabase = get_supabase_client()
 
             if new_password != confirm_password:
                 flash("New passwords do not match.", "danger")

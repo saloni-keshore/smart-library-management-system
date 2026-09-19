@@ -338,12 +338,9 @@ def admission(enquiry_id):
             "status": "Pending",
         }
 
-        # student_id is assigned explicitly, not left to Supabase's
-        # auto-assigned identity value -- ADR-18/ADR-29: the identity
-        # sequence was seeded once from a one-time data copy (ADR-15) and
-        # trails ordinary usage. insert_with_next_id() computes MAX(id)+1
-        # and retries on the primary-key collision two concurrent
-        # admissions can hit (TD-78).
+        # student_id is assigned by Postgres's own identity default -
+        # insert_with_next_id() inserts with no explicit id and reads the
+        # DB-assigned value back (ADR-79; see database/id_sequence.py).
         try:
             new_student_id = insert_with_next_id(
                 "students", "student_id", student_row
