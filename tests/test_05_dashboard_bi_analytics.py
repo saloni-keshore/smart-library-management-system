@@ -2,6 +2,7 @@
 from tests.conftest import (
     make_enquiry, get_last_enquiry_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id, save_membership_settings,
+    tenant_request_context,
 )
 
 
@@ -44,11 +45,14 @@ def test_dashboard_total_students_counts_only_this_admin(logged_in_client):
     assert resp.status_code == 200
 
 
-def test_dashboard_pending_amount_matches_cashbook(logged_in_client):
+def test_dashboard_pending_amount_matches_cashbook(app, logged_in_client):
     client, admin = logged_in_client
     _admitted_student_with_membership(client, admin["admin_id"], paid_amount="200", due_amount="800")
     from database.cashbook_queries import get_pending_fees
-    assert get_pending_fees(admin["admin_id"]) == 800
+    # get_pending_fees() calls get_supabase_client(), which requires an
+    # active request context (ADR-75).
+    with tenant_request_context(app, admin["admin_id"]):
+        assert get_pending_fees(admin["admin_id"]) == 800
     resp = client.get("/dashboard")
     assert resp.status_code == 200
 
@@ -111,7 +115,7 @@ def test_dashboard_revenue_chart_endpoint_switches_period(logged_in_client):
     assert resp_bogus.get_json()["datasets"][0]["data"] == this_year_json["datasets"][0]["data"]
 
 
-def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
+def test_revenue_monthly_bucketing_differs_by_year(app, logged_in_client):
     """Proves This Year and Last Year genuinely read different data: two
     real payments for the same admin, one dated this year and one dated
     last year, must land in their own year's bucket and nowhere else."""
@@ -126,7 +130,10 @@ def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
     )
     mid = get_last_membership_id(sid)
 
-    payments = get_payments_for_admin(admin["admin_id"])
+    # get_payments_for_admin() calls get_supabase_client(), which requires
+    # an active request context (ADR-75).
+    with tenant_request_context(app, admin["admin_id"]):
+        payments = get_payments_for_admin(admin["admin_id"])
     assert len(payments) == 1
     this_year_payment_id = payments[0]["payment_id"]
     this_year = date.today().year
@@ -158,7 +165,8 @@ def test_revenue_monthly_bucketing_differs_by_year(logged_in_client):
         "receipt_number": f"QA-LASTYEAR-{sid}",
     }).execute()
 
-    payments = get_payments_for_admin(admin["admin_id"])
+    with tenant_request_context(app, admin["admin_id"]):
+        payments = get_payments_for_admin(admin["admin_id"])
     assert len(payments) == 2
 
     this_year_revenue = _monthly_revenue_for_year(payments, this_year)
@@ -195,7 +203,7 @@ def test_bi_loads_with_data(logged_in_client):
     assert resp.status_code == 200
 
 
-def test_bi_health_score_no_data_matches_documented_formula(logged_in_client):
+def test_bi_health_score_no_data_matches_documented_formula(app, logged_in_client):
     """With zero income/expense/memberships, growth (0.5), collection (0.5,
     explicit billable>0 guard) and renewal (0.5, explicit total>0 guard) are
     all genuinely neutral, but expense_component is 1.0 (not 0.5) because
@@ -204,7 +212,10 @@ def test_bi_health_score_no_data_matches_documented_formula(logged_in_client):
     note on this docstring/behavior mismatch. Score = 100*(.3*.5+.3*1+.2*.5+.2*.5) = 65."""
     client, admin = logged_in_client
     from database.bi_queries import get_business_health_score
-    score = get_business_health_score(admin["admin_id"])
+    # get_business_health_score() calls get_supabase_client(), which
+    # requires an active request context (ADR-75).
+    with tenant_request_context(app, admin["admin_id"]):
+        score = get_business_health_score(admin["admin_id"])
     assert score["score"] == 65
 
 
@@ -223,10 +234,13 @@ def test_bi_health_score_no_division_by_zero_with_only_expenses(logged_in_client
     assert resp.status_code == 200
 
 
-def test_bi_action_items_no_urgent_when_empty(logged_in_client):
+def test_bi_action_items_no_urgent_when_empty(app, logged_in_client):
     client, admin = logged_in_client
     from database.bi_queries import get_action_items
-    items = get_action_items(admin["admin_id"])
+    # get_action_items() calls get_supabase_client(), which requires an
+    # active request context (ADR-75).
+    with tenant_request_context(app, admin["admin_id"]):
+        items = get_action_items(admin["admin_id"])
     assert any("No urgent issues" in i["title"] for i in items)
 
 
@@ -255,7 +269,7 @@ def test_purpose_analytics_loads_with_no_data(logged_in_client):
     assert b"N/A" in resp.data
 
 
-def test_purpose_analytics_totals_match_payment_records(logged_in_client):
+def test_purpose_analytics_totals_match_payment_records(app, logged_in_client):
     """Total Students/Total Revenue on the page must match
     get_admin_students()/get_total_fee_revenue(), and each purpose's
     student_pct/revenue_pct must sum to ~100% across the breakdown."""
@@ -284,12 +298,15 @@ def test_purpose_analytics_totals_match_payment_records(logged_in_client):
     from database.cashbook_queries import get_total_fee_revenue
     from database.membership_queries import get_admin_students
 
-    breakdown = get_purpose_breakdown(admin_id)
-    total_students = sum(row["students"] for row in breakdown)
-    total_revenue = sum(row["revenue"] for row in breakdown)
+    # These all call get_supabase_client(), which requires an active
+    # request context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        breakdown = get_purpose_breakdown(admin_id)
+        total_students = sum(row["students"] for row in breakdown)
+        total_revenue = sum(row["revenue"] for row in breakdown)
 
-    assert total_students == len(get_admin_students(admin_id))
-    assert total_revenue == get_total_fee_revenue(admin_id) == 3500
+        assert total_students == len(get_admin_students(admin_id))
+        assert total_revenue == get_total_fee_revenue(admin_id) == 3500
 
     student_pct_sum = sum(round(row["students"] * 100 / total_students, 1) for row in breakdown)
     revenue_pct_sum = sum(round(row["revenue"] * 100 / total_revenue, 1) for row in breakdown)
@@ -321,7 +338,7 @@ def test_revenue_analytics_loads_with_no_data(logged_in_client):
     assert b"N/A" in resp.data
 
 
-def test_revenue_analytics_kpis_match_payment_and_membership_records(logged_in_client):
+def test_revenue_analytics_kpis_match_payment_and_membership_records(app, logged_in_client):
     """Every KPI on the page must match the same underlying Payments/
     Memberships rows the rest of the app already asserts against
     (get_total_fee_revenue/get_pending_fees), and the New Admissions vs
@@ -366,22 +383,25 @@ def test_revenue_analytics_kpis_match_payment_and_membership_records(logged_in_c
     )
     from database.cashbook_queries import get_total_fee_revenue, get_pending_fees
 
-    windows = get_revenue_time_windows(admin_id)
-    collection = get_revenue_collection_summary(admin_id)
-    split = get_new_vs_renewal_revenue(admin_id)
+    # These all call get_supabase_client(), which requires an active
+    # request context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        windows = get_revenue_time_windows(admin_id)
+        collection = get_revenue_collection_summary(admin_id)
+        split = get_new_vs_renewal_revenue(admin_id)
 
-    assert windows["total"] == get_total_fee_revenue(admin_id) == 1800
-    assert windows["today"] == 1800  # every payment above lands on today's date
-    assert windows["month"] == 1800
-    assert windows["year"] == 1800
+        assert windows["total"] == get_total_fee_revenue(admin_id) == 1800
+        assert windows["today"] == 1800  # every payment above lands on today's date
+        assert windows["month"] == 1800
+        assert windows["year"] == 1800
 
-    assert collection["expected"] == 2000  # 1000 + (300+200) + 500
-    assert collection["collected"] == 1800
-    assert collection["pending"] == get_pending_fees(admin_id) == 200
-    assert collection["collection_pct"] == 90.0
+        assert collection["expected"] == 2000  # 1000 + (300+200) + 500
+        assert collection["collected"] == 1800
+        assert collection["pending"] == get_pending_fees(admin_id) == 200
+        assert collection["collection_pct"] == 90.0
 
-    assert split["new_admissions"] == 1500  # student A's first membership + student B
-    assert split["renewal"] == 300  # student A's renewal payment only
+        assert split["new_admissions"] == 1500  # student A's first membership + student B
+        assert split["renewal"] == 300  # student A's renewal payment only
 
     resp = client.get("/business-intelligence/revenue-analytics")
     assert resp.status_code == 200
@@ -407,7 +427,7 @@ def test_occupancy_analytics_loads_with_no_data(logged_in_client):
     assert b"N/A" in resp.data
 
 
-def test_occupancy_analytics_counts_active_students_by_shift(logged_in_client):
+def test_occupancy_analytics_counts_active_students_by_shift(app, logged_in_client):
     """Occupied seats must match the currently effectively-active
     membership population, grouped by each student's own shift - not raw
     student count (Purpose Analytics counts every student regardless of
@@ -430,18 +450,22 @@ def test_occupancy_analytics_counts_active_students_by_shift(logged_in_client):
 
     from database.bi_queries import get_occupancy_summary, get_occupancy_by_purpose, get_occupancy_by_plan
 
-    summary = get_occupancy_summary(admin_id)
+    # These all call get_supabase_client(), which requires an active
+    # request context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        summary = get_occupancy_summary(admin_id)
+        purpose_occupancy = get_occupancy_by_purpose(admin_id)
+        plan_occupancy = get_occupancy_by_plan(admin_id)
+
     shifts_by_name = {s["name"]: s for s in summary["shifts"]}
     assert shifts_by_name["Morning"]["occupied"] == 1
     assert shifts_by_name["Evening"]["occupied"] == 1
     assert shifts_by_name["Afternoon"]["occupied"] == 0
     assert summary["total_occupied"] == 2
 
-    purpose_occupancy = get_occupancy_by_purpose(admin_id)
     assert purpose_occupancy.get("UPSC") == 1
     assert purpose_occupancy.get("NEET") == 1
 
-    plan_occupancy = get_occupancy_by_plan(admin_id)
     assert plan_occupancy.get("MONTHLY") == 1
     assert plan_occupancy.get("QUARTERLY") == 1
 
@@ -451,7 +475,7 @@ def test_occupancy_analytics_counts_active_students_by_shift(logged_in_client):
     assert b"Evening" in resp.data
 
 
-def test_occupancy_analytics_excludes_expired_memberships(logged_in_client):
+def test_occupancy_analytics_excludes_expired_memberships(app, logged_in_client):
     """A membership whose end_date has already passed no longer occupies a
     seat, even though membership_status was stored 'Active' at creation
     (get_effective_status() re-derives 'Expired' from the date)."""
@@ -469,7 +493,10 @@ def test_occupancy_analytics_excludes_expired_memberships(logged_in_client):
 
     from database.bi_queries import get_occupancy_summary
 
-    summary = get_occupancy_summary(admin_id)
+    # get_occupancy_summary() calls get_supabase_client(), which requires
+    # an active request context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        summary = get_occupancy_summary(admin_id)
     assert summary["total_occupied"] == 0
     shifts_by_name = {s["name"]: s for s in summary["shifts"]}
     assert shifts_by_name["Morning"]["occupied"] == 0

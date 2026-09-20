@@ -1,7 +1,7 @@
 """Cashbook: manual entries, filters, ledger, edit, KPI consistency."""
 from tests.conftest import (
     get_cashbook_entries, get_last_cashbook_entry, get_audit_log_entries,
-    get_cashbook_entry_by_id,
+    get_cashbook_entry_by_id, tenant_request_context,
 )
 
 
@@ -340,7 +340,7 @@ def test_cashbook_filter_source_automatic(logged_in_client):
     assert resp.status_code == 200
 
 
-def test_cashbook_kpi_cash_balance_matches_math(logged_in_client):
+def test_cashbook_kpi_cash_balance_matches_math(app, logged_in_client):
     client, admin = logged_in_client
     add_txn(client, transaction_type="Income", category="Donation", amount="1000", payment_method="Cash")
     add_txn(client, transaction_type="Expense", category="Rent", amount="300", payment_method="Cash")
@@ -348,7 +348,10 @@ def test_cashbook_kpi_cash_balance_matches_math(logged_in_client):
     assert resp.status_code == 200
 
     from database.cashbook_queries import get_cash_balance
-    assert get_cash_balance(admin["admin_id"]) == 700
+    # get_cash_balance() calls get_supabase_client(), which requires an
+    # active request context (ADR-75).
+    with tenant_request_context(app, admin["admin_id"]):
+        assert get_cash_balance(admin["admin_id"]) == 700
 
 
 def test_income_expense_chart_endpoint_requires_login(client):

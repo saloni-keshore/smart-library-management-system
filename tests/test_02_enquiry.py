@@ -1,6 +1,6 @@
 """Enquiries: CRUD, validation, edge cases."""
 from database.supabase_client import get_service_role_client
-from tests.conftest import make_enquiry, get_last_enquiry_id, get_enquiry_by_id
+from tests.conftest import make_enquiry, get_last_enquiry_id, get_enquiry_by_id, tenant_request_context
 
 
 def test_enquiry_requires_login(client):
@@ -226,7 +226,7 @@ def test_add_enquiry_sql_injection_remarks(logged_in_client):
     assert count > 0
 
 
-def test_insert_with_next_id_assigns_sequential_ids(logged_in_client):
+def test_insert_with_next_id_assigns_sequential_ids(app, logged_in_client):
     # Directly exercises the helper routes/enquiries.py and routes/student.py
     # now use for id assignment (TD-78): two inserts get consecutive ids and
     # both rows land.
@@ -239,8 +239,12 @@ def test_insert_with_next_id_assigns_sequential_ids(logged_in_client):
         "purpose": "STUDY",
         "preferred_shift": "MORNING",
     }
-    id1 = insert_with_next_id("enquiries", "enquiry_id", {**base, "mobile": "9110000001"})
-    id2 = insert_with_next_id("enquiries", "enquiry_id", {**base, "mobile": "9110000002"})
+    # insert_with_next_id() calls get_supabase_client(), which requires an
+    # active request context (ADR-75) - tenant_request_context() provides
+    # one, since this call bypasses the Flask test client entirely.
+    with tenant_request_context(app, admin["admin_id"]):
+        id1 = insert_with_next_id("enquiries", "enquiry_id", {**base, "mobile": "9110000001"})
+        id2 = insert_with_next_id("enquiries", "enquiry_id", {**base, "mobile": "9110000002"})
     assert id2 == id1 + 1
     assert get_enquiry_by_id(id1) is not None
     assert get_enquiry_by_id(id2) is not None

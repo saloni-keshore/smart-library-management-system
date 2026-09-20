@@ -2,10 +2,12 @@ import sys
 import os
 import random
 import string
+from contextlib import contextmanager
 from datetime import date, timedelta
 
 import pytest
 from dotenv import load_dotenv
+from flask import g
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _REPO_ROOT)
@@ -23,7 +25,21 @@ sys.path.insert(0, _REPO_ROOT)
 load_dotenv(os.path.join(_REPO_ROOT, ".env.test"), override=True)
 
 from app import create_app  # noqa: E402
-from database.supabase_client import get_service_role_client  # noqa: E402
+from database.supabase_client import build_tenant_client, get_service_role_client  # noqa: E402
+
+
+@contextmanager
+def tenant_request_context(app, admin_id):
+    """Push a request context with g.supabase set to a tenant-scoped client,
+    for tests that call database/*_queries.py functions directly instead of
+    through the Flask test client. get_supabase_client() (ADR-75) requires
+    an active request context with g.supabase already set - app.py's
+    attach_tenant_supabase_client before_request hook is what normally does
+    that for a real request, but it never runs here since no request is
+    actually being dispatched."""
+    with app.test_request_context():
+        g.supabase = build_tenant_client(admin_id)
+        yield
 
 
 @pytest.fixture(scope="session")

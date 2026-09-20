@@ -14,6 +14,7 @@ from tests.conftest import (
     get_membership_by_id,
     save_membership_settings,
     get_cashbook_entries,
+    tenant_request_context,
 )
 
 
@@ -1231,7 +1232,7 @@ def test_receipt_custom_day_count_is_plural_for_multi_day_plan(logged_in_client)
     assert b"Custom - 45 days" in resp.data
 
 
-def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(logged_in_client):
+def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(app, logged_in_client):
     """TD-30/ADR-53, the create() call site: routes/membership.py's create()
     is already guarded against a *sequential* double-submit by its
     pre-existing get_active_membership() check (a second request sees the
@@ -1251,6 +1252,18 @@ def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(l
     falls back to pre-ADR-53 behavior (no dedup), the same self-skip
     convention TD-53/TD-55's tests already use for their own
     not-yet-migrated-project case.
+
+    insert_membership()'s contract has moved twice since this test was
+    written: it now returns a (membership_id, existing_row) tuple rather
+    than either None or the existing row directly, and its payload must
+    NOT include membership_id at all - Postgres's identity default assigns
+    it (ADR-81/TD-108) - while admin_id is now required (ADR-75's backfill
+    added a NOT NULL admin_id column to memberships). Separately,
+    insert_membership()'s duplicate-key fallback calls
+    find_membership_by_idempotency_key(), which - like every other
+    database/*_queries.py function - calls get_supabase_client() and so
+    requires an active request context (ADR-75), even though the initial
+    insert here uses an explicitly passed-in service-role client.
     """
     from database.membership_queries import insert_membership
 
@@ -1260,17 +1273,8 @@ def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(l
     supabase = get_service_role_client()
     key = f"test-key-{admin['admin_id']}-direct-insert"
 
-    def _next_membership_id():
-        resp = (
-            supabase.table("memberships")
-            .select("membership_id")
-            .order("membership_id", desc=True)
-            .limit(1)
-            .execute()
-        )
-        return (resp.data[0]["membership_id"] + 1) if resp.data else 1
-
     base_row = {
+        "admin_id": admin["admin_id"],
         "student_id": sid,
         "plan_name": "Custom",
         "joining_date": "2026-07-22",
@@ -1284,27 +1288,26 @@ def test_membership_insert_with_duplicate_idempotency_key_returns_existing_row(l
         "idempotency_key": key,
     }
 
-    row_a = {**base_row, "membership_id": _next_membership_id()}
-    result_a = insert_membership(supabase, row_a)
-    assert result_a is None, "first insert with a fresh idempotency_key should just insert, not find an existing row"
+    with tenant_request_context(app, admin["admin_id"]):
+        membership_id_a, existing_a = insert_membership(supabase, dict(base_row))
+        assert existing_a is None, "first insert with a fresh idempotency_key should just insert, not find an existing row"
 
-    row_b = {**base_row, "membership_id": _next_membership_id()}
-    result_b = insert_membership(supabase, row_b)
+        membership_id_b, existing_b = insert_membership(supabase, dict(base_row))
 
     rows = supabase.table("memberships").select("membership_id").eq("student_id", sid).execute().data
 
-    if result_b is None and len(rows) == 2:
+    if existing_b is None and len(rows) == 2:
         pytest.skip(
             "idempotency_key column not present on this Supabase project yet "
             "(ADR-53 manual ALTER TABLE not applied) - insert_membership() "
             "silently degraded to its pre-ADR-53 always-insert behavior."
         )
 
-    assert result_b is not None, (
+    assert existing_b is not None, (
         "second insert with a duplicate idempotency_key should return the "
         "existing row instead of inserting a new one"
     )
-    assert result_b["membership_id"] == row_a["membership_id"]
+    assert membership_id_b == membership_id_a
     assert len(rows) == 1
 
 
@@ -1395,7 +1398,7 @@ def test_double_submit_collect_payment_is_deduplicated(logged_in_client):
     assert float(membership["pending_amount"]) == 800.0
 
 
-def test_payment_survives_cashbook_sync_failure_and_is_flagged(logged_in_client, monkeypatch):
+def test_payment_survives_cashbook_sync_failure_and_is_flagged(app, logged_in_client, monkeypatch):
     """TD-43/ADR-53: if the automatic Cashbook Income entry fails even after
     its own retry (simulated here via monkeypatch, standing in for a
     persistent Supabase outage on the cashbook/audit_log tables
@@ -1447,7 +1450,10 @@ def test_payment_survives_cashbook_sync_failure_and_is_flagged(logged_in_client,
     assert payment_rows[0]["cashbook_synced"] is False
 
     from database.payment_queries import get_unsynced_payment_count
-    assert get_unsynced_payment_count(admin["admin_id"]) >= 1
+    # get_unsynced_payment_count() calls get_supabase_client(), which
+    # requires an active request context (ADR-75).
+    with tenant_request_context(app, admin["admin_id"]):
+        assert get_unsynced_payment_count(admin["admin_id"]) >= 1
 
     cashbook_resp = client.get("/cashbook/")
     assert b"missing a matching Cashbook ledger entry" in cashbook_resp.data

@@ -6,10 +6,11 @@ from tests.conftest import (
     make_enquiry, get_last_enquiry_id, get_enquiry_by_id, admit_student, get_last_student_id,
     create_membership, get_last_membership_id, get_membership_by_id,
     get_cashbook_entries, get_audit_log_entries, get_admin_by_username,
+    tenant_request_context,
 )
 
 
-def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_client):
+def test_full_chain_updates_every_downstream_module_exactly_once(app, logged_in_client):
     client, admin = logged_in_client
     admin_id = admin["admin_id"]
 
@@ -75,8 +76,11 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
 
     # 6. Dashboard totals reflect the same numbers
     from database.cashbook_queries import get_total_fee_revenue, get_pending_fees
-    assert get_total_fee_revenue(admin_id) == 1000
-    assert get_pending_fees(admin_id) == 0
+    # These call get_supabase_client(), which requires an active request
+    # context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        assert get_total_fee_revenue(admin_id) == 1000
+        assert get_pending_fees(admin_id) == 0
 
     resp = client.get("/dashboard")
     assert resp.status_code == 200
@@ -101,7 +105,7 @@ def test_full_chain_updates_every_downstream_module_exactly_once(logged_in_clien
     assert b"Chain Test Student" not in resp.data
 
 
-def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in_client):
+def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(app, logged_in_client):
     client, admin = logged_in_client
     admin_id = admin["admin_id"]
 
@@ -157,7 +161,10 @@ def test_full_chain_renewal_expires_old_and_all_totals_stay_consistent(logged_in
     assert len(admission_and_renewal) == 2
 
     from database.cashbook_queries import get_total_fee_revenue
-    assert get_total_fee_revenue(admin_id) == 1000
+    # get_total_fee_revenue() calls get_supabase_client(), which requires
+    # an active request context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        assert get_total_fee_revenue(admin_id) == 1000
 
 
 def test_no_orphan_payments_or_cashbook_rows_after_full_run(logged_in_client):

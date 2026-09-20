@@ -22,6 +22,7 @@ from tests.conftest import (
     get_last_enquiry_id,
     get_last_student_id,
     make_enquiry,
+    tenant_request_context,
 )
 
 
@@ -46,7 +47,7 @@ def _create_conversation(client):
 # Phase 1.1 - risk-scoring batching (database/ai_center_queries.py)
 # ---------------------------------------------------------------------------
 
-def test_batch_risk_scoring_matches_single_student_scoring_exactly(logged_in_client):
+def test_batch_risk_scoring_matches_single_student_scoring_exactly(app, logged_in_client):
     """compute_student_risk_batch() must be a faithful optimization, not an
     approximation - every field of its result for a real student must match
     compute_student_risk()'s result for that same student exactly. Seeds one
@@ -65,8 +66,11 @@ def test_batch_risk_scoring_matches_single_student_scoring_exactly(logged_in_cli
     student_id = get_last_student_id(admin_id)
     create_membership(client, student_id, paid_amount="100", due_amount="400")
 
-    single = compute_student_risk(admin_id, student_id)
-    batch = compute_student_risk_batch(admin_id, students=get_admin_students(admin_id))
+    # These call get_supabase_client(), which requires an active request
+    # context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        single = compute_student_risk(admin_id, student_id)
+        batch = compute_student_risk_batch(admin_id, students=get_admin_students(admin_id))
 
     assert single is not None
     assert student_id in batch
@@ -74,13 +78,16 @@ def test_batch_risk_scoring_matches_single_student_scoring_exactly(logged_in_cli
         assert batch[student_id][field] == single[field], f"field {field!r} diverged"
 
 
-def test_batch_risk_scoring_empty_roster_returns_empty_dict(logged_in_client):
+def test_batch_risk_scoring_empty_roster_returns_empty_dict(app, logged_in_client):
     """A fresh admin has no students - must return {} cleanly, not raise or
     fabricate a result for a nonexistent roster."""
     from database.ai_center_queries import compute_student_risk_batch
 
     client, admin = logged_in_client
-    assert compute_student_risk_batch(admin["admin_id"]) == {}
+    # compute_student_risk_batch() calls get_supabase_client(), which
+    # requires an active request context (ADR-75).
+    with tenant_request_context(app, admin["admin_id"]):
+        assert compute_student_risk_batch(admin["admin_id"]) == {}
 
 
 def test_get_top_risk_students_still_respects_the_documented_cap(monkeypatch):
@@ -258,7 +265,7 @@ def test_expense_question_answers_honestly_for_fresh_admin(logged_in_client):
     assert "No expenses recorded yet" in reply
 
 
-def test_expense_question_reports_real_expense_breakdown(logged_in_client):
+def test_expense_question_reports_real_expense_breakdown(app, logged_in_client):
     """A real manual Expense entry must surface in the expense-topic reply,
     matching the same data database/bi_queries.get_top_expense_categories()
     already computes - verified directly against that query, not just
@@ -284,8 +291,11 @@ def test_expense_question_reports_real_expense_breakdown(logged_in_client):
 
     reply = _send(client, conversation_id, "What are my biggest expenses?")
 
-    categories = get_top_expense_categories(admin_id)
-    health = classify_expense_health(admin_id)
+    # These call get_supabase_client(), which requires an active request
+    # context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        categories = get_top_expense_categories(admin_id)
+        health = classify_expense_health(admin_id)
     top = categories[0]
 
     assert f"{top['category']}: ₹{top['amount']:,.0f}" in reply

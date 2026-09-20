@@ -19,6 +19,7 @@ from tests.conftest import (
     get_last_enquiry_id,
     get_last_student_id,
     make_enquiry,
+    tenant_request_context,
 )
 
 
@@ -165,7 +166,7 @@ def test_profit_loss_question_answers_honestly_for_fresh_admin(logged_in_client)
 # Real-data correctness + the cash-balance-vs-profit distinction
 # ---------------------------------------------------------------------------
 
-def test_cash_balance_reply_matches_real_cashbook_query(logged_in_client):
+def test_cash_balance_reply_matches_real_cashbook_query(app, logged_in_client):
     """A real Cash-method income entry and a real Cash-method expense entry
     must surface as the exact same number
     database/cashbook_queries.get_cash_balance() computes - verified
@@ -182,14 +183,17 @@ def test_cash_balance_reply_matches_real_cashbook_query(logged_in_client):
     _add_cashbook_entry(client, "Income", "Donation", "9000", payment_method="UPI")
 
     reply = _send(client, conversation_id, "What's my cash balance?")
-    real_balance = get_cash_balance(admin_id)
+    # get_cash_balance() calls get_supabase_client(), which requires an
+    # active request context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        real_balance = get_cash_balance(admin_id)
 
     assert real_balance == 3800
     assert f"₹{real_balance:,.0f}" in reply
     assert "₹9,000" not in reply
 
 
-def test_profit_loss_reply_matches_real_cashbook_totals(logged_in_client):
+def test_profit_loss_reply_matches_real_cashbook_totals(app, logged_in_client):
     """Verified directly against database/cashbook_queries.py's
     get_total_income()/get_total_expense() - the all-time net must be
     byte-identical to a plain income-minus-expense of those two real
@@ -207,8 +211,11 @@ def test_profit_loss_reply_matches_real_cashbook_totals(logged_in_client):
 
     reply = _send(client, conversation_id, "Tell me about my profit or loss")
 
-    total_income = get_total_income(admin_id)
-    total_expense = get_total_expense(admin_id)
+    # These call get_supabase_client(), which requires an active request
+    # context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        total_income = get_total_income(admin_id)
+        total_expense = get_total_expense(admin_id)
     net = total_income - total_expense
 
     assert total_income == 14000
@@ -220,7 +227,7 @@ def test_profit_loss_reply_matches_real_cashbook_totals(logged_in_client):
     assert "every payment method" in reply
 
 
-def test_cash_balance_and_profit_loss_can_legitimately_disagree_in_sign(logged_in_client):
+def test_cash_balance_and_profit_loss_can_legitimately_disagree_in_sign(app, logged_in_client):
     """The scenario the audit specifically flagged: positive cash balance,
     negative overall profit, because cash balance is Cash-method-only while
     profit/loss spans every payment method. Both replies must independently
@@ -237,8 +244,11 @@ def test_cash_balance_and_profit_loss_can_legitimately_disagree_in_sign(logged_i
     # UPI: a big expense with no matching income -> overall net turns negative.
     _add_cashbook_entry(client, "Expense", "Furniture", "25000", payment_method="UPI")
 
-    cash_balance = get_cash_balance(admin_id)
-    net = get_total_income(admin_id) - get_total_expense(admin_id)
+    # These call get_supabase_client(), which requires an active request
+    # context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        cash_balance = get_cash_balance(admin_id)
+        net = get_total_income(admin_id) - get_total_expense(admin_id)
     assert cash_balance > 0
     assert net < 0
 

@@ -20,6 +20,7 @@ from tests.conftest import (
     get_last_enquiry_id,
     get_last_student_id,
     make_enquiry,
+    tenant_request_context,
 )
 
 
@@ -553,7 +554,7 @@ def _admit_with_membership(client, admin_id, join_date, end_date):
     return student_id
 
 
-def test_forecast_question_reports_real_occupancy_and_churn_trend_from_seeded_history(logged_in_client):
+def test_forecast_question_reports_real_occupancy_and_churn_trend_from_seeded_history(app, logged_in_client):
     """Part 5 (ADR-51): seeds real, backdated membership history (via the
     normal admission/membership/renewal routes - joining_date/end_date are
     accepted as-is, unlike Cashbook entry_date which the app always stamps
@@ -622,18 +623,22 @@ def test_forecast_question_reports_real_occupancy_and_churn_trend_from_seeded_hi
 
     from panda import insights
 
-    occupancy = insights.get_seat_demand_forecast(admin_id)
+    # These call get_supabase_client(), which requires an active request
+    # context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        occupancy = insights.get_seat_demand_forecast(admin_id)
+        churn = insights.get_churn_forecast(admin_id)
+        revenue = insights.get_revenue_forecast(admin_id)
+
     assert occupancy is not None
     assert occupancy["trend_direction"] == "up"
     assert occupancy["projected_occupancy_pct"] > 0
 
-    churn = insights.get_churn_forecast(admin_id)
     assert churn is not None
     assert churn["months_used"] == 4
     assert churn["trend_direction"] == "down"
     assert churn["projected_churn_rate_pct"] == 0.0
 
-    revenue = insights.get_revenue_forecast(admin_id)
     assert revenue is None
 
     conversation_id = _create_conversation(client)
@@ -643,7 +648,7 @@ def test_forecast_question_reports_real_occupancy_and_churn_trend_from_seeded_hi
     assert "Revenue: not enough months of real income history yet" in reply
 
 
-def test_forecast_revenue_projects_real_trend_from_backdated_cashbook_history(logged_in_client):
+def test_forecast_revenue_projects_real_trend_from_backdated_cashbook_history(app, logged_in_client):
     """Part 5 (ADR-51): the app itself can never backdate a Cashbook
     Income entry (payment_date/entry_date are always stamped with today's
     real date - see database/payment_queries.py's record_payment()), so a
@@ -691,7 +696,10 @@ def test_forecast_revenue_projects_real_trend_from_backdated_cashbook_history(lo
 
     from panda import insights
 
-    revenue = insights.get_revenue_forecast(admin_id)
+    # get_revenue_forecast() calls get_supabase_client(), which requires
+    # an active request context (ADR-75).
+    with tenant_request_context(app, admin_id):
+        revenue = insights.get_revenue_forecast(admin_id)
     assert revenue is not None
     assert revenue["trend_direction"] == "up"
     assert revenue["projected_amount"] == 2300.0
