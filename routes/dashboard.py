@@ -4,7 +4,6 @@ from flask import (
     Blueprint,
     render_template,
     session,
-    redirect,
     request,
     jsonify
 )
@@ -26,6 +25,7 @@ from database.notification_settings_queries import get_notification_settings_cac
 from database.membership_queries import (
     get_membership_counts, get_memberships_for_admin, get_admin_students, get_days_left
 )
+from database.settings_queries import get_library_settings
 from utils.security import login_required
 
 
@@ -151,6 +151,18 @@ def dashboard():
         if notification_settings else True
     )
 
+    # Soft onboarding nudge for a fresh admin - guidance only, no route is
+    # blocked. `session["library_setup_done"]` is set the moment Library
+    # Profile is saved (routes/setting.py) and cached here so an
+    # established admin's dashboard load never re-checks Supabase; only an
+    # admin who hasn't set up yet pays for the lookup, and only until they do.
+    if session.get("library_setup_done"):
+        show_setup_message = False
+    else:
+        show_setup_message = get_library_settings(admin_id) is None
+        if not show_setup_message:
+            session["library_setup_done"] = True
+
     return render_template(
         "dashboard/index.html",
         total_students=total_students,
@@ -169,7 +181,8 @@ def dashboard():
         payment_methods=PAYMENT_METHODS,
         dash_show_pending_fees=dash_show_pending_fees,
         revenue_chart_data=build_revenue_chart_data(admin_id, "this_year"),
-        membership_chart_data=build_membership_chart_data(admin_id)
+        membership_chart_data=build_membership_chart_data(admin_id),
+        show_setup_message=show_setup_message
     )
 
 

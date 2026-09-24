@@ -50,6 +50,10 @@ Login
                 id="username"
                 class="form-control"
                 placeholder="Enter username or mobile number"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                autocomplete="username"
                 required>
 
         </div>
@@ -71,8 +75,8 @@ Login
                     required>
 
                 <span
-                    class="input-group-text"
-                    id="togglePassword"
+                    class="input-group-text toggle-password"
+                    data-target="password"
                     style="cursor:pointer;">
 
                     <i class="bi bi-eye"></i>

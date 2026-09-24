@@ -1,20 +1,25 @@
-const password = document.getElementById("password");
-const toggle = document.getElementById("togglePassword");
+document.querySelectorAll(".toggle-password").forEach((toggle) => {
 
-toggle.addEventListener("click", () => {
+    const input = document.getElementById(toggle.dataset.target);
 
-    if (password.type === "password") {
+    if (!input) return;
 
-        password.type = "text";
+    toggle.addEventListener("click", () => {
 
-        toggle.innerHTML = '<i class="bi bi-eye-slash"></i>';
+        if (input.type === "password") {
 
-    } else {
+            input.type = "text";
 
-        password.type = "password";
+            toggle.innerHTML = '<i class="bi bi-eye-slash"></i>';
 
-        toggle.innerHTML = '<i class="bi bi-eye"></i>';
+        } else {
 
-    }
+            input.type = "password";
+
+            toggle.innerHTML = '<i class="bi bi-eye"></i>';
+
+        }
+
+    });
 
 });

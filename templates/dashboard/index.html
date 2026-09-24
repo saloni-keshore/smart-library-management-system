@@ -29,6 +29,19 @@ Dashboard
     {% endif %}
 {% endwith %}
 
+{% if show_setup_message %}
+<div class="alert alert-info mb-4">
+    <strong>&#8505;&#65039; Complete your library setup</strong>
+    <p class="mb-1 mt-1">To use features like student admissions, fee calculation, and receipt generation smoothly, please complete the required library information in Settings.</p>
+    <p class="mb-0">
+        &#128073;
+        <a href="{{ url_for('setting.index') }}">Settings</a>
+        &ndash; Complete your library details, timings, seats, pricing, and other preferences according to your library's needs.
+    </p>
+    <p class="mb-0 mt-1 small text-muted">You can set up the sections in any order and update them later whenever needed.</p>
+</div>
+{% endif %}
+
 <!-- Dashboard Header -->
 {% include "components/dashboard_header.html" %}
 

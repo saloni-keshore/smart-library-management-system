@@ -1,6 +1,7 @@
 """Auth: login, logout, register, forgot-password."""
 import re
 
+from app import create_app
 from database.supabase_client import get_service_role_client
 from tests.conftest import get_admin_by_username
 
@@ -524,3 +525,20 @@ def test_forgot_password_empty_everything(client):
     resp = client.post("/forgot-password", data={}, follow_redirects=True)
     assert resp.status_code == 200
     assert b"valid 10-digit mobile" in resp.data
+
+
+def test_forgot_password_disabled_when_flag_is_false():
+    """routes/auth.py's forgot_password() only flashes the disabled message
+    when both the flag is off AND current_app.testing is False - the shared
+    `app`/`client` fixtures run with TESTING=True (conftest.py), which bypasses
+    that branch unconditionally, so this needs its own app instance with
+    TESTING=False to actually exercise it."""
+    disabled_app = create_app({
+        "TESTING": False,
+        "WTF_CSRF_ENABLED": False,
+        "ENABLE_SELF_SERVICE_PASSWORD_RESET": False,
+    })
+    with disabled_app.test_client() as disabled_client:
+        resp = disabled_client.get("/forgot-password", follow_redirects=True)
+    assert b"Password reset is disabled" in resp.data
+    assert b"Reset Password" not in resp.data

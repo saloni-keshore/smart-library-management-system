@@ -710,6 +710,7 @@ def library_profile():
         }
 
         save_library_settings(admin_id, data)
+        session["library_setup_done"] = True
 
         upload_warning = (
             "Your profile was saved. Image uploads aren't available on this deployment."
