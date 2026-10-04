@@ -54,3 +54,16 @@ What differs from Render on this host, by design (ADR-56):
 - `MAX_CONTENT_LENGTH` (5 MB) exceeds Vercel's ~4.5 MB request-body cap — a 4.5–5 MB upload gets a Vercel 413 before Flask (TD-77).
 
 Deploy: `npm i -g vercel`, then `vercel` (preview) from the repo root; set the env vars; `vercel --prod` once the preview checks out. Steps 3/5/6 from the top of this doc (apply `supabase_migration.sql`, verify schema, verify tenant isolation) are already done for the shared project by the Render setup — don't re-run the migration.
+
+## Google sign-in / "Recover with Google" (ADR-84, added 2026-10-03) — free, one-time setup
+
+Nothing here costs money: Supabase Auth's Google provider and a Google Cloud OAuth client are free at this scale. Do it once per Supabase project (test and production each need their own redirect URLs).
+
+1. **Database:** in the Supabase SQL editor run section 0's pre-check from `database/supabase_google_auth_migration.sql` (must return 0 rows), then the whole file. Test project first; run `pytest tests/test_01_auth.py tests/test_21_google_auth.py`; then production.
+2. **Google Cloud Console** → create a project → *OAuth consent screen* (External; app name, support email) → **Publish app** (otherwise only listed test users can sign in; name/email scopes need no Google review) → *Clients/Credentials* → **OAuth client ID**, type *Web application*, *Authorized redirect URI* `https://<supabase-ref>.supabase.co/auth/v1/callback`. Copy the client ID and secret.
+3. **Supabase** → Authentication → *Sign In / Providers* → **Google**: enable, paste the client ID and secret. Keep the *Email* provider's sign-ups disabled if you don't use it — the Google RPCs require a Google identity anyway.
+4. **Supabase** → Authentication → *URL Configuration*: *Site URL* = the deployed site; *Redirect URLs* add `https://<site>/auth/google/callback` and `http://localhost:5000/auth/google/callback`.
+5. **Environment:** set `GOOGLE_AUTH_ENABLED=true` (Vercel → Environment Variables → Production, then redeploy). Until then the Google buttons are hidden and `/auth/google/start` refuses.
+6. **Check:** log in with a password, Settings → Security → **Connect Google account**; log out; **Continue with Google** should sign you straight in.
+
+Every logged-in user is signed out once when this version first deploys (sessions now carry a `session_version`, ADR-85).

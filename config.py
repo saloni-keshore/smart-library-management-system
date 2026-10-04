@@ -19,9 +19,10 @@ class Config:
     )
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024
     CSRF_ENABLED = True
-    ENABLE_SELF_SERVICE_PASSWORD_RESET = os.environ.get(
-        "ENABLE_SELF_SERVICE_PASSWORD_RESET", "false"
-    ).lower() == "true"
+    # Shows the "Continue with Google" / "Recover with Google" buttons
+    # (ADR-84). Only turn on once the Google provider is configured in
+    # Supabase Auth - see docs/DEPLOYMENT.md.
+    GOOGLE_AUTH_ENABLED = os.environ.get("GOOGLE_AUTH_ENABLED", "false").lower() == "true"
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 

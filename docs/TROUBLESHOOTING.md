@@ -230,17 +230,34 @@ This has had **three distinct real causes** found across two sessions — don't 
 **Cause (historical, fixed 2026-07-25, ADR-32, TD-32 now `Resolved`):** `POST /settings/backup/create` used to copy and serve the entire shared `database/library.db` file, not a per-admin export. Any admin who clicked "Create Backup" downloaded every other admin's students/enquiries/memberships/payments/cashbook/audit-log rows, plus the full `admins` table (usernames, mobiles, bcrypt password hashes) for every account in the system — not just their own. Removing SQLite entirely (Phase 11) forced a rebuild of this feature: `backup_create()` now calls `_collect_admin_backup_data(admin_id)`, which queries every admin-scoped Supabase table filtered to the requesting admin only, and downloads a JSON export instead of a `.db` file.
 **If you still see over-broad data in a backup:** you're on a version of `routes/setting.py` from before ADR-32 — pull the latest. Any backup file downloaded before 2026-07-25 should still be treated as containing every tenant's data.
 
-## "Forgot Password?" always shows "Password reset is disabled. Contact your library administrator."
+## "Forgot Password?" — someone can't recover their account
 
-**Cause (by design, not a bug):** `routes/auth.py`'s `forgot_password()` checks `current_app.config["ENABLE_SELF_SERVICE_PASSWORD_RESET"]` before doing anything else — `config.py` defaults it to `false` unless the `ENABLE_SELF_SERVICE_PASSWORD_RESET` environment variable is explicitly set to `true`. The login page's "Forgot Password?" link is always shown regardless of this flag (a deliberate choice, confirmed with the account owner 2026-09-23 — see that date's CHANGELOG entry), so clicking it while the flag is off always redirects straight back to login with this message, for every account, before the route ever looks at the name/mobile submitted.
-**Fix:** set `ENABLE_SELF_SERVICE_PASSWORD_RESET=true` in whichever environment's variable store needs the feature on — a local `.env` value never carries over to Vercel (or any other deployment) automatically; each environment's variables must be set independently. On Vercel: Project Settings → Environment Variables → add `ENABLE_SELF_SERVICE_PASSWORD_RESET` = `true` for the `Production` environment, then redeploy (an env var change alone does not trigger a redeploy on Vercel — the running deployment won't see it until the next build). `.env.example` documents this variable as of 2026-09-23.
-**Where it surfaces:** `GET/POST /forgot-password`.
+**Since 2026-10-03 (ADR-84) the only self-service recovery is "Recover with Google"**, and it works only for an admin who connected Google in Settings → Security (or created the library with Google). The old name + mobile reset was removed because it allowed account takeover. The "Recover with Google" button only shows when `GOOGLE_AUTH_ENABLED=true` in that environment.
+**Manual reset (for an admin with no Google connected):** in the Supabase SQL editor, `UPDATE admins SET password = crypt('<temporary password>', gen_salt('bf')), session_version = session_version + 1 WHERE username = '<username>';` (pgcrypto lives in `extensions` — prefix `extensions.` if `crypt` isn't found). Tell them the temporary password and ask them to change it and connect Google in Settings → Security.
+**Where it surfaces:** `GET /forgot-password`, `/auth/google/start?intent=recover`.
+
+## "Continue with Google" fails: `redirect_uri_mismatch`, lands back on the login page with `?code=`, or "Google sign-in failed"
+
+**Cause:** the OAuth configuration outside the code (ADR-84). (1) Google Cloud → OAuth client → *Authorized redirect URIs* must contain exactly `https://<supabase-ref>.supabase.co/auth/v1/callback` — otherwise Google shows `redirect_uri_mismatch`. (2) Supabase → Authentication → URL Configuration → *Redirect URLs* must contain `https://<site>/auth/google/callback` (and `http://localhost:5000/auth/google/callback` for local runs) — otherwise Supabase ignores `redirect_to` and sends the browser to the *Site URL* (typically `/`) with `?code=`, which nothing handles. (3) "Google sign-in failed or expired" after a long pause: the PKCE verifier lives in the Flask session — opening the start and callback in different browsers, clearing cookies, or `SESSION_COOKIE_SECURE=true` on plain-HTTP localhost loses it.
+**Fix:** check those two allow-lists, keep `APP_ENV=development` locally (insecure cookies allowed), and retry from the same browser.
+**Where it surfaces:** `/auth/google/start`, `/auth/google/callback`.
+
+## "Too many failed attempts for this account" on login
+
+**Cause (by design, ADR-86):** `rpc_login_lookup()` refuses a login after 5 failures from one client for that username/mobile, or 20 from anywhere, within 15 minutes. Other admins on the same Wi-Fi are not affected.
+**Fix:** wait 15 minutes, or sign in with Google. To clear it immediately: `DELETE FROM login_failures WHERE key LIKE '%<lowercase username>';` in the Supabase SQL editor.
+**Where it surfaces:** `POST /`.
+
+## Logged out on another device / "Your session has ended. Please log in again."
+
+**Cause (by design, ADR-85):** logging out, or changing the password, bumps `admins.session_version`, which ends every session of that admin on every device (within 5 minutes for the redirect; immediately for data access). Everyone is also logged out once right after the 2026-10-03 deploy, because older sessions carry no version.
+**Where it surfaces:** any page behind `login_required`.
 
 ## Login fails with "Invalid username/mobile number or password" on a phone but works on desktop
 
 **Cause (fixed 2026-09-23):** `rpc_login_lookup()` (`database/supabase_security_fixes_migration.sql`) matches `admins.username`/`admins.mobile` with case-sensitive exact string equality. Before this fix, none of the auth templates' identifier fields set `autocapitalize="off"`, and a mobile on-screen keyboard (iPhone Safari and most Android keyboards) auto-capitalizes the first letter typed into a plain text field by default — a physical desktop keyboard doesn't. Typing a lowercase username like `saloni` on a phone silently produced `Saloni`, which then failed the case-sensitive match, giving this same generic error regardless of whether the credentials were actually correct.
 **Fix:** `templates/auth/login.html`, `register.html`, and `forgot_password.html`'s identifier fields now set `autocapitalize="off" autocorrect="off" spellcheck="false"` (see the 2026-09-23 CHANGELOG entry). If this still happens after pulling the latest templates, check for a saved browser autofill/password-manager entry with different casing than what's actually stored — the underlying case-sensitive matching itself is unchanged (**TD-118**, open).
-**Where it surfaces:** `POST /login`, `POST /register`, `POST /forgot-password`.
+**Where it surfaces:** `POST /login`, `POST /register`. **Fully fixed 2026-10-03 (ADR-86, TD-118 Resolved):** usernames are now matched case-insensitively in `rpc_login_lookup()` and stored lowercase.
 
 ## Changed my password in Settings but can't log in with it (or vice versa)
 

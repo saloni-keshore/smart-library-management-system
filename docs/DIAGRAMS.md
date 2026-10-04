@@ -398,6 +398,7 @@ graph LR
 
     subgraph Routes["routes/"]
         auth_py["auth.py"]
+        google_auth_py["google_auth.py"]
         dashboard_py["dashboard.py"]
         enquiries_py["enquiries.py"]
         student_py["student.py"]
@@ -446,6 +447,7 @@ graph LR
     charts_py["utils/chart_data.py"]
 
     app_py --> auth_py
+    app_py --> google_auth_py
     app_py --> dashboard_py
     app_py --> enquiries_py
     app_py --> student_py
@@ -462,6 +464,8 @@ graph LR
     app_py --> panda_routes_py
 
     auth_py --> supabase_client_py
+    google_auth_py --> supabase_client_py
+    google_auth_py --> auth_py
     dashboard_py --> supabase_client_py
     dashboard_py --> charts_py
     dashboard_py --> cashbook_categories_py
@@ -544,3 +548,37 @@ graph LR
 ```
 
 `membership_analytics.py` and `report.py` have no data-layer imports — both are pure URL-compatibility redirect shims to their fully-implemented replacement (`membership_distribution.py`/`business_intelligence.py` respectively), not stubs awaiting real content (fixed 2026-07-22 for `membership_analytics.py`, see [CHANGELOG.md](CHANGELOG.md) and [11_FUTURE_WORK.md](11_FUTURE_WORK.md) PF-2/PF-3). Migration scripts (`database/migrate_*.py`) are omitted — they're standalone-run, not part of the request-time import graph; see their individual cards in [FILE_REFERENCE.md](FILE_REFERENCE.md) for their (inconsistent) import style.
+
+## 6. Google sign-in, recovery and session revocation (ADR-84/85, added 2026-10-03)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant F as Flask (routes/google_auth.py)
+    participant A as Supabase Auth
+    participant G as Google
+    participant P as Postgres (RPCs)
+
+    B->>F: GET /auth/google/start?intent=login|recover|link
+    F->>F: PKCE verifier -> Flask session
+    F-->>B: 302 to Supabase /authorize (code_challenge, redirect_to=/auth/google/callback)
+    B->>A: authorize
+    A->>G: OAuth consent
+    G-->>A: Google identity
+    A-->>B: 302 /auth/google/callback?code=...
+    B->>F: GET /auth/google/callback?code
+    F->>A: exchange code + verifier (server to server)
+    A-->>F: user (id, email) + access token
+    alt intent = link (logged in)
+        F->>P: rpc_link_google(user.id, email) with tenant JWT (admin_id, sv)
+    else intent = login / recover
+        F->>P: rpc_google_login_lookup() with the user's own access token (auth.uid())
+        alt library found
+            F->>F: start_admin_session() -> session admin_id, username, sv
+            Note over F: recover: session["pw_reset_until"] = now + 10 min
+        else no library (login)
+            F-->>B: /auth/google/complete -> rpc_register_admin_google()
+        end
+    end
+    Note over B,P: Every later request mints a tenant JWT with admin_id + sv. Logout / password change call rpc_bump_session_version(), so current_admin_id() rejects every older JWT.
+```

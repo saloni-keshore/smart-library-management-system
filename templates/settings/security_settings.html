@@ -30,14 +30,24 @@
             <!-- Change Password -->
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-body">
-                    <h5 class="text-primary mb-3">Change Password</h5>
+                    <h5 class="text-primary mb-3">{{ 'Set a New Password' if reset_mode else 'Change Password' }}</h5>
                     <form method="POST" action="{{ url_for('setting.security_settings') }}" id="securityPasswordForm">
                         <input type="hidden" name="form_type" value="password">
 
+                        {% if reset_mode %}
+                        <div class="alert alert-info small">
+                            {% if not has_password %}
+                            Your account was created with Google. Set a password if you also want to log in with your username.
+                            {% else %}
+                            You signed in with Google to recover your account - your current password isn't needed.
+                            {% endif %}
+                        </div>
+                        {% else %}
                         <div class="mb-3">
                             <label class="form-label">Current Password</label>
                             <input class="form-control" type="password" name="current_password" required>
                         </div>
+                        {% endif %}
                         <div class="mb-3">
                             <label class="form-label">New Password</label>
                             <input class="form-control" type="password" name="new_password" id="newPasswordInput"
@@ -59,6 +69,36 @@
                     </form>
                 </div>
             </div>
+
+            <!-- Google Account (ADR-84) -->
+            {% if google_auth_enabled or google_email %}
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <h5 class="text-primary mb-2">Google Account</h5>
+                    {% if google_email %}
+                    <p class="mb-3">
+                        <i class="bi bi-check-circle-fill text-success"></i>
+                        Connected as <strong>{{ google_email }}</strong>. You can sign in with Google, and use it to recover your password.
+                    </p>
+                    <form method="POST" action="{{ url_for('setting.security_settings') }}"
+                          onsubmit="return confirm('Disconnect this Google account?');">
+                        <input type="hidden" name="form_type" value="unlink_google">
+                        <button class="btn btn-outline-danger" type="submit" {% if not has_password %}disabled title="Set a password first"{% endif %}>
+                            <i class="bi bi-x-circle"></i> Disconnect Google
+                        </button>
+                        {% if not has_password %}
+                        <div class="form-text">Set a password first - otherwise you'd have no way to sign in.</div>
+                        {% endif %}
+                    </form>
+                    {% else %}
+                    <p class="text-muted mb-3">
+                        Connect your Google account to sign in with one click and to recover your password if you forget it. It's free.
+                    </p>
+                    {% with intent="link", label="Connect Google account" %}{% include "components/google_button.html" %}{% endwith %}
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
 
             <!-- Future Security Features -->
             <div class="card shadow-sm border-0">

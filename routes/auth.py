@@ -1,3 +1,7 @@
+import hashlib
+import re
+import time
+
 from flask import (
     Blueprint,
     current_app,
@@ -15,13 +19,20 @@ from werkzeug.security import (
 from postgrest.exceptions import APIError
 
 from database.supabase_client import build_tenant_client, get_supabase_client
-from utils.security import clear_rate_limit, rate_limited
+from utils.security import rate_limited
 from utils.normalization import normalize_name, normalize_phone
 
 auth_bp = Blueprint(
     "auth",
     __name__
 )
+
+# Also used by routes/setting.py's Library Profile validation.
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# Stored lowercase (ADR-86/TD-118): login matches lower(username), so a
+# username only needs to be typed the same letters, any case.
+USERNAME_PATTERN = re.compile(r"^[a-z0-9_.]{3,30}$")
 
 
 def validate_password(password):
@@ -38,9 +49,49 @@ def validate_password(password):
     return None
 
 
+def validate_registration_fields(full_name, username, mobile, email=""):
+    """Shared by register() and Google onboarding
+    (routes/google_auth.py's complete()). Expects already-normalized
+    values (normalize_name, strip().lower(), normalize_phone, strip()).
+    Returns an error message string, or None."""
+    if not full_name:
+        return "Please enter your full name."
+    if not USERNAME_PATTERN.match(username):
+        return (
+            "Username must be 3-30 characters: lowercase letters, numbers, "
+            "underscore (_) or dot (.)."
+        )
+    if not mobile.isdigit() or len(mobile) != 10:
+        return "Please enter a valid 10-digit mobile number."
+    if email and not EMAIL_PATTERN.match(email):
+        return "Please enter a valid email address, or leave it blank."
+    return None
+
+
+def start_admin_session(admin):
+    """Log an admin in - shared by password login and Google sign-in.
+    `admin` needs admin_id, username and (ADR-85) session_version, which
+    app.py's attach_tenant_supabase_client puts into every tenant JWT as
+    the `sv` claim so a later logout can revoke this session."""
+    session.clear()
+    session["admin_id"] = admin["admin_id"]
+    session["username"] = admin["username"]
+    session["sv"] = int(admin.get("session_version") or 0)
+    session["sv_checked_at"] = int(time.time())
+    session.permanent = True
+
+
+def _login_client_key():
+    """Opaque per-client key for rpc_login_lookup()'s throttle (ADR-86):
+    a hash, so raw client IPs are never stored in the database."""
+    return hashlib.sha256((request.remote_addr or "unknown").encode()).hexdigest()
+
+
 @auth_bp.route("/", methods=["GET", "POST"])
-@rate_limited()
 def login():
+
+    if request.method == "GET" and "admin_id" in session:
+        return redirect("/dashboard")
 
     supabase = get_supabase_client()
 
@@ -48,14 +99,38 @@ def login():
 
         login_id = request.form.get("username", "").strip()
         password = request.form.get("password", "")
+        client_key = _login_client_key()
 
         try:
             response = supabase.rpc(
-                "rpc_login_lookup", {"p_identifier": login_id, "p_password": password}
+                "rpc_login_lookup",
+                {"p_identifier": login_id, "p_password": password, "p_client_key": client_key},
             ).execute()
             row = response.data[0] if response.data else None
-        except APIError:
+        except APIError as e:
             row = None
+            # PGRST202 = function not found: database/supabase_google_auth_
+            # migration.sql hasn't been run yet. Fall back to the old
+            # two-argument signature so login never breaks mid-rollout.
+            if e.code == "PGRST202":
+                try:
+                    response = supabase.rpc(
+                        "rpc_login_lookup", {"p_identifier": login_id, "p_password": password}
+                    ).execute()
+                    row = response.data[0] if response.data else None
+                except APIError:
+                    row = None
+
+        # The throttle lives inside rpc_login_lookup() itself, since that
+        # RPC is anon-callable and a Flask-only check could be bypassed
+        # (ADR-86).
+        if row and row.get("throttled"):
+            flash(
+                "Too many failed attempts for this account. Please wait "
+                "15 minutes and try again, or sign in with Google.",
+                "danger"
+            )
+            return render_template("auth/login.html", show_signup=True)
 
         # rpc_login_lookup only returns a row for a wrong password when the
         # stored hash is still in the old werkzeug format (legacy_hash set)
@@ -75,9 +150,25 @@ def login():
                     build_tenant_client(admin["admin_id"]).rpc(
                         "rpc_migrate_password_hash", {"p_plain_password": password}
                     ).execute()
+                    # Now that the hash is bcrypt, one more lookup lets
+                    # rpc_login_lookup() verify it in Postgres and clear this
+                    # account's earlier failed attempts (ADR-86) - there is
+                    # deliberately no anon-callable "clear failures" RPC.
+                    supabase.rpc(
+                        "rpc_login_lookup",
+                        {"p_identifier": login_id, "p_password": password, "p_client_key": client_key},
+                    ).execute()
                 except APIError:
                     pass
-        elif row:
+            else:
+                try:
+                    supabase.rpc(
+                        "rpc_record_login_failure",
+                        {"p_identifier": login_id, "p_client_key": client_key},
+                    ).execute()
+                except APIError:
+                    pass
+        elif row and row.get("admin_id"):
             admin = row
 
         if admin and admin.get("status") == "archived":
@@ -89,11 +180,7 @@ def login():
             return render_template("auth/login.html", show_signup=True)
 
         if admin:
-            session.clear()
-            session["admin_id"] = admin["admin_id"]
-            session["username"] = admin["username"]
-            session.permanent = True
-            clear_rate_limit("login")
+            start_admin_session(admin)
 
             flash("Login Successful!", "success")
 
@@ -112,6 +199,16 @@ def login():
 @auth_bp.route("/logout")
 def logout():
 
+    # Revoke this session server-side before forgetting it (ADR-85): bumping
+    # admins.session_version makes every outstanding tenant JWT/session
+    # cookie for this admin invalid, so a copied cookie can't be replayed.
+    # Best-effort - logging out must never fail.
+    if "admin_id" in session:
+        try:
+            get_supabase_client().rpc("rpc_bump_session_version").execute()
+        except APIError:
+            current_app.logger.warning("Could not bump session_version on logout")
+
     session.clear()
 
     flash("Logged out successfully.", "success")
@@ -120,6 +217,7 @@ def logout():
 
 
 @auth_bp.route("/register", methods=["GET", "POST"])
+@rate_limited(limit=10, window_seconds=3600)
 def register():
 
     supabase = get_supabase_client()
@@ -127,15 +225,15 @@ def register():
     if request.method == "POST":
 
         full_name = normalize_name(request.form.get("full_name", ""))
-        username = request.form.get("username", "").strip()
+        username = request.form.get("username", "").strip().lower()
         mobile = normalize_phone(request.form.get("mobile", ""))
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
 
-        # Mobile validation
-        if not mobile.isdigit() or len(mobile) != 10:
-            flash("Please enter a valid 10-digit mobile number.", "danger")
+        error = validate_registration_fields(full_name, username, mobile, email)
+        if error:
+            flash(error, "danger")
             return redirect("/register")
 
         # Password match
@@ -180,82 +278,10 @@ def register():
     return render_template("auth/register.html")
 
 
-@auth_bp.route("/forgot-password", methods=["GET", "POST"])
-@rate_limited(limit=3, window_seconds=900)
+@auth_bp.route("/forgot-password")
 def forgot_password():
-
-    if not current_app.config["ENABLE_SELF_SERVICE_PASSWORD_RESET"] and not current_app.testing:
-        flash("Password reset is disabled. Contact your library administrator.", "danger")
-        return redirect(url_for("auth.login"))
-
-    if request.method == "POST":
-
-        full_name = request.form.get("full_name", "").strip()
-        mobile = request.form.get("mobile", "").strip()
-        new_password = request.form.get("new_password", "")
-        confirm_password = request.form.get("confirm_password", "")
-
-        # Mobile format check
-        if not mobile.isdigit() or len(mobile) != 10:
-            flash("Please enter a valid 10-digit mobile number.", "danger")
-            return redirect("/forgot-password")
-
-        # Password match
-        if new_password != confirm_password:
-            flash("Passwords do not match.", "danger")
-            return redirect("/forgot-password")
-
-        # Password strength
-        error = validate_password(new_password)
-        if error:
-            flash(error, "danger")
-            return redirect("/forgot-password")
-
-        supabase = get_supabase_client()
-
-        # mobile is UNIQUE, so this returns at most one row; full name is
-        # then compared case-insensitively in Python. Require BOTH full
-        # name AND mobile to match — prevents reset with just a known
-        # phone number. Goes through a SECURITY DEFINER RPC, not a direct
-        # table read, since the anon-role pre-login client has no admins
-        # SELECT policy (ADR-75).
-        try:
-            response = supabase.rpc("rpc_forgot_password_lookup", {"p_mobile": mobile}).execute()
-            admin = response.data[0] if response.data else None
-        except APIError:
-            admin = None
-        if admin and admin["full_name"].lower() != full_name.lower():
-            admin = None
-
-        if not admin:
-            flash(
-                "No account found with that name and mobile number.",
-                "danger"
-            )
-            return redirect("/forgot-password")
-
-        hashed_password = generate_password_hash(new_password)
-
-        # full_name/mobile are passed through again here and re-verified
-        # INSIDE rpc_reset_password itself (not just by the lookup+compare
-        # above) - the RPC no longer trusts admin_id alone, so this call
-        # can't be replayed against a different admin_id by anyone who
-        # only has one admin's identity details.
-        try:
-            supabase.rpc("rpc_reset_password", {
-                "p_admin_id": admin["admin_id"],
-                "p_full_name": admin["full_name"],
-                "p_mobile": mobile,
-                "p_new_password_hash": hashed_password,
-            }).execute()
-        except APIError:
-            flash("Something went wrong. Please try again.", "danger")
-            return redirect("/forgot-password")
-
-        clear_rate_limit("forgot_password")
-
-        flash("Password changed successfully. Please login.", "success")
-
-        return redirect(url_for("auth.login"))
-
+    """Account recovery is "sign in with Google" (ADR-84) - free, and Google
+    verifies the identity. The old full-name + mobile reset was removed:
+    anyone who knew those two public-ish details could take over an
+    account (QA audit 2026-10-03)."""
     return render_template("auth/forgot_password.html")

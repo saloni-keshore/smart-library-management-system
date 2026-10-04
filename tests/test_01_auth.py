@@ -1,9 +1,23 @@
 """Auth: login, logout, register, forgot-password."""
 import re
 
+import pytest
+
 from app import create_app
 from database.supabase_client import get_service_role_client
-from tests.conftest import get_admin_by_username
+from tests.conftest import _rand, _rand_mobile, get_admin_by_username
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    """rpc_login_lookup() counts failures in login_failures (ADR-86), and
+    these tests deliberately fail logins against the shared `sona` account
+    - start each test with a clean slate so the throttle never trips on
+    tests that aren't about it."""
+    try:
+        get_service_role_client().table("login_failures").delete().neq("id", -1).execute()
+    except Exception:
+        pass  # migration not applied yet - nothing to clear
 
 
 # ---------------------------------------------------------------------------
@@ -113,11 +127,23 @@ def test_login_missing_form_fields_entirely(client):
     assert resp.status_code == 200
 
 
-def test_login_case_sensitivity(client):
-    resp = client.post("/", data={"username": "SONA", "password": "mylove143"})
-    assert resp.status_code == 200
-    # username lookup is case-sensitive SQL '=' compare; expect failure
-    assert b"Invalid username" in resp.data
+def test_login_username_is_case_insensitive(client):
+    """TD-118/ADR-86: a phone keyboard auto-capitalising "Sona" (or caps
+    lock) must not break login - rpc_login_lookup() matches lower(username)."""
+    for typed in ("SONA", "Sona"):
+        resp = client.post(
+            "/", data={"username": typed, "password": "mylove143"}, follow_redirects=False
+        )
+        assert resp.status_code == 302, typed
+        assert resp.headers["Location"].endswith("/dashboard")
+        client.get("/logout")
+
+
+def test_login_page_redirects_when_already_logged_in(client):
+    client.post("/", data={"username": "sona", "password": "mylove143"})
+    resp = client.get("/", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/dashboard")
 
 
 # ---------------------------------------------------------------------------
@@ -285,38 +311,77 @@ def test_register_password_no_letter(client):
 
 
 def test_register_empty_full_name(client):
+    """QA audit 2026-10-03: a blank full name used to be accepted. Fresh
+    username/mobile each run - the old buggy behavior left rows behind."""
+    username = f"qa_noname_{_rand()}"
     resp = client.post(
         "/register",
         data={
-            "full_name": "",
-            "username": "qa_emptyname",
-            "mobile": "9812345604",
+            "full_name": "   ",
+            "username": username,
+            "mobile": _rand_mobile(),
             "email": "en@example.com",
             "password": "GoodPass1",
             "confirm_password": "GoodPass1",
         },
         follow_redirects=True,
     )
-    # No server-side validation exists for empty full_name; row is created regardless
-    admin = get_admin_by_username("qa_emptyname")
-    assert admin is not None
-    assert admin["full_name"] == ""
+    assert b"enter your full name" in resp.data
+    assert get_admin_by_username(username) is None
 
 
-def test_register_empty_username(client):
+@pytest.mark.parametrize("username", ["", "   ", "ab", "has space", "bad!chars"])
+def test_register_invalid_username_rejected(client, username):
+    """QA audit 2026-10-03: a whitespace-only username created an account."""
+    mobile = _rand_mobile()
     resp = client.post(
         "/register",
         data={
             "full_name": "Empty User",
-            "username": "",
-            "mobile": "9812345605",
+            "username": username,
+            "mobile": mobile,
             "email": "eu@example.com",
             "password": "GoodPass1",
             "confirm_password": "GoodPass1",
         },
         follow_redirects=True,
     )
-    assert resp.status_code == 200
+    assert b"Username must be 3-30 characters" in resp.data
+    supabase = get_service_role_client()
+    assert not supabase.table("admins").select("admin_id").eq("mobile", mobile).execute().data
+
+
+def test_register_invalid_email_rejected(client):
+    resp = client.post(
+        "/register",
+        data={
+            "full_name": "Bad Email",
+            "username": "qa_bademail_x",
+            "mobile": "9812345609",
+            "email": "not-an-email",
+            "password": "GoodPass1",
+            "confirm_password": "GoodPass1",
+        },
+        follow_redirects=True,
+    )
+    assert b"valid email address" in resp.data
+    assert get_admin_by_username("qa_bademail_x") is None
+
+
+def test_register_stores_username_lowercase_and_blocks_case_duplicate(client, new_admin):
+    resp = client.post(
+        "/register",
+        data={
+            "full_name": "Case Dup",
+            "username": new_admin["username"].upper(),
+            "mobile": "9812345616",
+            "email": "",
+            "password": "GoodPass1",
+            "confirm_password": "GoodPass1",
+        },
+        follow_redirects=True,
+    )
+    assert b"Username already exists" in resp.data
 
 
 def test_register_sql_injection_username(client):
@@ -376,169 +441,46 @@ def test_register_role_hardcoded_admin_capital(client):
 
 
 # ---------------------------------------------------------------------------
-# Forgot password
+# Forgot password - Google recovery only (ADR-84)
 # ---------------------------------------------------------------------------
 
-def _register(client, username, mobile, full_name="FP Tester", password="OrigPass1"):
-    client.post(
-        "/register",
-        data={
-            "full_name": full_name,
-            "username": username,
-            "mobile": mobile,
-            "email": f"{username}@example.com",
-            "password": password,
-            "confirm_password": password,
-        },
-        follow_redirects=True,
-    )
+def test_forgot_password_page_offers_google_recovery(client):
+    resp = client.get("/forgot-password")
+    assert resp.status_code == 200
+    assert b"Recover with Google" in resp.data
+    assert b"/auth/google/start?intent=recover" in resp.data
 
 
-def test_forgot_password_success(client):
-    _register(client, "qa_fp_ok", "9812345610", full_name="Forgot Pw Ok")
+def test_forgot_password_name_and_mobile_reset_is_gone(client, new_admin):
+    """QA audit 2026-10-03: anyone who knew an admin's full name + mobile
+    could set a new password. The POST handler no longer exists."""
     resp = client.post(
         "/forgot-password",
         data={
-            "full_name": "Forgot Pw Ok",
-            "mobile": "9812345610",
-            "new_password": "NewPass123",
-            "confirm_password": "NewPass123",
-        },
-        follow_redirects=True,
-    )
-    assert b"Password changed successfully" in resp.data
-    login_resp = client.post(
-        "/", data={"username": "qa_fp_ok", "password": "NewPass123"}, follow_redirects=False
-    )
-    assert login_resp.status_code == 302
-
-
-def test_forgot_password_case_insensitive_name_match(client):
-    _register(client, "qa_fp_case", "9812345611", full_name="Case Match")
-    resp = client.post(
-        "/forgot-password",
-        data={
-            "full_name": "CASE match",
-            "mobile": "9812345611",
-            "new_password": "NewPass123",
-            "confirm_password": "NewPass123",
-        },
-        follow_redirects=True,
-    )
-    assert b"Password changed successfully" in resp.data
-
-
-def test_forgot_password_wrong_name(client):
-    _register(client, "qa_fp_wrongname", "9812345612", full_name="Real Name")
-    resp = client.post(
-        "/forgot-password",
-        data={
-            "full_name": "Totally Wrong Name",
-            "mobile": "9812345612",
-            "new_password": "NewPass123",
-            "confirm_password": "NewPass123",
-        },
-        follow_redirects=True,
-    )
-    assert b"No account found" in resp.data
-
-
-def test_forgot_password_mobile_only_no_name_should_not_reset(client):
-    """Security: mobile alone (without matching name) must not allow reset."""
-    _register(client, "qa_fp_secure", "9812345613", full_name="Secure Name")
-    resp = client.post(
-        "/forgot-password",
-        data={
-            "full_name": "",
-            "mobile": "9812345613",
+            "full_name": new_admin["full_name"],
+            "mobile": new_admin["mobile"],
             "new_password": "Hacked123",
             "confirm_password": "Hacked123",
         },
-        follow_redirects=True,
     )
-    assert b"No account found" in resp.data
+    assert resp.status_code == 405
     login_resp = client.post(
-        "/", data={"username": "qa_fp_secure", "password": "Hacked123"}
+        "/", data={"username": new_admin["username"], "password": "Hacked123"}
     )
     assert b"Invalid username" in login_resp.data
 
 
-def test_forgot_password_mismatch(client):
-    _register(client, "qa_fp_mismatch", "9812345614")
-    resp = client.post(
-        "/forgot-password",
-        data={
-            "full_name": "FP Tester",
-            "mobile": "9812345614",
-            "new_password": "NewPass123",
-            "confirm_password": "Different123",
-        },
-        follow_redirects=True,
-    )
-    assert b"do not match" in resp.data
+def test_forgot_password_rpcs_dropped():
+    from database.supabase_client import build_anon_client
+    from postgrest.exceptions import APIError
+    with pytest.raises(APIError):
+        build_anon_client().rpc(
+            "rpc_forgot_password_lookup", {"p_mobile": "9999912345"}
+        ).execute()
 
 
-def test_forgot_password_weak_new_password(client):
-    _register(client, "qa_fp_weak", "9812345615")
-    resp = client.post(
-        "/forgot-password",
-        data={
-            "full_name": "FP Tester",
-            "mobile": "9812345615",
-            "new_password": "weak",
-            "confirm_password": "weak",
-        },
-        follow_redirects=True,
-    )
-    assert b"at least 8 characters" in resp.data
-
-
-def test_forgot_password_invalid_mobile_format(client):
-    resp = client.post(
-        "/forgot-password",
-        data={
-            "full_name": "Whoever",
-            "mobile": "notanumber",
-            "new_password": "NewPass123",
-            "confirm_password": "NewPass123",
-        },
-        follow_redirects=True,
-    )
-    assert b"valid 10-digit mobile" in resp.data
-
-
-def test_forgot_password_nonexistent_account(client):
-    resp = client.post(
-        "/forgot-password",
-        data={
-            "full_name": "Ghost User",
-            "mobile": "9999912345",
-            "new_password": "NewPass123",
-            "confirm_password": "NewPass123",
-        },
-        follow_redirects=True,
-    )
-    assert b"No account found" in resp.data
-
-
-def test_forgot_password_empty_everything(client):
-    resp = client.post("/forgot-password", data={}, follow_redirects=True)
-    assert resp.status_code == 200
-    assert b"valid 10-digit mobile" in resp.data
-
-
-def test_forgot_password_disabled_when_flag_is_false():
-    """routes/auth.py's forgot_password() only flashes the disabled message
-    when both the flag is off AND current_app.testing is False - the shared
-    `app`/`client` fixtures run with TESTING=True (conftest.py), which bypasses
-    that branch unconditionally, so this needs its own app instance with
-    TESTING=False to actually exercise it."""
-    disabled_app = create_app({
-        "TESTING": False,
-        "WTF_CSRF_ENABLED": False,
-        "ENABLE_SELF_SERVICE_PASSWORD_RESET": False,
-    })
-    with disabled_app.test_client() as disabled_client:
-        resp = disabled_client.get("/forgot-password", follow_redirects=True)
-    assert b"Password reset is disabled" in resp.data
-    assert b"Reset Password" not in resp.data
+def test_google_buttons_hidden_when_disabled():
+    disabled_app = create_app({"TESTING": True, "GOOGLE_AUTH_ENABLED": False})
+    with disabled_app.test_client() as c:
+        assert b"Continue with Google" not in c.get("/").data
+        assert b"Recover with Google" not in c.get("/forgot-password").data

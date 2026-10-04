@@ -10,11 +10,11 @@ authenticate as the `authenticated` Postgres role via a short-lived,
 tenant-scoped JWT, so RLS policies actually apply. See
 docs/DECISIONS.md ADR-75 and database/supabase_rls_migration.sql.
 
-Three kinds of client exist here:
+Five kinds of client exist here:
   - build_anon_client(): no tenant identity yet (pre-login). Can only call
     the SECURITY DEFINER admins-bootstrap RPCs (rpc_login_lookup,
-    rpc_register_admin, rpc_forgot_password_lookup, rpc_reset_password) -
-    RLS grants the `anon` role no table policies at all.
+    rpc_register_admin, rpc_record_login_failure) - RLS grants the `anon`
+    role no table policies at all.
   - build_tenant_client(admin_id): scoped to one tenant via a freshly
     signed JWT, built fresh on every call - NEVER cached or reused across
     requests. The app runs multi-threaded (waitress); postgrest-py mutates
@@ -22,6 +22,14 @@ Three kinds of client exist here:
     concurrent requests from different tenants would be a data race, not
     just inefficient. A fresh httpx-backed Client costs no network I/O to
     construct.
+  - build_pkce_auth_client(): an anon client whose Supabase Auth half is
+    set up for the server-side Google OAuth (PKCE) flow, keeping the PKCE
+    code verifier in the Flask session between /auth/google/start and
+    /auth/google/callback (ADR-84).
+  - build_user_token_client(access_token): authenticated with a Supabase
+    Auth user's own access token (from that Google code exchange), so
+    rpc_google_login_lookup()/rpc_register_admin_google() can read the
+    Google identity from auth.uid() - verified by Postgres, not by us.
   - get_service_role_client(): the old single-admin-per-database behavior,
     renamed and narrowed. Bypasses RLS entirely - only for offline
     scripts/tooling (scripts/*.py, test fixtures) that legitimately need
@@ -42,9 +50,10 @@ from functools import lru_cache
 
 import jwt
 from dotenv import load_dotenv
-from flask import g, has_request_context
+from flask import g, has_request_context, session
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
+from supabase_auth import SyncSupportedStorage
 
 load_dotenv()
 
@@ -80,26 +89,75 @@ def build_anon_client() -> Client:
     return create_client(_url(), _anon_key())
 
 
-def build_tenant_client(admin_id: int) -> Client:
+def build_tenant_client(admin_id: int, session_version: int | None = None) -> Client:
     """A brand-new client, scoped to admin_id for the lifetime of one
     request only, via a freshly signed JWT. Never cache or reuse this
-    across requests - see module docstring."""
+    across requests - see module docstring.
+
+    session_version (ADR-85) goes into the JWT as the `sv` claim;
+    current_admin_id() rejects the JWT once the admin's
+    admins.session_version has moved past it (logout, password change).
+    Offline scripts/tests that omit it are not version-checked."""
     now = int(time.time())
-    token = jwt.encode(
-        {
-            "role": "authenticated",
-            "aud": "authenticated",
-            "admin_id": admin_id,
-            "iat": now,
-            "exp": now + _TENANT_JWT_TTL_SECONDS,
-        },
-        _jwt_secret(),
-        algorithm=_JWT_ALGORITHM,
-    )
+    claims = {
+        "role": "authenticated",
+        "aud": "authenticated",
+        "admin_id": admin_id,
+        "iat": now,
+        "exp": now + _TENANT_JWT_TTL_SECONDS,
+    }
+    if session_version is not None:
+        claims["sv"] = int(session_version)
+    token = jwt.encode(claims, _jwt_secret(), algorithm=_JWT_ALGORITHM)
     return create_client(
         _url(),
         _anon_key(),
         options=SyncClientOptions(headers={"Authorization": f"Bearer {token}"}),
+    )
+
+
+class _FlaskSessionStorage(SyncSupportedStorage):
+    """Supabase Auth storage backed by the Flask session cookie. Only the
+    PKCE code verifier ever lands here: it has to survive from
+    /auth/google/start to /auth/google/callback, two separate requests
+    that each build their own client."""
+
+    _PREFIX = "sb_auth:"
+
+    def get_item(self, key):
+        return session.get(self._PREFIX + key)
+
+    def set_item(self, key, value):
+        session[self._PREFIX + key] = value
+
+    def remove_item(self, key):
+        session.pop(self._PREFIX + key, None)
+
+
+def build_pkce_auth_client() -> Client:
+    """Anon client for the Google OAuth PKCE flow (ADR-84). Never persists
+    or auto-refreshes a Supabase Auth session - Flask's own session cookie
+    stays the only login state; the Google access token is used once in the
+    callback and discarded."""
+    return create_client(
+        _url(),
+        _anon_key(),
+        options=SyncClientOptions(
+            flow_type="pkce",
+            storage=_FlaskSessionStorage(),
+            auto_refresh_token=False,
+            persist_session=False,
+        ),
+    )
+
+
+def build_user_token_client(access_token: str) -> Client:
+    """A client authenticated as a Supabase Auth user (their Google sign-in
+    access token), for the two Google RPCs that read auth.uid()."""
+    return create_client(
+        _url(),
+        _anon_key(),
+        options=SyncClientOptions(headers={"Authorization": f"Bearer {access_token}"}),
     )
 
 

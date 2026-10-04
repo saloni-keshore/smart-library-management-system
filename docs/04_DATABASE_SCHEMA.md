@@ -9,7 +9,7 @@
 |---|---|---|
 | `admin_id` | INTEGER PK AUTOINCREMENT | |
 | `full_name` | TEXT NOT NULL | |
-| `username` | TEXT NOT NULL UNIQUE | |
+| `username` | TEXT NOT NULL UNIQUE | As of 2026-10-03 (ADR-86): stored lowercase by `rpc_register_admin`/`rpc_register_admin_google`, matched case-insensitively by `rpc_login_lookup`, and a unique index on `lower(username)` blocks case-variant duplicates |
 | `password` | TEXT NOT NULL | Werkzeug scrypt hash for any admin who hasn't logged in since 2026-09-18 (ADR-77); a bcrypt hash (`$2...`, via pgcrypto) for any admin who has — `rpc_login_lookup()` distinguishes the two by prefix (`LIKE '$2%'`) and `rpc_migrate_password_hash()` lazily upgrades scrypt to bcrypt on first successful login post-fix. Only a bcrypt hash is ever verified inside Postgres itself/never leaves it; a scrypt hash is still returned once to `routes/auth.py` for Python-side `check_password_hash()`, same as before ADR-77 |
 | `mobile` | TEXT NOT NULL UNIQUE | |
 | `email` | TEXT | |
@@ -17,8 +17,23 @@
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 | `status` | TEXT NOT NULL DEFAULT `'active'` | Added 2026-09-16 (ADR-75/ADR-76) — `'active'` or `'archived'`. Set by `rpc_archive_tenant()` (Settings → Data & Backup's Danger Zone); checked by `rpc_login_lookup()`/`routes/auth.py`'s `login()`, which refuses login and shows a distinct "This account has been archived" message when `'archived'`. **As of 2026-09-18 (ADR-77): also checked by `current_admin_id()` itself** — an admin archived mid-session immediately loses RLS access on every tenant table and both ADR-76 data-lifecycle RPCs, not just future login attempts. No route flips it back — reactivating an archived account is unbuilt (PF-9) |
 | `archived_at` | TIMESTAMP | Added 2026-09-16 (ADR-75/ADR-76) — stamped by `rpc_archive_tenant()`, `NULL` otherwise |
+| `auth_user_id` | UUID UNIQUE | Added 2026-10-03 (ADR-84) — the Supabase Auth user id of the Google account connected to this library; `NULL` if none. Set by `rpc_link_google()`/`rpc_register_admin_google()`, cleared by `rpc_unlink_google()` |
+| `google_email` | TEXT | Added 2026-10-03 (ADR-84) — display only (Settings → Security "Connected as …"); identity is always `auth_user_id` |
+| `has_password` | BOOLEAN NOT NULL DEFAULT `true` | Added 2026-10-03 (ADR-84) — `false` for a library created by Google sign-in until the admin sets a password; `rpc_unlink_google()` refuses while `false` |
+| `session_version` | INTEGER NOT NULL DEFAULT `0` | Added 2026-10-03 (ADR-85) — copied into every tenant JWT as the `sv` claim; `current_admin_id()` rejects a stale one. Bumped by `rpc_bump_session_version()` on logout and password change |
 
 The tenant root — every other admin-scoped table references `admin_id` back to this table.
+
+**As of 2026-10-03 (ADR-84/85/86), `database/supabase_google_auth_migration.sql`** adds the four columns above, the `login_failures` table below, Google sign-in RPCs (`rpc_google_login_lookup`, `rpc_register_admin_google`, `rpc_link_google`, `rpc_unlink_google` — the first two read the identity only from the caller's Supabase Auth JWT via `auth.uid()`), session RPCs (`rpc_bump_session_version`, `rpc_session_valid`), and redefines `current_admin_id()` (also checks `sv`), `rpc_login_lookup(p_identifier, p_password, p_client_key)` (case-insensitive, throttled, returns `session_version`/`throttled`) and `rpc_register_admin` (case-insensitive uniqueness). It **drops** `rpc_forgot_password_lookup` and `rpc_reset_password` — the name+mobile reset no longer exists.
+
+### `login_failures`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BIGINT PK IDENTITY | |
+| `key` | TEXT NOT NULL | `pair:<sha256 of client IP>|<lower identifier>` or `id:<lower identifier>` |
+| `failed_at` | TIMESTAMPTZ NOT NULL DEFAULT `now()` | Rows older than 1 day are pruned on every login attempt |
+
+Added 2026-10-03 (ADR-86). RLS enabled with no policies — only `rpc_login_lookup()`/`rpc_record_login_failure()` (SECURITY DEFINER) read or write it. Not tenant-owned (no `admin_id`), so it is not part of the Data & Backup export.
 
 **As of 2026-09-16 (ADR-75), `admins` is a shared table across every tenant, not one row per Supabase project.** RLS on `admins` itself grants only `admins_self_select`/`admins_self_update` (own row only, no INSERT/DELETE policy for any role) — signup, login lookup, forgot-password, archive, and permanent delete all go through `SECURITY DEFINER` RPCs (`rpc_register_admin`, `rpc_login_lookup`, `rpc_forgot_password_lookup`, `rpc_reset_password`, `rpc_archive_tenant`, `rpc_delete_tenant_data`, all originally defined in `database/supabase_rls_migration.sql`) instead of direct table reads/writes from the anon/authenticated client, since "look up a row across every tenant by username/mobile" can't be expressed as an `admin_id`-scoped RLS policy. `routes/auth.py`'s old "registration available only during initial setup" gate (`admin_count`/`current_app.testing`) is gone — registration is always open, and `login()`'s `show_signup` is unconditionally `True`. Username/mobile uniqueness stays global across every tenant (deliberate — `admins` is the tenant root, checked inside `rpc_register_admin()` to close a check-then-insert race the old two-`SELECT`s-plus-`INSERT` sequence had).
 

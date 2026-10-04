@@ -12,6 +12,7 @@ from utils.branding import branding_src
 from utils.security import csrf_token, validate_csrf
 
 from routes.auth import auth_bp
+from routes.google_auth import google_auth_bp
 from routes.dashboard import dashboard_bp
 from routes.enquiries import enquiry_bp
 from routes.student import student_bp
@@ -138,6 +139,7 @@ def create_app(test_config=None):
     app.jinja_env.globals["branding_src"] = branding_src
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(google_auth_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(enquiry_bp)
     app.register_blueprint(student_bp)
@@ -161,7 +163,10 @@ def create_app(test_config=None):
         never a shared/cached one (ADR-75). Must run before any route or
         context processor calls get_supabase_client()."""
         admin_id = session.get("admin_id")
-        g.supabase = build_tenant_client(admin_id) if admin_id else build_anon_client()
+        g.supabase = (
+            build_tenant_client(admin_id, session.get("sv"))
+            if admin_id else build_anon_client()
+        )
 
     @app.before_request
     def enforce_request_security():
@@ -181,7 +186,10 @@ def create_app(test_config=None):
 
     @app.context_processor
     def inject_security_values():
-        return {"csrf_token": csrf_token}
+        return {
+            "csrf_token": csrf_token,
+            "google_auth_enabled": app.config.get("GOOGLE_AUTH_ENABLED", False),
+        }
 
     @app.errorhandler(400)
     def bad_request(error):

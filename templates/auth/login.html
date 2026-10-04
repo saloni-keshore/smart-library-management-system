@@ -122,6 +122,13 @@ Login
 
     </form>
 
+    {% if google_auth_enabled %}
+    <div class="d-flex align-items-center my-3 text-muted small">
+        <hr class="flex-grow-1"><span class="px-2">or</span><hr class="flex-grow-1">
+    </div>
+    {% with intent="login", label="Continue with Google" %}{% include "components/google_button.html" %}{% endwith %}
+    {% endif %}
+
     <div class="text-center mt-3">
 
         <span class="text-muted">

@@ -3,6 +3,7 @@ import io
 import json
 import re
 import secrets
+import time
 from datetime import datetime
 
 from flask import (
@@ -43,7 +44,7 @@ from database.backup_queries import get_backup_info, record_backup
 from database.security_settings_queries import (
     get_security_settings, save_security_settings
 )
-from routes.auth import validate_password
+from routes.auth import EMAIL_PATTERN, validate_password
 from utils.branding import branding_src
 from utils.security import login_required, rate_limited
 from utils.normalization import (
@@ -63,7 +64,6 @@ setting_bp = Blueprint(
 )
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
-EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class UploadStorageUnavailable(Exception):
@@ -1244,12 +1244,31 @@ def security_settings():
 
         form_type = request.form.get("form_type")
 
+        if form_type == "unlink_google":
+            try:
+                get_supabase_client().rpc("rpc_unlink_google").execute()
+            except APIError as e:
+                if e.message == "no_password_set":
+                    flash(
+                        "Set a password first - otherwise you would have no way "
+                        "to sign in after disconnecting Google.",
+                        "danger"
+                    )
+                else:
+                    flash("Something went wrong. Please try again.", "danger")
+                return redirect(url_for("setting.security_settings"))
+            flash("Google account disconnected.", "success")
+            return redirect(url_for("setting.security_settings"))
+
         if form_type == "password":
             current_password = request.form.get("current_password", "")
             new_password = request.form.get("new_password", "")
             confirm_password = request.form.get("confirm_password", "")
 
-            if not _verify_current_password(current_password):
+            # The current password isn't asked for right after "Recover
+            # with Google" (routes/google_auth.py, ADR-84), or for a
+            # Google-created account that has never had one.
+            if not _password_reset_allowed(admin_id) and not _verify_current_password(current_password):
                 flash("Current password is incorrect.", "danger")
                 return redirect(url_for("setting.security_settings"))
 
@@ -1266,11 +1285,23 @@ def security_settings():
 
             try:
                 supabase.table("admins").update(
-                    {"password": generate_password_hash(new_password)}
+                    {"password": generate_password_hash(new_password), "has_password": True}
                 ).eq("admin_id", admin_id).execute()
             except APIError:
                 flash("Something went wrong. Please try again.", "danger")
                 return redirect(url_for("setting.security_settings"))
+
+            session.pop("pw_reset_until", None)
+
+            # Sign out every other device (ADR-85), then keep this one
+            # signed in under the new session version.
+            try:
+                new_version = supabase.rpc("rpc_bump_session_version").execute().data
+            except APIError:
+                new_version = None
+            if isinstance(new_version, int):
+                session["sv"] = new_version
+                session["sv_checked_at"] = int(time.time())
 
             flash("Password changed successfully.", "success")
             return redirect(url_for("setting.security_settings"))
@@ -1294,12 +1325,43 @@ def security_settings():
         return redirect(url_for("setting.security_settings"))
 
     settings = get_security_settings(admin_id)
+    account = _admin_auth_info(admin_id)
 
     return render_template(
         "settings/security_settings.html",
         settings=settings,
         timeout_options=SESSION_TIMEOUT_OPTIONS,
+        google_email=account.get("google_email"),
+        has_password=account.get("has_password", True),
+        reset_mode=_password_reset_allowed(admin_id, account),
     )
+
+
+def _admin_auth_info(admin_id):
+    """google_email/has_password for the Security page (ADR-84). Falls
+    back to "password account, no Google" if the columns don't exist yet
+    (migration not applied)."""
+    try:
+        rows = (
+            get_supabase_client().table("admins")
+            .select("google_email, has_password")
+            .eq("admin_id", admin_id)
+            .execute()
+            .data
+        )
+    except APIError:
+        rows = None
+    return rows[0] if rows else {}
+
+
+def _password_reset_allowed(admin_id, account=None):
+    """True right after "Recover with Google" (a 10-minute window), or for
+    a Google-created account that has never set a password."""
+    if int(session.get("pw_reset_until", 0)) > int(time.time()):
+        return True
+    if account is None:
+        account = _admin_auth_info(admin_id)
+    return account.get("has_password") is False
 
 
 def _allowed_file(filename):

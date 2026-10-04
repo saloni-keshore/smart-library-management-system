@@ -7,7 +7,11 @@ import time
 from collections import defaultdict, deque
 from functools import wraps
 
+import httpx
 from flask import current_app, flash, redirect, request, session, url_for
+from postgrest.exceptions import APIError
+
+from database.supabase_client import get_supabase_client
 
 _attempts = defaultdict(deque)
 _attempt_lock = threading.Lock()
@@ -56,17 +60,46 @@ def clear_rate_limit(action):
         _attempts.pop((action, request.remote_addr or "unknown"), None)
 
 
+# How often login_required re-asks the database whether this session is
+# still valid (ADR-85). RLS already refuses a revoked session's data on
+# every query; this only turns "empty pages" into a clean redirect.
+SESSION_RECHECK_SECONDS = 300
+
+
+def _session_still_valid():
+    """False once this session was revoked (logout elsewhere, password
+    change) or the account archived. Sessions from before ADR-85 have no
+    `sv` and can't be revoked, so they are ended once here."""
+    if "sv" not in session:
+        return False
+    now = int(time.time())
+    if now - int(session.get("sv_checked_at", 0)) < SESSION_RECHECK_SECONDS:
+        return True
+    try:
+        valid = bool(get_supabase_client().rpc("rpc_session_valid").execute().data)
+    except (APIError, httpx.HTTPError):
+        # A database hiccup must not log people out; RLS still guards data.
+        return True
+    if valid:
+        session["sv_checked_at"] = now
+    return valid
+
+
 def login_required(view):
     """Replaces the `if "admin_id" not in session: return redirect("/")`
     check duplicated inline across every route file. App-layer
     defense-in-depth on top of Row-Level Security (ADR-75), not a
     replacement for it - RLS is what actually makes cross-tenant data
-    inaccessible; this decorator's job is to keep an unauthenticated
-    visitor from ever seeing a broken/empty page instead of being sent to
-    login."""
+    inaccessible; this decorator's job is to keep an unauthenticated (or
+    revoked, ADR-85) visitor from ever seeing a broken/empty page instead
+    of being sent to login."""
     @wraps(view)
     def wrapped(*args, **kwargs):
         if "admin_id" not in session:
+            return redirect("/")
+        if not _session_still_valid():
+            session.clear()
+            flash("Your session has ended. Please log in again.", "warning")
             return redirect("/")
         return view(*args, **kwargs)
     return wrapped

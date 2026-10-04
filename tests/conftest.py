@@ -47,7 +47,7 @@ def app():
     return create_app({
         "TESTING": True,
         "WTF_CSRF_ENABLED": False,
-        "ENABLE_SELF_SERVICE_PASSWORD_RESET": True,
+        "GOOGLE_AUTH_ENABLED": True,
     })
 
 
