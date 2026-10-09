@@ -1,0 +1,21 @@
+{% extends "public/base.html" %}
+{% block title %}Privacy Policy | Smart Library Management{% endblock %}
+{% block content %}
+<article class="legal-page">
+    <span class="eyebrow">Your information</span><h1>Privacy Policy</h1>
+    <p class="legal-intro">This policy describes how Smart Library Management handles information when you use the service, including when you sign in with Google.</p>
+    <h2>Information we handle</h2>
+    <p>We handle account details you provide, such as your name, username, mobile number and email address, as well as the library records you enter while using the service. These records may include member, membership, enquiry, payment, expense and library settings information.</p>
+    <h2>Google Sign-In information</h2>
+    <p>If you choose Google Sign-In, the sign-in flow provides basic identity information: your Google account identifier, email address, and profile name when available. We use the identifier and email to verify your sign-in and match or link your account. The email is also used for account recovery, and the profile name may be used to prefill your name when you create an account. The application does not use Google APIs to read Gmail, Drive, contacts, or other Google content.</p>
+    <h2>How information is stored</h2>
+    <p>Supabase Auth stores the authentication identity, and the application database stores the linked Google account identifier and email with the Smart Library account. During new-account setup, a temporary Supabase Auth access token is encrypted and held in protected server-side storage with the name and email needed to display the signup form. It is valid for no more than 10 minutes; after that, it cannot be used to complete signup. The browser session holds only an opaque temporary lookup identifier for this pending signup. The OAuth flow also keeps its PKCE verifier in the temporary session so the sign-in callback can be completed. After successful signup, the application attempts to delete the temporary record. Expired records are rejected and are cleaned up opportunistically during later signup activity; cleanup is not scheduled. The app does not use the access token to read Google content. Application hosting and database services are operated by the providers configured for the service.</p>
+    <h2>How information is used and shared</h2>
+    <p>We use information to provide and secure the service, authenticate users, operate library features, and support account recovery. Information is processed by Google to complete Google authentication and by the service providers that host or process the application, authentication and database. The application has no advertising feature and does not use account information for advertising.</p>
+    <h2>Keeping information safe</h2>
+    <p>We use account authentication, access controls and session security measures to protect information. Keep your sign-in credentials private and contact your service administrator if you believe an account has been accessed without permission.</p>
+    <h2>Your choices</h2>
+    <p>You can choose not to use Google Sign-In and use another available sign-in method. Account information can be managed through the service's account and library settings, subject to the administrator's role and applicable service requirements.</p>
+    <p class="policy-note">Questions about this policy can be directed to the administrator who manages your Smart Library service.</p>
+</article>
+{% endblock %}

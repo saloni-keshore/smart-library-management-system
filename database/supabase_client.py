@@ -26,6 +26,8 @@ Five kinds of client exist here:
     set up for the server-side Google OAuth (PKCE) flow, keeping the PKCE
     code verifier in the Flask session between /auth/google/start and
     /auth/google/callback (ADR-84).
+  - build_pending_google_signup_client(): a narrowly scoped server JWT for
+    reading/writing expiring pending Google signup credentials under RLS.
   - build_user_token_client(access_token): authenticated with a Supabase
     Auth user's own access token (from that Google code exchange), so
     rpc_google_login_lookup()/rpc_register_admin_google() can read the
@@ -116,6 +118,29 @@ def build_tenant_client(admin_id: int, session_version: int | None = None) -> Cl
     )
 
 
+def build_pending_google_signup_client() -> Client:
+    """A narrowly scoped server identity for pending Google signup rows.
+
+    This JWT has no tenant identity. RLS grants its dedicated claim access to
+    pending_google_signups; ordinary user and tenant JWTs cannot read or
+    change those rows.
+    """
+    now = int(time.time())
+    claims = {
+        "role": "authenticated",
+        "aud": "authenticated",
+        "pending_google_signup_worker": True,
+        "iat": now,
+        "exp": now + 60,
+    }
+    token = jwt.encode(claims, _jwt_secret(), algorithm=_JWT_ALGORITHM)
+    return create_client(
+        _url(),
+        _anon_key(),
+        options=SyncClientOptions(headers={"Authorization": f"Bearer {token}"}),
+    )
+
+
 class _FlaskSessionStorage(SyncSupportedStorage):
     """Supabase Auth storage backed by the Flask session cookie. Only the
     PKCE code verifier ever lands here: it has to survive from
@@ -137,8 +162,9 @@ class _FlaskSessionStorage(SyncSupportedStorage):
 def build_pkce_auth_client() -> Client:
     """Anon client for the Google OAuth PKCE flow (ADR-84). Never persists
     or auto-refreshes a Supabase Auth session - Flask's own session cookie
-    stays the only login state; the Google access token is used once in the
-    callback and discarded."""
+    stays the only login state. The exchanged Supabase Auth access token is
+    used immediately for account lookup and, for new signup, is encrypted in
+    the short-lived server-side pending-signup store."""
     return create_client(
         _url(),
         _anon_key(),

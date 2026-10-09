@@ -22,6 +22,7 @@ rather than an SMS OTP. Setup steps are in docs/DEPLOYMENT.md.
 """
 
 import time
+import secrets
 
 from flask import (
     Blueprint,
@@ -41,6 +42,11 @@ from database.supabase_client import (
     build_user_token_client,
     get_supabase_client,
 )
+from database.google_signup_queries import (
+    delete_pending_google_signup,
+    get_pending_google_signup_token,
+    save_pending_google_signup,
+)
 from routes.auth import start_admin_session, validate_registration_fields
 from utils.normalization import normalize_name, normalize_phone
 
@@ -51,6 +57,7 @@ INTENTS = ("login", "recover", "link")
 # How long after "Recover with Google" the admin may set a new password
 # without typing the current one.
 PASSWORD_RESET_WINDOW_SECONDS = 600
+PENDING_GOOGLE_SIGNUP_TTL_SECONDS = 600
 
 
 def _disabled():
@@ -155,15 +162,26 @@ def callback():
             return redirect(url_for("auth.forgot_password"))
 
         # A new library, created by Google sign-in: ask for the few details
-        # Google doesn't give us. The access token proves the Google
-        # identity to rpc_register_admin_google() in complete().
+        # Google doesn't give us. Keep the bearer token server-side; the
+        # Flask cookie receives only a random lookup handle and display data.
         metadata = user.user_metadata or {}
-        session["google_signup"] = {
-            "access_token": auth_session.access_token,
-            "expires_at": int(auth_session.expires_at or time.time() + 3600),
-            "email": user.email or "",
-            "name": metadata.get("full_name") or metadata.get("name") or "",
-        }
+        now = int(time.time())
+        expires_at = min(
+            int(auth_session.expires_at or now + PENDING_GOOGLE_SIGNUP_TTL_SECONDS),
+            now + PENDING_GOOGLE_SIGNUP_TTL_SECONDS - 5,
+        )
+        if expires_at <= now:
+            flash("That Google sign-in has expired. Please sign in again.", "warning")
+            return redirect(url_for("auth.login"))
+        pending_id = secrets.token_urlsafe(32)
+        save_pending_google_signup(
+            pending_id,
+            auth_session.access_token,
+            expires_at,
+            user.email or "",
+            metadata.get("full_name") or metadata.get("name") or "",
+        )
+        session["google_signup"] = {"pending_id": pending_id}
         return redirect(url_for("google_auth.complete"))
 
     if admin.get("status") == "archived":
@@ -212,15 +230,19 @@ def complete():
     """Create a library for a Google user who doesn't have one yet."""
 
     signup = session.get("google_signup")
-    if not signup:
+    pending_id = signup.get("pending_id") if isinstance(signup, dict) else None
+    if not isinstance(pending_id, str) or len(pending_id) > 128:
+        session.pop("google_signup", None)
         return redirect(url_for("auth.login"))
 
-    if signup["expires_at"] <= int(time.time()) + 30:
+    pending_signup = get_pending_google_signup_token(pending_id)
+    if pending_signup is None:
+        delete_pending_google_signup(pending_id)
         session.pop("google_signup", None)
         flash("That Google sign-in has expired. Please sign in with Google again.", "warning")
         return redirect(url_for("auth.login"))
 
-    form = {"full_name": signup["name"], "username": "", "mobile": ""}
+    form = {"full_name": pending_signup["name"], "username": "", "mobile": ""}
 
     if request.method == "POST":
 
@@ -237,7 +259,7 @@ def complete():
         if not error:
             try:
                 rows = (
-                    build_user_token_client(signup["access_token"])
+                    build_user_token_client(pending_signup["access_token"])
                     .rpc("rpc_register_admin_google", {
                         "p_full_name": form["full_name"],
                         "p_username": form["username"],
@@ -257,6 +279,14 @@ def complete():
                 }.get(e.message, "Something went wrong. Please try again.")
 
             if rows:
+                try:
+                    delete_pending_google_signup(pending_id)
+                except Exception:
+                    # The row is still unusable after its strict TTL. Avoid
+                    # logging exception details that could contain request data.
+                    current_app.logger.error(
+                        "Could not immediately remove a completed pending Google signup."
+                    )
                 start_admin_session(rows[0])
                 flash("Your library account is ready. Welcome!", "success")
                 return redirect("/dashboard")
@@ -266,5 +296,5 @@ def complete():
     return render_template(
         "auth/google_complete.html",
         form=form,
-        google_email=signup["email"],
+        google_email=pending_signup["email"],
     )

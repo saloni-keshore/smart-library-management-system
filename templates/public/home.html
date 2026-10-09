@@ -1,0 +1,27 @@
+{% extends "public/base.html" %}
+{% block title %}Smart Library Management | Library operations, made simpler{% endblock %}
+{% block content %}
+<section class="hero">
+    <div class="hero-copy">
+        <span class="eyebrow">A clearer way to run your library</span>
+        <h1>Make every library day run <span>smarter.</span></h1>
+        <p>Smart Library Management brings the everyday work of a library into one organized place. Keep track of members, memberships, payments and enquiries, and get a clear view of how your library is doing.</p>
+        <a class="primary-link" href="/">Sign in to your library <i class="bi bi-arrow-right"></i></a>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+        <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+        <div class="book-stack"><i class="bi bi-journal-bookmark-fill"></i></div>
+        <div class="art-note note-members"><i class="bi bi-people-fill"></i><span>Members</span></div>
+        <div class="art-note note-payments"><i class="bi bi-wallet2"></i><span>Payments</span></div>
+    </div>
+</section>
+<section class="features">
+    <div class="section-heading"><span class="eyebrow">One place for the essentials</span><h2>Less scattered work. More time for readers.</h2></div>
+    <div class="feature-grid">
+        <article class="feature-card"><span class="feature-icon"><i class="bi bi-person-lines-fill"></i></span><h3>Member records</h3><p>Manage enquiries, admissions and student information in an organized workspace.</p></article>
+        <article class="feature-card"><span class="feature-icon orange"><i class="bi bi-calendar2-check"></i></span><h3>Memberships</h3><p>Track plans, renewals, seat usage and upcoming expirations.</p></article>
+        <article class="feature-card"><span class="feature-icon green"><i class="bi bi-graph-up-arrow"></i></span><h3>Payments and insights</h3><p>Record collections and expenses, review reports and understand library activity.</p></article>
+    </div>
+</section>
+<section class="closing"><h2>Ready to get back to your library?</h2><p>Sign in to continue managing your library.</p><a class="primary-link" href="/">Go to sign in <i class="bi bi-arrow-right"></i></a></section>
+{% endblock %}

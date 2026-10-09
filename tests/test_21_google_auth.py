@@ -10,8 +10,10 @@ provider metadata) signed with the test project's JWT secret, so
 rpc_google_login_lookup()/rpc_register_admin_google() run against the real
 database and read the identity from auth.uid() exactly as in production.
 """
+import hashlib
 import os
 import random
+import secrets
 import string
 import time
 import uuid
@@ -27,6 +29,10 @@ from database.supabase_client import (
     build_tenant_client,
     build_user_token_client,
     get_service_role_client,
+)
+from database.google_signup_queries import (
+    get_pending_google_signup_token,
+    save_pending_google_signup,
 )
 from tests.conftest import _rand_mobile, get_admin_by_username
 
@@ -118,10 +124,37 @@ def test_google_login_with_linked_account(client, new_admin, monkeypatch):
 
 def test_google_login_unknown_account_creates_library(client, monkeypatch):
     uid = str(uuid.uuid4())
-    _fake_google(monkeypatch, uid, f"new_{_rand()}@example.com", name="Asha Verma")
+    access_token = _fake_google(monkeypatch, uid, f"new_{_rand()}@example.com", name="Asha Verma")
 
     resp = _google_flow(client, "login")
     assert resp.headers["Location"].endswith("/auth/google/complete")
+
+    with client.session_transaction() as sess:
+        signup = dict(sess["google_signup"])
+    assert set(signup) == {"pending_id"}
+    pending_id = signup["pending_id"]
+    with client.application.app_context():
+        pending = get_pending_google_signup_token(pending_id)
+    if pending["access_token"] != access_token:
+        raise AssertionError("Pending signup returned a different access credential.")
+    assert pending["email"].endswith("@example.com")
+    assert pending["name"] == "Asha Verma"
+    cookie = client.get_cookie("smart_library_session").value
+    if access_token in cookie:
+        raise AssertionError("The access credential appeared in the Flask session cookie.")
+    session_data = client.application.session_interface.get_signing_serializer(
+        client.application
+    ).loads(cookie)
+    if access_token in repr(session_data):
+        raise AssertionError("The access credential appeared in decoded Flask session data.")
+
+    lookup_hash = hashlib.sha256(pending_id.encode()).hexdigest()
+    stored = get_service_role_client().table("pending_google_signups").select(
+        "lookup_hash,encrypted_access_token"
+    ).eq("lookup_hash", lookup_hash).execute().data
+    assert len(stored) == 1
+    if access_token in stored[0]["encrypted_access_token"]:
+        raise AssertionError("The access credential was not encrypted at rest.")
 
     page = client.get("/auth/google/complete")
     assert b"Asha Verma" in page.data  # pre-filled from Google
@@ -140,6 +173,97 @@ def test_google_login_unknown_account_creates_library(client, monkeypatch):
     assert admin["auth_user_id"] == uid
     assert admin["has_password"] is False
     assert admin["password"].startswith("$2")  # random bcrypt, unusable
+    assert get_pending_google_signup_token(pending_id) is None
+    assert not get_service_role_client().table("pending_google_signups").select(
+        "lookup_hash"
+    ).eq("lookup_hash", lookup_hash).execute().data
+
+
+def test_expired_pending_google_signup_is_rejected(client, monkeypatch):
+    uid = str(uuid.uuid4())
+    _fake_google(monkeypatch, uid, f"expired_{_rand()}@example.com")
+    _google_flow(client, "login")
+    with client.session_transaction() as sess:
+        pending_id = sess["google_signup"]["pending_id"]
+
+    from datetime import datetime, timedelta
+    from database.google_signup_queries import _lookup_hash
+    service_role = get_service_role_client()
+    lookup_hash = _lookup_hash(pending_id)
+    pending_row = service_role.table("pending_google_signups").select(
+        "created_at"
+    ).eq("lookup_hash", lookup_hash).execute().data[0]
+    db_created_at = datetime.fromisoformat(pending_row["created_at"])
+    expired_created_at = db_created_at - timedelta(minutes=2)
+    expired_at = db_created_at - timedelta(minutes=1)
+    service_role.table("pending_google_signups").update({
+        "created_at": expired_created_at.isoformat(),
+        "expires_at": expired_at.isoformat(),
+    }).eq("lookup_hash", lookup_hash).execute()
+
+    try:
+        response = client.get("/auth/google/complete", follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/")
+        with client.application.app_context():
+            assert get_pending_google_signup_token(pending_id) is None
+        with client.session_transaction() as sess:
+            assert "google_signup" not in sess
+    finally:
+        # This test verifies application rejection at expiry. Use the TEST
+        # project's service-role fixture to remove its deliberately expired row.
+        service_role.table("pending_google_signups").delete().eq(
+            "lookup_hash", lookup_hash
+        ).execute()
+
+
+def test_invalid_pending_google_signup_id_is_rejected(client):
+    with client.session_transaction() as sess:
+        sess["google_signup"] = {
+            "pending_id": secrets.token_urlsafe(32),
+        }
+    response = client.get("/auth/google/complete", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
+    with client.session_transaction() as sess:
+        assert "google_signup" not in sess
+
+
+def test_pending_google_signup_records_are_isolated_from_users(app):
+    from database.google_signup_queries import _lookup_hash
+
+    id_a, id_b = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + 300
+    with app.app_context():
+        save_pending_google_signup(id_a, "token-for-a", expires_at, "a@example.com", "A")
+        save_pending_google_signup(id_b, "token-for-b", expires_at, "b@example.com", "B")
+        assert get_pending_google_signup_token(id_a)["access_token"] == "token-for-a"
+        assert get_pending_google_signup_token(id_b)["access_token"] == "token-for-b"
+        assert get_pending_google_signup_token(secrets.token_urlsafe(32)) is None
+
+    # Ordinary Supabase Auth users do not carry the dedicated worker claim.
+    user_client = build_user_token_client(
+        _mint_user_token(str(uuid.uuid4()), "ordinary@example.com")
+    )
+    assert user_client.table("pending_google_signups").select(
+        "lookup_hash,encrypted_access_token"
+    ).execute().data == []
+    user_client.table("pending_google_signups").delete().eq(
+        "lookup_hash", _lookup_hash(id_a)
+    ).execute()
+    with app.app_context():
+        if get_pending_google_signup_token(id_a)["access_token"] != "token-for-a":
+            raise AssertionError("A normal user changed another pending signup credential.")
+    with pytest.raises(APIError):
+        user_client.table("pending_google_signups").insert({
+            "lookup_hash": _lookup_hash(secrets.token_urlsafe(32)),
+            "encrypted_access_token": "not-a-real-token",
+            "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 300)),
+        }).execute()
+    from database.google_signup_queries import delete_pending_google_signup
+    with app.app_context():
+        delete_pending_google_signup(id_a)
+        delete_pending_google_signup(id_b)
 
 
 def test_google_complete_validates_fields(client, monkeypatch):
@@ -243,6 +367,8 @@ def test_recover_with_google_sets_new_password_without_old(client, new_admin, mo
 
     resp = _google_flow(client, "recover")
     assert resp.headers["Location"].endswith("/settings/security")
+    with client.session_transaction() as sess:
+        assert "google_signup" not in sess
     page = client.get("/settings/security")
     assert b"Set a New Password" in page.data
     assert b'name="current_password"' not in page.data

@@ -12,6 +12,7 @@ from utils.branding import branding_src
 from utils.security import csrf_token, validate_csrf
 
 from routes.auth import auth_bp
+from routes.public_pages import public_pages_bp
 from routes.google_auth import google_auth_bp
 from routes.dashboard import dashboard_bp
 from routes.enquiries import enquiry_bp
@@ -139,6 +140,7 @@ def create_app(test_config=None):
     app.jinja_env.globals["branding_src"] = branding_src
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(public_pages_bp)
     app.register_blueprint(google_auth_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(enquiry_bp)
