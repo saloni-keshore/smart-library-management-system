@@ -85,6 +85,9 @@ def start():
         return redirect(url_for("auth.login"))
 
     session["oauth_intent"] = intent
+    # The login page's "Remember Me" (ADR-87). Only a plain sign-in can be
+    # remembered - never account recovery or linking.
+    session["oauth_remember"] = intent == "login" and request.args.get("remember") == "1"
 
     # build_pkce_auth_client() keeps the PKCE code verifier in the Flask
     # session so callback() - a separate request - can finish the exchange.
@@ -105,6 +108,7 @@ def start():
 def callback():
 
     intent = session.pop("oauth_intent", "login")
+    remember = session.pop("oauth_remember", False) is True and intent == "login"
     fallback = (
         url_for("setting.security_settings")
         if intent == "link" and "admin_id" in session
@@ -181,7 +185,7 @@ def callback():
             user.email or "",
             metadata.get("full_name") or metadata.get("name") or "",
         )
-        session["google_signup"] = {"pending_id": pending_id}
+        session["google_signup"] = {"pending_id": pending_id, "remember": remember}
         return redirect(url_for("google_auth.complete"))
 
     if admin.get("status") == "archived":
@@ -192,7 +196,7 @@ def callback():
         )
         return redirect(url_for("auth.login"))
 
-    start_admin_session(admin)
+    start_admin_session(admin, remember=remember)
 
     if intent == "recover":
         session["pw_reset_until"] = int(time.time()) + PASSWORD_RESET_WINDOW_SECONDS
@@ -287,7 +291,7 @@ def complete():
                     current_app.logger.error(
                         "Could not immediately remove a completed pending Google signup."
                     )
-                start_admin_session(rows[0])
+                start_admin_session(rows[0], remember=signup.get("remember") is True)
                 flash("Your library account is ready. Welcome!", "success")
                 return redirect("/dashboard")
 

@@ -2,9 +2,11 @@ import hashlib
 import re
 import time
 
+import httpx
 from flask import (
     Blueprint,
     current_app,
+    g,
     render_template,
     request,
     redirect,
@@ -18,6 +20,7 @@ from werkzeug.security import (
 )
 from postgrest.exceptions import APIError
 
+from database.security_settings_queries import get_security_settings
 from database.supabase_client import build_tenant_client, get_supabase_client
 from utils.security import rate_limited
 from utils.normalization import normalize_name, normalize_phone
@@ -68,17 +71,35 @@ def validate_registration_fields(full_name, username, mobile, email=""):
     return None
 
 
-def start_admin_session(admin):
+def start_admin_session(admin, remember=False):
     """Log an admin in - shared by password login and Google sign-in.
     `admin` needs admin_id, username and (ADR-85) session_version, which
     app.py's attach_tenant_supabase_client puts into every tenant JWT as
-    the `sv` claim so a later logout can revoke this session."""
+    the `sv` claim so a later logout can revoke this session.
+
+    `remember` is the login page's "Remember Me" (ADR-87): True keeps a
+    persistent cookie for PERMANENT_SESSION_LIFETIME since the last visit;
+    False gives a browser-session cookie that utils/security.py's
+    expire_idle_session() also ends after this admin's Session Timeout."""
+    now = int(time.time())
     session.clear()
     session["admin_id"] = admin["admin_id"]
     session["username"] = admin["username"]
     session["sv"] = int(admin.get("session_version") or 0)
-    session["sv_checked_at"] = int(time.time())
-    session.permanent = True
+    session["sv_checked_at"] = now
+    session["remember"] = bool(remember)
+    session["last_seen"] = now
+    session.permanent = bool(remember)
+
+    # This request's client was built before login (anon), so it can't read
+    # the admin's own security_settings row through RLS - switch to theirs.
+    g.supabase = build_tenant_client(session["admin_id"], session["sv"])
+    try:
+        minutes = int(get_security_settings(session["admin_id"])["session_timeout_minutes"])
+    except (KeyError, TypeError, ValueError, httpx.HTTPError):
+        minutes = current_app.config["SESSION_IDLE_TIMEOUT_MINUTES"]
+    # 0 = "Never": no idle timeout.
+    session["idle_timeout"] = max(minutes, 0) * 60
 
 
 def _login_client_key():
@@ -180,7 +201,7 @@ def login():
             return render_template("auth/login.html", show_signup=True)
 
         if admin:
-            start_admin_session(admin)
+            start_admin_session(admin, remember=bool(request.form.get("remember_me")))
 
             flash("Login Successful!", "success")
 

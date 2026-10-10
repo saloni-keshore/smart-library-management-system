@@ -143,12 +143,7 @@
                                 </option>
                                 {% endfor %}
                             </select>
-                        </div>
-
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" name="remember_me_enabled" id="remember_me_enabled"
-                                   {% if settings.remember_me_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="remember_me_enabled">Remember Me</label>
+                            <div class="form-text">Logs you out after this much inactivity. Does not apply when you tick "Remember Me" on the login page, which keeps that device signed in for {{ remember_days }} days.</div>
                         </div>
 
                         <div class="form-check form-switch mb-3">

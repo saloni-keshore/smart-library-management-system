@@ -48,7 +48,7 @@ This is a manual checklist/runbook, not automation — the app has no `exec_sql`
 2. Copy `.env.example` to `.env` **inside this deployment's own directory**. Set:
    - `SUPABASE_URL` / `SUPABASE_SECRET_KEY` — from Step A, this library's project only.
    - `SECRET_KEY` — generate a fresh one per deployment, e.g. `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Do not reuse another deployment's key.
-   - `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, `SESSION_LIFETIME_MINUTES`, `LOG_LEVEL` — these are deployment-tier settings, not per-library secrets; copy them from `.env.example`'s defaults unless you have a specific reason to change them.
+   - `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, `SESSION_LIFETIME_MINUTES`, `REMEMBER_ME_DAYS` (ADR-87), `LOG_LEVEL` — these are deployment-tier settings, not per-library secrets; copy them from `.env.example`'s defaults unless you have a specific reason to change them.
    - Omit `DATABASE_PATH` — it's a legacy/unused setting from before the app moved fully to Supabase (ADR-32).
 3. **Confirm there is no other `.env` file anywhere above this deployment's directory in the filesystem.** `python-dotenv`'s `load_dotenv()` (used by both `config.py` and `database/supabase_client.py`) walks upward through parent directories looking for a `.env` if this deployment's own is missing or misnamed — it does not fail loudly, it silently uses whatever `.env` it finds first, which could belong to a different library entirely if multiple deployments live under a shared parent folder. Keep each library's deployment in a directory tree where its own `.env` is the *only* one in that ancestor path.
 

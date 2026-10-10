@@ -9,7 +9,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from config import DevelopmentConfig, ProductionConfig
 from database.supabase_client import build_anon_client, build_tenant_client
 from utils.branding import branding_src
-from utils.security import csrf_token, validate_csrf
+from utils.security import csrf_token, expire_idle_session, validate_csrf
 
 from routes.auth import auth_bp
 from routes.public_pages import public_pages_bp
@@ -157,6 +157,10 @@ def create_app(test_config=None):
     app.register_blueprint(ai_center_bp)
     app.register_blueprint(search_bp)
     app.register_blueprint(panda_bp)
+
+    # Must stay registered before attach_tenant_supabase_client: an
+    # idle-expired session is cleared here, so it gets the anon client.
+    app.before_request(expire_idle_session)
 
     @app.before_request
     def attach_tenant_supabase_client():

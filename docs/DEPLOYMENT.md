@@ -43,7 +43,7 @@ Files (all Vercel-only):
 - `.vercelignore` — trims `.venv/`, `tests/`, `scripts/`, `docs/`, `*.md`, `database/*.db`, `backups/`, `instance/`, `.env`, `__pycache__/` from the upload so the function stays well under Vercel's 250 MB unzipped limit.
 - Python version: from `.python-version` (`3.12`). Vercel's `@vercel/python` builder actually runs on 3.12; an exact patch pin (`3.11.9`) made `uv sync --locked` fail with "No interpreter found" — a bare `major.minor` is required.
 
-Set these in the Vercel project's **Environment Variables** (Production): `SECRET_KEY` (the *exact* value the Render service generated — copy it from Render → Environment), `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (same values as Render), `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, `LOG_LEVEL=INFO`. Do **not** set `DATABASE_PATH`.
+Set these in the Vercel project's **Environment Variables** (Production): `SECRET_KEY` (the *exact* value the Render service generated — copy it from Render → Environment), `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (same values as Render), `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, `LOG_LEVEL=INFO`. Do **not** set `DATABASE_PATH`. Optional (ADR-87): `REMEMBER_ME_DAYS` (default 7 — how long a "Remember Me" login lasts) and `SESSION_LIFETIME_MINUTES` (default 60 — fallback idle timeout when a library has no saved Session Timeout); neither needs to be set.
 
 What differs from Render on this host, by design (ADR-56):
 

@@ -779,7 +779,25 @@ def test_security_settings_save_preferences(logged_in_client):
     rows = supabase.table("security_settings").select("session_timeout_minutes, remember_me_enabled").eq("admin_id", admin["admin_id"]).execute().data
     row = rows[0]
     assert row["session_timeout_minutes"] == 30
-    assert row["remember_me_enabled"] == 1
+    # ADR-87: "Remember Me" is no longer a setting - the form field is
+    # ignored and the column keeps its stored (default 0) value.
+    assert row["remember_me_enabled"] == 0
+    # The new timeout applies to the current login immediately.
+    with client.session_transaction() as sess:
+        assert sess["idle_timeout"] == 30 * 60
+
+
+def test_security_settings_page_has_no_remember_me_switch(logged_in_client):
+    client, admin = logged_in_client
+    resp = client.get("/settings/security")
+    assert b'name="remember_me_enabled"' not in resp.data
+
+
+def test_security_settings_timeout_never_disables_idle_timeout(logged_in_client):
+    client, admin = logged_in_client
+    client.post("/settings/security", data={"session_timeout_minutes": "0"}, follow_redirects=True)
+    with client.session_transaction() as sess:
+        assert sess["idle_timeout"] == 0
 
 
 def test_security_settings_invalid_timeout_falls_back_to_60(logged_in_client):

@@ -1,8 +1,10 @@
 """Auth: login, logout, register, forgot-password."""
 import re
+import time
 
 import pytest
 
+import app as app_module
 from app import create_app
 from database.supabase_client import get_service_role_client
 from tests.conftest import _rand, _rand_mobile, get_admin_by_username
@@ -144,6 +146,127 @@ def test_login_page_redirects_when_already_logged_in(client):
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["Location"].endswith("/dashboard")
+
+
+# ---------------------------------------------------------------------------
+# Remember Me / idle timeout (ADR-87)
+# ---------------------------------------------------------------------------
+
+def _session_set_cookie(resp):
+    return next(
+        h for h in resp.headers.getlist("Set-Cookie")
+        if h.startswith("smart_library_session=")
+    )
+
+
+def _login(client, admin, **extra):
+    return client.post(
+        "/",
+        data={"username": admin["username"], "password": admin["password"], **extra},
+        follow_redirects=False,
+    )
+
+
+def test_login_page_remember_me_checkbox_is_submitted(client):
+    resp = client.get("/")
+    assert b'name="remember_me"' in resp.data
+
+
+def test_login_with_remember_me_sets_persistent_cookie(client, new_admin):
+    resp = _login(client, new_admin, remember_me="1")
+    assert resp.status_code == 302
+    assert "Expires=" in _session_set_cookie(resp)
+    assert client.application.permanent_session_lifetime.days == 7
+    with client.session_transaction() as sess:
+        assert sess["remember"] is True
+        assert sess.permanent is True
+
+
+def test_login_without_remember_me_sets_browser_session_cookie(client, new_admin):
+    resp = _login(client, new_admin)
+    assert resp.status_code == 302
+    assert "Expires=" not in _session_set_cookie(resp)
+    with client.session_transaction() as sess:
+        assert sess["remember"] is False
+        assert sess.permanent is False
+        # No security_settings row yet -> the 60 minute default.
+        assert sess["idle_timeout"] == 60 * 60
+
+
+def test_login_reads_admin_session_timeout_setting(client, new_admin):
+    _login(client, new_admin)
+    client.post("/settings/security", data={"session_timeout_minutes": "15"})
+    client.get("/logout")
+    _login(client, new_admin)
+    with client.session_transaction() as sess:
+        assert sess["idle_timeout"] == 15 * 60
+
+
+def test_idle_session_is_ended_before_a_tenant_client_is_built(client, new_admin, monkeypatch):
+    _login(client, new_admin)
+    with client.session_transaction() as sess:
+        sess["last_seen"] = int(time.time()) - sess["idle_timeout"] - 5
+
+    def _no_tenant_client(*args, **kwargs):
+        raise AssertionError("tenant client built for an idle-expired session")
+
+    monkeypatch.setattr(app_module, "build_tenant_client", _no_tenant_client)
+    resp = client.get("/dashboard", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] in ("/", "http://localhost/")
+    with client.session_transaction() as sess:
+        assert "admin_id" not in sess
+        assert "sv" not in sess
+
+
+def test_active_session_within_timeout_stays_logged_in(client, new_admin):
+    _login(client, new_admin)
+    with client.session_transaction() as sess:
+        sess["last_seen"] = int(time.time()) - sess["idle_timeout"] + 120
+    assert client.get("/dashboard").status_code == 200
+    with client.session_transaction() as sess:
+        assert int(time.time()) - sess["last_seen"] < 60  # idle clock restarted
+
+
+def test_remembered_session_is_not_idle_limited(client, new_admin):
+    _login(client, new_admin, remember_me="1")
+    with client.session_transaction() as sess:
+        sess["last_seen"] = int(time.time()) - 3 * 24 * 3600
+    assert client.get("/dashboard").status_code == 200
+
+
+def test_timeout_never_has_no_idle_limit(client, new_admin):
+    _login(client, new_admin)
+    with client.session_transaction() as sess:
+        sess["idle_timeout"] = 0
+        sess["last_seen"] = int(time.time()) - 3 * 24 * 3600
+    assert client.get("/dashboard").status_code == 200
+
+
+def test_session_from_before_remember_me_gets_default_idle_timeout(client, new_admin):
+    _login(client, new_admin, remember_me="1")
+    with client.session_transaction() as sess:
+        for key in ("remember", "last_seen", "idle_timeout"):
+            sess.pop(key)
+    assert client.get("/dashboard").status_code == 200
+    with client.session_transaction() as sess:
+        assert sess["remember"] is False
+        assert sess.permanent is False
+        assert sess["idle_timeout"] == 60 * 60
+
+
+def test_logout_still_revokes_a_remembered_session(app, new_admin):
+    """ADR-85 must hold for 7-day sessions too: logging out on one device
+    ends a remembered session on another."""
+    remembered, other = app.test_client(), app.test_client()
+    _login(remembered, new_admin, remember_me="1")
+    _login(other, new_admin)
+    assert remembered.get("/dashboard").status_code == 200
+    other.get("/logout")
+    with remembered.session_transaction() as sess:
+        sess["sv_checked_at"] = 0  # force the next request to re-check
+    resp = remembered.get("/dashboard", follow_redirects=False)
+    assert resp.status_code == 302
 
 
 # ---------------------------------------------------------------------------

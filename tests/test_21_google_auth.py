@@ -131,7 +131,9 @@ def test_google_login_unknown_account_creates_library(client, monkeypatch):
 
     with client.session_transaction() as sess:
         signup = dict(sess["google_signup"])
-    assert set(signup) == {"pending_id"}
+    # Only an opaque handle plus the "Remember Me" flag (ADR-87) - no token.
+    assert set(signup) == {"pending_id", "remember"}
+    assert signup["remember"] is False
     pending_id = signup["pending_id"]
     with client.application.app_context():
         pending = get_pending_google_signup_token(pending_id)
@@ -177,6 +179,87 @@ def test_google_login_unknown_account_creates_library(client, monkeypatch):
     assert not get_service_role_client().table("pending_google_signups").select(
         "lookup_hash"
     ).eq("lookup_hash", lookup_hash).execute().data
+
+
+# ---------------------------------------------------------------------------
+# "Remember Me" through Google sign-in (ADR-87)
+# ---------------------------------------------------------------------------
+
+def _google_flow_with_query(client, query):
+    start = client.get(f"/auth/google/start?{query}", follow_redirects=False)
+    assert start.status_code == 302
+    return client.get(start.headers["Location"], follow_redirects=False)
+
+
+def test_google_login_honours_remember_me(client, new_admin, monkeypatch):
+    uid = str(uuid.uuid4())
+    _link_in_db(new_admin["admin_id"], uid, "remember@example.com")
+    _fake_google(monkeypatch, uid, "remember@example.com")
+
+    resp = _google_flow_with_query(client, "intent=login&remember=1")
+    assert resp.headers["Location"].endswith("/dashboard")
+    with client.session_transaction() as sess:
+        assert sess["remember"] is True
+        assert sess.permanent is True
+        assert "oauth_remember" not in sess
+
+
+def test_google_login_without_remember_me_is_not_remembered(client, new_admin, monkeypatch):
+    uid = str(uuid.uuid4())
+    _link_in_db(new_admin["admin_id"], uid, "plain@example.com")
+    _fake_google(monkeypatch, uid, "plain@example.com")
+
+    # Anything other than exactly remember=1 is "not remembered".
+    resp = _google_flow_with_query(client, "intent=login&remember=true")
+    assert resp.headers["Location"].endswith("/dashboard")
+    with client.session_transaction() as sess:
+        assert sess["remember"] is False
+        assert sess.permanent is False
+
+
+def test_google_recover_is_never_remembered(client, new_admin, monkeypatch):
+    uid = str(uuid.uuid4())
+    _link_in_db(new_admin["admin_id"], uid, "recover_rm@example.com")
+    _fake_google(monkeypatch, uid, "recover_rm@example.com")
+
+    resp = _google_flow_with_query(client, "intent=recover&remember=1")
+    assert resp.headers["Location"].endswith("/settings/security")
+    with client.session_transaction() as sess:
+        assert sess["remember"] is False
+        assert sess.permanent is False
+        assert "pw_reset_until" in sess  # still a recovery, not a plain login
+
+
+def test_google_link_does_not_turn_session_into_remembered(logged_in_client, monkeypatch):
+    client, admin = logged_in_client
+    uid = str(uuid.uuid4())
+    _fake_google(monkeypatch, uid, f"link_rm_{_rand()}@example.com")
+
+    resp = _google_flow_with_query(client, "intent=link&remember=1")
+    assert resp.headers["Location"].endswith("/settings/security")
+    with client.session_transaction() as sess:
+        assert sess["admin_id"] == admin["admin_id"]
+        assert sess["remember"] is False
+        assert sess.permanent is False
+        assert "oauth_remember" not in sess
+    assert get_admin_by_username(admin["username"])["auth_user_id"] == uid
+
+
+def test_google_signup_carries_remember_me_to_the_new_session(client, monkeypatch):
+    uid = str(uuid.uuid4())
+    _fake_google(monkeypatch, uid, f"new_rm_{_rand()}@example.com")
+
+    resp = _google_flow_with_query(client, "intent=login&remember=1")
+    assert resp.headers["Location"].endswith("/auth/google/complete")
+    resp = client.post(
+        "/auth/google/complete",
+        data={"full_name": "Remember Me", "username": f"qa_g_{_rand()}", "mobile": _rand_mobile()},
+        follow_redirects=False,
+    )
+    assert resp.headers["Location"].endswith("/dashboard")
+    with client.session_transaction() as sess:
+        assert sess["remember"] is True
+        assert sess.permanent is True
 
 
 def test_expired_pending_google_signup_is_rejected(client, monkeypatch):

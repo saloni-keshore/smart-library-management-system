@@ -88,6 +88,7 @@ graph TD
     SupabaseClient["database/supabase_client.py — get_supabase_client()"]
 
     Auth --> SupabaseClient
+    Auth --> SecSettQ
     Auth -.->|"register() only — SQLite mirror-insert bridge, TD-35"| DB
     Dashboard --> MembershipQ
     Dashboard --> SupabaseClient
@@ -464,6 +465,7 @@ graph LR
     app_py --> panda_routes_py
 
     auth_py --> supabase_client_py
+    auth_py --> security_settings_queries_py
     google_auth_py --> supabase_client_py
     google_auth_py --> auth_py
     dashboard_py --> supabase_client_py
@@ -574,7 +576,8 @@ sequenceDiagram
     else intent = login / recover
         F->>P: rpc_google_login_lookup() with the user's own access token (auth.uid())
         alt library found
-            F->>F: start_admin_session() -> session admin_id, username, sv
+            F->>F: start_admin_session(remember) -> session admin_id, username, sv, remember, last_seen, idle_timeout
+            Note over F: remember only if start had intent=login and remember=1 (ADR-87)
             Note over F: recover: session["pw_reset_until"] = now + 10 min
         else no library (login)
             F-->>B: /auth/google/complete -> rpc_register_admin_google()

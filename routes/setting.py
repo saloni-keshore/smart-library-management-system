@@ -1314,13 +1314,18 @@ def security_settings():
         if session_timeout_minutes not in SESSION_TIMEOUT_OPTIONS:
             session_timeout_minutes = 60
 
+        # remember_me_enabled is no longer a setting (ADR-87: "Remember Me"
+        # is chosen per login, on the login page) - the column is kept and
+        # its stored value carried over unchanged.
         data = {
             "session_timeout_minutes": session_timeout_minutes,
-            "remember_me_enabled": 1 if request.form.get("remember_me_enabled") else 0,
+            "remember_me_enabled": 1 if get_security_settings(admin_id).get("remember_me_enabled") else 0,
             "login_notifications_enabled": 1 if request.form.get("login_notifications_enabled") else 0,
         }
 
         save_security_settings(admin_id, data)
+        # Applies to this login straight away, not only the next one.
+        session["idle_timeout"] = session_timeout_minutes * 60
         flash("Security preferences saved successfully.", "success")
         return redirect(url_for("setting.security_settings"))
 
@@ -1331,6 +1336,7 @@ def security_settings():
         "settings/security_settings.html",
         settings=settings,
         timeout_options=SESSION_TIMEOUT_OPTIONS,
+        remember_days=current_app.permanent_session_lifetime.days,
         google_email=account.get("google_email"),
         has_password=account.get("has_password", True),
         reset_mode=_password_reset_allowed(admin_id, account),

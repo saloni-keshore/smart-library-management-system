@@ -290,12 +290,12 @@ Created by `database/migrate_backup_log.py`. Deliberately **not** a column on `l
 |---|---|---|
 | `setting_id` | INTEGER PK | |
 | `admin_id` | INTEGER NOT NULL **UNIQUE** FK → `admins` | |
-| `session_timeout_minutes` | INTEGER NOT NULL DEFAULT 60 | One of `15`/`30`/`60`/`0` (`0` = "Never") — **not enforced**, no session-expiry middleware exists |
-| `remember_me_enabled` | INTEGER NOT NULL DEFAULT 0, CHECK(0/1) | **Not enforced** — no "remember me" cookie/token logic exists |
+| `session_timeout_minutes` | INTEGER NOT NULL DEFAULT 60 | One of `15`/`30`/`60`/`0` (`0` = "Never"). **Enforced as of 2026-10-09 (ADR-87):** copied into `session["idle_timeout"]` at login (`routes/auth.py` `start_admin_session()`) and on save; `utils/security.py` `expire_idle_session()` ends a login made without "Remember Me" after this much inactivity |
+| `remember_me_enabled` | INTEGER NOT NULL DEFAULT 0, CHECK(0/1) | **Unused as of 2026-10-09 (ADR-87)** — "Remember Me" is a per-login checkbox on the login page, not a stored setting; nothing reads this column (TD-130) |
 | `login_notifications_enabled` | INTEGER NOT NULL DEFAULT 0, CHECK(0/1) | **Not enforced** — no login-notification delivery mechanism exists |
 | `created_at`, `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 
-Created by `database/migrate_security_settings.py`. Deliberately separate from `library_settings` for the same reason as `backup_log` (ADR-9). Password change (Settings → Security Settings' "Change Password" form) does **not** use this table at all — it updates `admins.password` directly via `routes/setting.py`'s `security_settings()` and is fully functional; only the three columns above are persisted-but-unenforced (TD-26 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md)).
+Created by `database/migrate_security_settings.py`. Deliberately separate from `library_settings` for the same reason as `backup_log` (ADR-9). Password change (Settings → Security Settings' "Change Password" form) does **not** use this table at all — it updates `admins.password` directly via `routes/setting.py`'s `security_settings()` and is fully functional; of the three columns above only `session_timeout_minutes` is enforced; the other two are tracked as TD-130 in [11_FUTURE_WORK.md](11_FUTURE_WORK.md) (TD-26 `Resolved`).
 
 ## Multi-tenant (`admin_id`) summary
 

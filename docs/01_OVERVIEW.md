@@ -58,5 +58,5 @@ python app.py                  # runs with debug=True on the Flask default port 
 | Settings → Notification Settings | Implemented (reminder-rule/channel/quiet-hours/dashboard-display preferences; `dash_show_pending_fees` and the navbar-bell toggles are wired, the rest are save-only — no SMS/Email/WhatsApp dispatch exists) |
 | Settings → Staff & User Access | Placeholder ("Coming Soon" — still single-admin) |
 | Settings → Data & Backup | Implemented (manual Export CSV / Create Backup only — no scheduled backups) |
-| Settings → Security Settings | Implemented (password change is fully enforced; session timeout / remember-me / login-notification preferences are persisted but not enforced) |
+| Settings → Security Settings | Implemented (password change and, as of 2026-10-09 (ADR-87), Session Timeout are enforced; "Remember Me" is a login-page checkbox, not a setting; the login-notification preference is persisted but not enforced, TD-130) |
 | Reports (`/reports/`) | Deprecated redirect shim → Business Intelligence |
